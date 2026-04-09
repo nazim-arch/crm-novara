@@ -200,46 +200,44 @@ export function TaskForm({
           </div>
 
           {/* Link to Lead or Opportunity */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label>Link to Lead (optional)</Label>
-              <Select
-                defaultValue={defaultLeadId ?? "none"}
-                onValueChange={(v) => setValue("lead_id", v === "none" || !v ? undefined : v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select lead" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No lead</SelectItem>
-                  {leads.map((l) => (
-                    <SelectItem key={l.id} value={l.id}>
-                      {l.lead_number} – {l.full_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="space-y-1.5">
+            <Label>Link to Lead (optional)</Label>
+            <Select
+              defaultValue={defaultLeadId ?? "none"}
+              onValueChange={(v) => setValue("lead_id", v === "none" || !v ? undefined : v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select lead" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No lead</SelectItem>
+                {leads.map((l) => (
+                  <SelectItem key={l.id} value={l.id}>
+                    {l.lead_number} – {l.full_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-            <div className="space-y-1.5">
-              <Label>Link to Opportunity (optional)</Label>
-              <Select
-                defaultValue={defaultOpportunityId ?? "none"}
-                onValueChange={(v) => setValue("opportunity_id", v === "none" || !v ? undefined : v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select opportunity" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No opportunity</SelectItem>
-                  {opportunities.map((o) => (
-                    <SelectItem key={o.id} value={o.id}>
-                      {o.opp_number} – {o.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="space-y-1.5">
+            <Label>Link to Opportunity (optional)</Label>
+            <Select
+              defaultValue={defaultOpportunityId ?? "none"}
+              onValueChange={(v) => setValue("opportunity_id", v === "none" || !v ? undefined : v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select opportunity" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No opportunity</SelectItem>
+                {opportunities.map((o) => (
+                  <SelectItem key={o.id} value={o.id}>
+                    {o.opp_number} – {o.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Revenue tagging */}
