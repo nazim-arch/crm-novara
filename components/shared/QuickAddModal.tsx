@@ -280,7 +280,7 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
             </div>
             <div className="space-y-1.5">
               <Label>Lead Source *</Label>
-              <Select value={leadSource} onValueChange={setLeadSource}>
+              <Select value={leadSource} onValueChange={(v) => v && setLeadSource(v)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select source">
                     {leadSource || "Select source"}
@@ -295,7 +295,7 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
             </div>
             <div className="space-y-1.5">
               <Label>Temperature</Label>
-              <Select value={leadTemperature} onValueChange={setLeadTemperature}>
+              <Select value={leadTemperature} onValueChange={(v) => v && setLeadTemperature(v)}>
                 <SelectTrigger>
                   <SelectValue>{leadTemperature}</SelectValue>
                 </SelectTrigger>
@@ -326,7 +326,7 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Property Type *</Label>
-                <Select value={oppPropertyType} onValueChange={setOppPropertyType}>
+                <Select value={oppPropertyType} onValueChange={(v) => v && setOppPropertyType(v)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Type">
                       {oppPropertyType || "Type"}
@@ -363,7 +363,7 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Assigned To</Label>
-                <Select value={taskAssignedTo} onValueChange={setTaskAssignedTo}>
+                <Select value={taskAssignedTo} onValueChange={(v) => v && setTaskAssignedTo(v)}>
                   <SelectTrigger>
                     <SelectValue>{taskAssigneeName}</SelectValue>
                   </SelectTrigger>
@@ -382,7 +382,7 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Sector</Label>
-                <Select value={taskSector} onValueChange={setTaskSector}>
+                <Select value={taskSector} onValueChange={(v) => v && setTaskSector(v)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Sector">
                       {taskSector || "Sector"}
@@ -397,7 +397,7 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
               </div>
               <div className="space-y-1.5">
                 <Label>Link to Lead</Label>
-                <Select value={taskLeadId} onValueChange={setTaskLeadId}>
+                <Select value={taskLeadId} onValueChange={(v) => v && setTaskLeadId(v)}>
                   <SelectTrigger>
                     <SelectValue>{taskLeadLabel}</SelectValue>
                   </SelectTrigger>
@@ -422,7 +422,7 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
           <TabsContent value="followup" className="space-y-3 mt-4">
             <div className="space-y-1.5">
               <Label>Lead * (existing)</Label>
-              <Select value={fuLeadId} onValueChange={setFuLeadId}>
+              <Select value={fuLeadId} onValueChange={(v) => v && setFuLeadId(v)}>
                 <SelectTrigger>
                   <SelectValue>{fuLeadLabel}</SelectValue>
                 </SelectTrigger>
@@ -439,7 +439,7 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Type</Label>
-                <Select value={fuType} onValueChange={setFuType}>
+                <Select value={fuType} onValueChange={(v) => v && setFuType(v)}>
                   <SelectTrigger>
                     <SelectValue>{fuType}</SelectValue>
                   </SelectTrigger>
