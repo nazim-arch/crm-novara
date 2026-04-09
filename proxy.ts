@@ -20,10 +20,18 @@ export async function proxy(req: NextRequest) {
 
   let isAuthenticated = false;
   try {
-    const token = await getToken({ req, secret: process.env.AUTH_SECRET });
+    // next-auth v5 uses "authjs.session-token" (or __Secure- prefix on HTTPS)
+    const secureCookie = req.nextUrl.protocol === "https:";
+    const cookieName = secureCookie
+      ? "__Secure-authjs.session-token"
+      : "authjs.session-token";
+    const token = await getToken({
+      req,
+      secret: process.env.AUTH_SECRET,
+      cookieName,
+    });
     isAuthenticated = !!token;
   } catch {
-    // If token check fails, treat as unauthenticated
     isAuthenticated = false;
   }
 
