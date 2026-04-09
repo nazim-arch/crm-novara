@@ -67,6 +67,7 @@ export default async function EditLeadPage({ params }: { params: Params }) {
           followup_type: lead.followup_type ?? undefined,
           reason_for_interest: lead.reason_for_interest ?? undefined,
           notes: lead.alternate_requirement ?? undefined,
+          potential_lead_value: lead.potential_lead_value ? Number(lead.potential_lead_value) : undefined,
           assigned_to_id: lead.assigned_to_id,
           lead_owner_id: lead.lead_owner_id,
         }}

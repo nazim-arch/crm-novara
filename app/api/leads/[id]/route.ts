@@ -75,12 +75,17 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
       );
     }
 
-    const { notes: _notes, ...updateData } = parsed.data;
+    const { notes, ...updateData } = parsed.data;
 
     // Clean up empty strings to null
     const cleanData = Object.fromEntries(
       Object.entries(updateData).map(([k, v]) => [k, v === "" ? null : v])
     );
+
+    // Map notes → alternate_requirement
+    if (notes !== undefined) {
+      cleanData.alternate_requirement = notes === "" ? null : notes;
+    }
 
     const lead = await prisma.lead.update({
       where: { id, deleted_at: null },
