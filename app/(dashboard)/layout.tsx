@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/shared/Sidebar";
 import { NotificationBell } from "@/components/shared/NotificationBell";
+import { QuickAddModal } from "@/components/shared/QuickAddModal";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -66,6 +67,8 @@ export default async function DashboardLayout({
         <main className="flex-1 overflow-auto bg-muted/30">
           {children}
         </main>
+
+        <QuickAddModal currentUserId={user.id} />
       </div>
     </div>
   );
