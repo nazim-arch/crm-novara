@@ -15,26 +15,44 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     Credentials({
       async authorize(credentials) {
-        const parsed = loginSchema.safeParse(credentials);
-        if (!parsed.success) return null;
+        try {
+          const parsed = loginSchema.safeParse(credentials);
+          if (!parsed.success) {
+            console.error("Auth: validation failed", parsed.error);
+            return null;
+          }
 
-        const user = await prisma.user.findUnique({
-          where: { email: parsed.data.email },
-        });
-        if (!user || !user.is_active) return null;
+          const user = await prisma.user.findUnique({
+            where: { email: parsed.data.email },
+          });
+          if (!user) {
+            console.error("Auth: user not found", parsed.data.email);
+            return null;
+          }
+          if (!user.is_active) {
+            console.error("Auth: user inactive", parsed.data.email);
+            return null;
+          }
 
-        const valid = await bcrypt.compare(
-          parsed.data.password,
-          user.password_hash
-        );
-        if (!valid) return null;
+          const valid = await bcrypt.compare(
+            parsed.data.password,
+            user.password_hash
+          );
+          if (!valid) {
+            console.error("Auth: password mismatch for", parsed.data.email);
+            return null;
+          }
 
-        return {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-        };
+          return {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+          };
+        } catch (error) {
+          console.error("Auth: unexpected error", error);
+          return null;
+        }
       },
     }),
   ],
