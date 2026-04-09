@@ -26,6 +26,7 @@ import {
 type User = { id: string; name: string };
 type Lead = { id: string; lead_number: string; full_name: string };
 type TaskItem = { id: string; task_number: string; title: string };
+type OppItem = { id: string; opp_number: string; name: string };
 
 const LEAD_SOURCES = ["Website", "Facebook", "Instagram", "Google Ads", "Referral", "Walk-in", "Cold Call", "Exhibition", "WhatsApp", "Other"];
 const FOLLOW_UP_TYPES = ["Call", "Email", "WhatsApp", "Visit", "Meeting"];
@@ -39,6 +40,7 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
   const [users, setUsers] = useState<User[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [opps, setOpps] = useState<OppItem[]>([]);
   const [dataLoaded, setDataLoaded] = useState(false);
 
   // Lead form
@@ -59,6 +61,7 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
   const [taskAssignedTo, setTaskAssignedTo] = useState(currentUserId);
   const [taskDueDate, setTaskDueDate] = useState("");
   const [taskLeadId, setTaskLeadId] = useState("none");
+  const [taskOppId, setTaskOppId] = useState("none");
   const [taskSector, setTaskSector] = useState("");
 
   // Follow-up form
@@ -72,10 +75,11 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
   const loadData = useCallback(async () => {
     if (dataLoaded) return;
     try {
-      const [usersRes, leadsRes, tasksRes] = await Promise.all([
+      const [usersRes, leadsRes, tasksRes, oppsRes] = await Promise.all([
         fetch("/api/users/assignable"),
         fetch("/api/leads?page=1&limit=200"),
         fetch("/api/tasks?page=1&limit=200&status=Todo,InProgress"),
+        fetch("/api/opportunities?status=Active&limit=200"),
       ]);
       if (usersRes.ok) {
         const d = await usersRes.json();
@@ -101,6 +105,16 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
           }))
         );
       }
+      if (oppsRes.ok) {
+        const d = await oppsRes.json();
+        setOpps(
+          (d.data ?? []).map((o: { id: string; opp_number: string; name: string }) => ({
+            id: o.id,
+            opp_number: o.opp_number,
+            name: o.name,
+          }))
+        );
+      }
     } catch {
       // silent — forms still work, just no dropdown data
     }
@@ -114,7 +128,7 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
   function resetForms() {
     setLeadName(""); setLeadPhone(""); setLeadSource(""); setLeadTemperature("Cold");
     setOppName(""); setOppProject(""); setOppPropertyType(""); setOppLocation(""); setOppCommission("");
-    setTaskTitle(""); setTaskAssignedTo(currentUserId); setTaskDueDate(""); setTaskLeadId("none"); setTaskSector("");
+    setTaskTitle(""); setTaskAssignedTo(currentUserId); setTaskDueDate(""); setTaskLeadId("none"); setTaskOppId("none"); setTaskSector("");
     setFuLinkType("lead"); setFuLeadId("none"); setFuTaskId("none"); setFuType("Call"); setFuDate(""); setFuNotes("");
   }
 
@@ -193,6 +207,7 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
         recurrence: "None",
       };
       if (taskLeadId !== "none") body.lead_id = taskLeadId;
+      if (taskOppId !== "none") body.opportunity_id = taskOppId;
       if (taskSector) body.sector = taskSector;
       const res = await fetch("/api/tasks", {
         method: "POST",
@@ -246,6 +261,11 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
     : leads.find((l) => l.id === taskLeadId)
       ? `${leads.find((l) => l.id === taskLeadId)!.lead_number} – ${leads.find((l) => l.id === taskLeadId)!.full_name}`
       : "Select lead";
+  const taskOppLabel = taskOppId === "none"
+    ? "No opportunity"
+    : opps.find((o) => o.id === taskOppId)
+      ? `${opps.find((o) => o.id === taskOppId)!.opp_number} – ${opps.find((o) => o.id === taskOppId)!.name}`
+      : "Select opportunity";
   const fuLeadLabel = fuLeadId === "none"
     ? "Select lead"
     : leads.find((l) => l.id === fuLeadId)
@@ -402,38 +422,52 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
                 <Input value={taskDueDate} onChange={(e) => setTaskDueDate(e.target.value)} type="date" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Sector</Label>
-                <Select value={taskSector} onValueChange={(v) => v && setTaskSector(v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sector">
-                      {taskSector || "Sector"}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SECTORS.map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Link to Lead</Label>
-                <Select value={taskLeadId} onValueChange={(v) => v && setTaskLeadId(v)}>
-                  <SelectTrigger>
-                    <SelectValue>{taskLeadLabel}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No lead</SelectItem>
-                    {leads.map((l) => (
-                      <SelectItem key={l.id} value={l.id}>
-                        {l.lead_number} – {l.full_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="space-y-1.5">
+              <Label>Sector</Label>
+              <Select value={taskSector} onValueChange={(v) => v && setTaskSector(v)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Sector">
+                    {taskSector || "Select sector"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {SECTORS.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Link to Lead</Label>
+              <Select value={taskLeadId} onValueChange={(v) => v && setTaskLeadId(v)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue>{taskLeadLabel}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No lead</SelectItem>
+                  {leads.map((l) => (
+                    <SelectItem key={l.id} value={l.id}>
+                      {l.lead_number} – {l.full_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Link to Opportunity</Label>
+              <Select value={taskOppId} onValueChange={(v) => v && setTaskOppId(v)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue>{taskOppLabel}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No opportunity</SelectItem>
+                  {opps.map((o) => (
+                    <SelectItem key={o.id} value={o.id}>
+                      {o.opp_number} – {o.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <Button className="w-full" onClick={submitTask} disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
