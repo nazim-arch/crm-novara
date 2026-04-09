@@ -6,10 +6,20 @@ export async function GET() {
     const count = await prisma.lead.count({ where: { deleted_at: null } });
     const leads = await prisma.lead.findMany({
       where: { deleted_at: null },
-      include: { assigned_to: { select: { id: true, name: true } } },
-      take: 5,
+      select: {
+        id: true,
+        lead_number: true,
+        full_name: true,
+        potential_lead_value: true,
+        deal_value: true,
+      },
+      take: 20,
     });
-    return NextResponse.json({ ok: true, count, sample: leads });
+    const agg = await prisma.lead.aggregate({
+      where: { deleted_at: null },
+      _sum: { potential_lead_value: true, deal_value: true },
+    });
+    return NextResponse.json({ ok: true, count, leads, agg });
   } catch (error) {
     return NextResponse.json({ ok: false, error: String(error) }, { status: 500 });
   }
