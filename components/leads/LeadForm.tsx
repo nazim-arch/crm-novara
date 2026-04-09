@@ -167,7 +167,11 @@ export function LeadForm({ users, currentUserId, defaultValues, leadId }: LeadFo
 
   return (
     <>
-      <form onSubmit={handleSubmit((data) => submitLead(data))}>
+      <form onSubmit={handleSubmit((data) => submitLead(data), (errs) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const messages = Object.values(errs).map((e: any) => e?.message).filter(Boolean);
+        toast.error(messages[0] ?? "Please fill all required fields before submitting");
+      })}>
         <Tabs defaultValue="basic">
           <TabsList className="mb-4">
             <TabsTrigger value="basic">Basic Info</TabsTrigger>
