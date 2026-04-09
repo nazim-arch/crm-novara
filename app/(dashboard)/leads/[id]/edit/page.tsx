@@ -14,14 +14,21 @@ export default async function EditLeadPage({ params }: { params: Params }) {
 
   const { id } = await params;
 
-  const [lead, users] = await Promise.all([
-    prisma.lead.findUnique({
-      where: { id, deleted_at: null },
-    }),
+  const [lead, users, opportunities, taggedOpps] = await Promise.all([
+    prisma.lead.findUnique({ where: { id, deleted_at: null } }),
     prisma.user.findMany({
       where: { is_active: true },
       select: { id: true, name: true, role: true },
       orderBy: { name: "asc" },
+    }),
+    prisma.opportunity.findMany({
+      where: { deleted_at: null, status: "Active" },
+      select: { id: true, opp_number: true, name: true, project: true, property_type: true, location: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.leadOpportunity.findMany({
+      where: { lead_id: id },
+      select: { opportunity_id: true },
     }),
   ]);
 
@@ -35,6 +42,8 @@ export default async function EditLeadPage({ params }: { params: Params }) {
       </div>
       <LeadForm
         users={users}
+        opportunities={opportunities}
+        defaultTaggedOpportunityIds={taggedOpps.map((t) => t.opportunity_id)}
         currentUserId={session.user.id}
         leadId={lead.id}
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

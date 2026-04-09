@@ -21,13 +21,22 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DuplicateWarningModal } from "./DuplicateWarningModal";
-import { Loader2 } from "lucide-react";
+import { Loader2, ChevronsUpDown, Check } from "lucide-react";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type User = { id: string; name: string; role: string };
+type Opportunity = { id: string; opp_number: string; name: string; project: string; property_type: string; location: string };
 
 interface LeadFormProps {
   users: User[];
+  opportunities?: Opportunity[];
+  defaultTaggedOpportunityIds?: string[];
   currentUserId: string;
   defaultValues?: Partial<CreateLeadInput>;
   leadId?: string;
@@ -38,7 +47,7 @@ const LEAD_SOURCES = [
   "Referral", "Walk-in", "Cold Call", "Exhibition", "WhatsApp", "Other",
 ];
 
-export function LeadForm({ users, currentUserId, defaultValues, leadId }: LeadFormProps) {
+export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityIds = [], currentUserId, defaultValues, leadId }: LeadFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [showDuplicates, setShowDuplicates] = useState(false);
@@ -49,6 +58,8 @@ export function LeadForm({ users, currentUserId, defaultValues, leadId }: LeadFo
   }>({ exact_matches: [], name_similar: [] });
 
   const isEditing = !!leadId;
+  const [selectedOppIds, setSelectedOppIds] = useState<string[]>(defaultTaggedOpportunityIds);
+  const [oppPopoverOpen, setOppPopoverOpen] = useState(false);
   const [scheduleFollowup, setScheduleFollowup] = useState(false);
   const [followupDate, setFollowupDate] = useState("");
   const [followupType, setFollowupType] = useState("Call");
@@ -139,6 +150,20 @@ export function LeadForm({ users, currentUserId, defaultValues, leadId }: LeadFo
         return;
       }
       toast.success(isEditing ? "Lead updated" : "Lead created");
+
+      // Tag selected opportunities
+      if (selectedOppIds.length > 0) {
+        const savedLeadId = result.data?.id ?? leadId;
+        await Promise.allSettled(
+          selectedOppIds.map((opp_id) =>
+            fetch(`/api/leads/${savedLeadId}/opportunities`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ opportunity_id: opp_id }),
+            })
+          )
+        );
+      }
 
       // Schedule follow-up if requested (new leads only)
       if (!isEditing && scheduleFollowup && followupDate && result.data?.id) {
@@ -312,6 +337,89 @@ export function LeadForm({ users, currentUserId, defaultValues, leadId }: LeadFo
                 <CardTitle className="text-base">Property Requirement</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Opportunity multi-select */}
+                {opportunities.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label>Link Opportunities</Label>
+                    <Popover open={oppPopoverOpen} onOpenChange={setOppPopoverOpen}>
+                      <PopoverTrigger
+                        className="flex h-8 w-full items-center justify-between rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <span className={selectedOppIds.length === 0 ? "text-muted-foreground" : ""}>
+                          {selectedOppIds.length === 0
+                            ? "Select opportunities…"
+                            : selectedOppIds.length === 1
+                            ? opportunities.find((o) => o.id === selectedOppIds[0])?.name ?? "1 selected"
+                            : `${selectedOppIds.length} opportunities selected`}
+                        </span>
+                        <ChevronsUpDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                      </PopoverTrigger>
+                      <PopoverContent className="w-96 p-0" align="start">
+                        <div className="max-h-64 overflow-y-auto p-1">
+                          {opportunities.map((opp) => {
+                            const checked = selectedOppIds.includes(opp.id);
+                            return (
+                              <button
+                                key={opp.id}
+                                type="button"
+                                onClick={() =>
+                                  setSelectedOppIds((prev) =>
+                                    checked ? prev.filter((id) => id !== opp.id) : [...prev, opp.id]
+                                  )
+                                }
+                                className="flex w-full items-start gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+                              >
+                                <Checkbox checked={checked} className="mt-0.5 shrink-0" />
+                                <div className="min-w-0">
+                                  <p className="font-medium truncate">{opp.name}</p>
+                                  <p className="text-xs text-muted-foreground truncate">
+                                    {opp.opp_number} · {opp.project} · {opp.location}
+                                  </p>
+                                </div>
+                                {checked && <Check className="ml-auto h-4 w-4 shrink-0 text-primary" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {selectedOppIds.length > 0 && (
+                          <div className="border-t p-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedOppIds([])}
+                              className="w-full rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                            >
+                              Clear all
+                            </button>
+                          </div>
+                        )}
+                      </PopoverContent>
+                    </Popover>
+                    {selectedOppIds.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {selectedOppIds.map((id) => {
+                          const opp = opportunities.find((o) => o.id === id);
+                          if (!opp) return null;
+                          return (
+                            <span
+                              key={id}
+                              className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary"
+                            >
+                              {opp.opp_number} – {opp.name}
+                              <button
+                                type="button"
+                                onClick={() => setSelectedOppIds((prev) => prev.filter((x) => x !== id))}
+                                className="ml-0.5 hover:text-destructive"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label>Property Type</Label>
