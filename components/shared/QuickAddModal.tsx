@@ -236,13 +236,11 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) resetForms(); }}>
-      <DialogTrigger asChild>
-        <button
-          className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-colors"
-          aria-label="Quick add"
-        >
-          <Plus className="h-6 w-6" />
-        </button>
+      <DialogTrigger
+        className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-colors"
+        aria-label="Quick add"
+      >
+        <Plus className="h-6 w-6" />
       </DialogTrigger>
 
       <DialogContent className="sm:max-w-md">
