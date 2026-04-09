@@ -13,13 +13,19 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Skip auth check for auth API routes
-  if (pathname.startsWith("/api/auth")) {
+  // Skip auth check for auth API routes and static files
+  if (pathname.startsWith("/api/auth") || pathname.startsWith("/_next") || pathname.includes(".")) {
     return NextResponse.next();
   }
 
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET });
-  const isAuthenticated = !!token;
+  let isAuthenticated = false;
+  try {
+    const token = await getToken({ req, secret: process.env.AUTH_SECRET });
+    isAuthenticated = !!token;
+  } catch {
+    // If token check fails, treat as unauthenticated
+    isAuthenticated = false;
+  }
 
   // Redirect authenticated users away from login
   if (pathname === "/login" && isAuthenticated) {
