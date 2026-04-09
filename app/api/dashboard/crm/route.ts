@@ -44,8 +44,8 @@ export async function GET() {
       _count: { id: true },
     }),
     prisma.lead.aggregate({
-      where: { deleted_at: null, deal_value: { not: null } },
-      _sum: { deal_value: true, commission_estimate: true },
+      where: { deleted_at: null },
+      _sum: { potential_lead_value: true, deal_value: true, commission_estimate: true },
     }),
     prisma.activity.findMany({
       where: { entity_type: "Lead" },
@@ -65,7 +65,7 @@ export async function GET() {
         stage: s.status,
         count: s._count.id,
       })),
-      pipelineValue: Number(pipelineValue._sum.deal_value ?? 0),
+      pipelineValue: Number(pipelineValue._sum.potential_lead_value ?? pipelineValue._sum.deal_value ?? 0),
       commissionEstimate: Number(pipelineValue._sum.commission_estimate ?? 0),
       recentActivities,
     },
