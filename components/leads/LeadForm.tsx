@@ -52,6 +52,8 @@ export function LeadForm({ users, currentUserId, defaultValues, leadId }: LeadFo
   const [scheduleFollowup, setScheduleFollowup] = useState(false);
   const [followupDate, setFollowupDate] = useState("");
   const [followupType, setFollowupType] = useState("Call");
+  const [leadOwnerId, setLeadOwnerId] = useState(defaultValues?.lead_owner_id ?? currentUserId);
+  const [assignedToId, setAssignedToId] = useState(defaultValues?.assigned_to_id ?? currentUserId);
 
   const {
     register,
@@ -251,11 +253,13 @@ export function LeadForm({ users, currentUserId, defaultValues, leadId }: LeadFo
                   <div className="space-y-1.5">
                     <Label>Lead Owner *</Label>
                     <Select
-                      defaultValue={defaultValues?.lead_owner_id ?? currentUserId}
-                      onValueChange={(v) => v && setValue("lead_owner_id", v)}
+                      value={leadOwnerId}
+                      onValueChange={(v) => { if (v) { setLeadOwnerId(v); setValue("lead_owner_id", v); } }}
                     >
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue>
+                          {users.find((u) => u.id === leadOwnerId)?.name ?? "Select user"}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {users.map((u) => (
@@ -270,11 +274,13 @@ export function LeadForm({ users, currentUserId, defaultValues, leadId }: LeadFo
                   <div className="space-y-1.5">
                     <Label>Assigned To *</Label>
                     <Select
-                      defaultValue={defaultValues?.assigned_to_id ?? currentUserId}
-                      onValueChange={(v) => v && setValue("assigned_to_id", v)}
+                      value={assignedToId}
+                      onValueChange={(v) => { if (v) { setAssignedToId(v); setValue("assigned_to_id", v); } }}
                     >
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue>
+                          {users.find((u) => u.id === assignedToId)?.name ?? "Select user"}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {users.map((u) => (

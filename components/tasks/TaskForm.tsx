@@ -49,7 +49,10 @@ export function TaskForm({
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [revenueTagged, setRevenueTagged] = useState(defaultValues?.revenue_tagged ?? false);
+  const [assignedToId, setAssignedToId] = useState(defaultValues?.assigned_to_id ?? currentUserId);
   const isEditing = !!taskId;
+
+  const SECTORS = ["Novara", "Sage", "Podcast", "Trade"];
 
   const {
     register,
@@ -114,11 +117,13 @@ export function TaskForm({
             <div className="space-y-1.5">
               <Label>Assigned To *</Label>
               <Select
-                defaultValue={currentUserId}
-                onValueChange={(v) => v && setValue("assigned_to_id", v)}
+                value={assignedToId}
+                onValueChange={(v) => { if (v) { setAssignedToId(v); setValue("assigned_to_id", v); } }}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue>
+                    {users.find((u) => u.id === assignedToId)?.name ?? "Select user"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {users.map((u) => (
@@ -159,8 +164,20 @@ export function TaskForm({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="sector">Sector</Label>
-              <Input id="sector" {...register("sector")} placeholder="e.g. Sales, Operations" />
+              <Label>Sector</Label>
+              <Select
+                defaultValue={defaultValues?.sector ?? ""}
+                onValueChange={(v) => setValue("sector", v || undefined)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select sector" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SECTORS.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-1.5">
