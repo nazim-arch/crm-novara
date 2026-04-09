@@ -1,0 +1,504 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum UserRole {
+  Admin
+  Manager
+  Sales
+  Operations
+  Viewer
+}
+
+enum LeadTemperature {
+  Hot
+  Warm
+  Cold
+  FollowUpLater
+}
+
+enum LeadStatus {
+  New
+  Contacted
+  Qualified
+  Requirement
+  OpportunityTagged
+  Visit
+  FollowUp
+  Negotiation
+  Won
+  Lost
+  OnHold
+  Recycle
+}
+
+enum PropertyType {
+  Residential
+  Commercial
+  Plot
+  Villa
+  Apartment
+  Office
+}
+
+enum Purpose {
+  EndUse
+  Investment
+}
+
+enum CommissionType {
+  Fixed
+  Percentage
+}
+
+enum OpportunityStatus {
+  Active
+  Inactive
+  Sold
+}
+
+enum TaskPriority {
+  Low
+  Medium
+  High
+  Critical
+}
+
+enum TaskStatus {
+  Todo
+  InProgress
+  Done
+  Cancelled
+}
+
+enum RecurrenceType {
+  None
+  Daily
+  Weekly
+  Monthly
+}
+
+enum LostReason {
+  Budget
+  Location
+  Configuration
+  Timing
+  NotSerious
+  Financing
+  PurchasedElsewhere
+  Other
+}
+
+enum FollowUpType {
+  Call
+  Email
+  WhatsApp
+  Visit
+  Meeting
+}
+
+enum EntityType {
+  Lead
+  Opportunity
+  Task
+  User
+}
+
+enum NotificationType {
+  LeadAssigned
+  TaskAssigned
+  FollowUpDue
+  FollowUpOverdue
+  TaskOverdue
+  HotLeadStale
+  StageChanged
+  NoteAdded
+}
+
+// ─────────────────────────────────────────────
+// USER
+// ─────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  password_hash String
+  role          UserRole @default(Sales)
+  is_active     Boolean  @default(true)
+  avatar_url    String?
+  phone         String?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  leads_owned       Lead[]               @relation("LeadOwner")
+  leads_assigned    Lead[]               @relation("LeadAssignee")
+  leads_created     Lead[]               @relation("LeadCreator")
+  tasks_assigned    Task[]               @relation("TaskAssignee")
+  tasks_created     Task[]               @relation("TaskCreator")
+  opps_created      Opportunity[]        @relation("OppCreator")
+  activities        Activity[]
+  notes             Note[]
+  attachments       Attachment[]
+  notifications     Notification[]
+  followups_created FollowUp[]
+  stage_changes     LeadStageHistory[]
+  lead_opp_tags     LeadOpportunity[]
+  expenses_added    OpportunityExpense[]
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────
+// LEAD
+// ─────────────────────────────────────────────
+
+model Lead {
+  id          String @id @default(cuid())
+  lead_number String @unique
+
+  // MVP Mandatory
+  full_name   String
+  phone       String
+  email       String?
+  whatsapp    String?
+  lead_source String
+  temperature LeadTemperature @default(Cold)
+  status      LeadStatus      @default(New)
+
+  // Standard
+  campaign_source     String?
+  referral_source     String?
+  budget_min          Decimal?      @db.Decimal(12, 2)
+  budget_max          Decimal?      @db.Decimal(12, 2)
+  property_type       PropertyType?
+  unit_type           String?
+  location_preference String?
+  timeline_to_buy     String?
+  purpose             Purpose?
+  first_contact_date  DateTime?
+  last_contact_date   DateTime?
+  next_followup_date  DateTime?
+  followup_type       FollowUpType?
+  outcome             String?
+  reason_for_interest String?
+  visit_status        String?
+  negotiation_status  String?
+  closing_probability Int?
+  deal_value          Decimal?      @db.Decimal(12, 2)
+  commission_estimate Decimal?      @db.Decimal(12, 2)
+
+  // Financial
+  potential_lead_value  Decimal?      @db.Decimal(12, 2)
+
+  // Advanced
+  reason_not_interested String?
+  alternate_requirement String?
+  lost_reason           LostReason?
+  lost_notes            String?
+
+  // Soft delete
+  deleted_at DateTime?
+  deleted_by String?
+
+  // FKs
+  lead_owner_id  String
+  assigned_to_id String
+  created_by_id  String
+
+  lead_owner  User @relation("LeadOwner",   fields: [lead_owner_id],  references: [id])
+  assigned_to User @relation("LeadAssignee", fields: [assigned_to_id], references: [id])
+  created_by  User @relation("LeadCreator",  fields: [created_by_id],  references: [id])
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  opportunities LeadOpportunity[]
+  tasks         Task[]
+  stage_history LeadStageHistory[]
+  followups     FollowUp[]
+
+  @@index([phone])
+  @@index([email])
+  @@index([status])
+  @@index([temperature])
+  @@index([assigned_to_id])
+  @@index([next_followup_date])
+  @@index([deleted_at])
+  @@map("leads")
+}
+
+// ─────────────────────────────────────────────
+// OPPORTUNITY
+// ─────────────────────────────────────────────
+
+model Opportunity {
+  id               String            @id @default(cuid())
+  opp_number       String            @unique
+  name             String
+  project          String
+  sector           String?
+  developer        String?
+  property_type    PropertyType
+  unit_types       String[]
+  location         String
+  price_min        Decimal?          @db.Decimal(12, 2)
+  price_max        Decimal?          @db.Decimal(12, 2)
+  commission_type  CommissionType    @default(Percentage)
+  commission_value Decimal           @db.Decimal(8, 4)
+  status           OpportunityStatus @default(Active)
+  notes            String?
+
+  // Financial model
+  unit_value         Decimal?  @db.Decimal(12, 2)
+  number_of_units    Int?
+  total_sales_value  Decimal?  @db.Decimal(12, 2)
+  commission_percent Decimal?  @db.Decimal(8, 4)
+  possible_revenue   Decimal?  @db.Decimal(12, 2)
+  opportunity_source String?
+  closed_revenue     Decimal?  @db.Decimal(12, 2)
+
+  deleted_at       DateTime?
+  created_by_id    String
+  created_by       User              @relation("OppCreator", fields: [created_by_id], references: [id])
+  created_at       DateTime          @default(now())
+  updated_at       DateTime          @updatedAt
+
+  leads    LeadOpportunity[]
+  tasks    Task[]
+  expenses OpportunityExpense[]
+
+  @@index([status])
+  @@index([property_type])
+  @@map("opportunities")
+}
+
+// ─────────────────────────────────────────────
+// OPPORTUNITY EXPENSE
+// ─────────────────────────────────────────────
+
+model OpportunityExpense {
+  id             String      @id @default(cuid())
+  opportunity_id String
+  expense_date   DateTime    @default(now())
+  category       String
+  description    String?
+  amount         Decimal     @db.Decimal(12, 2)
+  added_by_id    String
+  created_at     DateTime    @default(now())
+
+  opportunity Opportunity @relation(fields: [opportunity_id], references: [id])
+  added_by    User        @relation(fields: [added_by_id], references: [id])
+
+  @@index([opportunity_id])
+  @@map("opportunity_expenses")
+}
+
+// ─────────────────────────────────────────────
+// JUNCTION: Lead <-> Opportunity
+// ─────────────────────────────────────────────
+
+model LeadOpportunity {
+  id                String   @id @default(cuid())
+  lead_id           String
+  opportunity_id    String
+  tagged_at         DateTime @default(now())
+  tagged_by_id      String
+  smart_match_score Int?
+  notes             String?
+
+  lead        Lead        @relation(fields: [lead_id],        references: [id])
+  opportunity Opportunity @relation(fields: [opportunity_id], references: [id])
+  tagged_by   User        @relation(fields: [tagged_by_id],   references: [id])
+
+  @@unique([lead_id, opportunity_id])
+  @@map("lead_opportunities")
+}
+
+// ─────────────────────────────────────────────
+// TASK
+// ─────────────────────────────────────────────
+
+model Task {
+  id              String         @id @default(cuid())
+  task_number     String         @unique
+  title           String
+  description     String?
+  priority        TaskPriority   @default(Medium)
+  status          TaskStatus     @default(Todo)
+  due_date        DateTime
+  start_date      DateTime?
+  completion_date DateTime?
+  sector          String?
+  revenue_tagged  Boolean        @default(false)
+  revenue_amount  Decimal?       @db.Decimal(12, 2)
+  notes           String?
+  checklist       Json?
+  recurrence      RecurrenceType @default(None)
+  deleted_at      DateTime?
+
+  assigned_to_id String
+  created_by_id  String
+  lead_id        String?
+  opportunity_id String?
+
+  assigned_to User         @relation("TaskAssignee", fields: [assigned_to_id], references: [id])
+  created_by  User         @relation("TaskCreator",  fields: [created_by_id],  references: [id])
+  lead        Lead?        @relation(fields: [lead_id],        references: [id])
+  opportunity Opportunity? @relation(fields: [opportunity_id], references: [id])
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([assigned_to_id])
+  @@index([status])
+  @@index([due_date])
+  @@index([lead_id])
+  @@index([opportunity_id])
+  @@index([deleted_at])
+  @@map("tasks")
+}
+
+// ─────────────────────────────────────────────
+// LEAD STAGE HISTORY
+// ─────────────────────────────────────────────
+
+model LeadStageHistory {
+  id            String      @id @default(cuid())
+  lead_id       String
+  from_stage    LeadStatus?
+  to_stage      LeadStatus
+  changed_by_id String
+  changed_at    DateTime    @default(now())
+  notes         String?
+
+  lead       Lead @relation(fields: [lead_id],       references: [id])
+  changed_by User @relation(fields: [changed_by_id], references: [id])
+
+  @@index([lead_id])
+  @@map("lead_stage_history")
+}
+
+// ─────────────────────────────────────────────
+// ACTIVITY (Unified Timeline — no polymorphic FKs)
+// ─────────────────────────────────────────────
+
+model Activity {
+  id          String     @id @default(cuid())
+  entity_type EntityType
+  entity_id   String
+  action      String
+  actor_id    String
+  metadata    Json?
+  created_at  DateTime   @default(now())
+
+  actor User @relation(fields: [actor_id], references: [id])
+
+  @@index([entity_type, entity_id])
+  @@index([created_at])
+  @@map("activities")
+}
+
+// ─────────────────────────────────────────────
+// NOTE (no polymorphic FKs)
+// ─────────────────────────────────────────────
+
+model Note {
+  id            String     @id @default(cuid())
+  entity_type   EntityType
+  entity_id     String
+  content       String     @db.Text
+  created_by_id String
+  created_at    DateTime   @default(now())
+  updated_at    DateTime   @updatedAt
+
+  created_by User @relation(fields: [created_by_id], references: [id])
+
+  @@index([entity_type, entity_id])
+  @@map("notes")
+}
+
+// ─────────────────────────────────────────────
+// ATTACHMENT (no polymorphic FKs)
+// ─────────────────────────────────────────────
+
+model Attachment {
+  id             String     @id @default(cuid())
+  entity_type    EntityType
+  entity_id      String
+  file_url       String
+  file_name      String
+  file_size      Int
+  file_type      String?
+  uploaded_by_id String
+  created_at     DateTime   @default(now())
+
+  uploaded_by User @relation(fields: [uploaded_by_id], references: [id])
+
+  @@index([entity_type, entity_id])
+  @@map("attachments")
+}
+
+// ─────────────────────────────────────────────
+// NOTIFICATION
+// ─────────────────────────────────────────────
+
+model Notification {
+  id          String           @id @default(cuid())
+  user_id     String
+  type        NotificationType
+  message     String
+  entity_type EntityType?
+  entity_id   String?
+  read        Boolean          @default(false)
+  created_at  DateTime         @default(now())
+
+  user User @relation(fields: [user_id], references: [id])
+
+  @@index([user_id, read])
+  @@index([created_at])
+  @@map("notifications")
+}
+
+// ─────────────────────────────────────────────
+// FOLLOW UP
+// ─────────────────────────────────────────────
+
+model FollowUp {
+  id            String       @id @default(cuid())
+  lead_id       String
+  type          FollowUpType
+  scheduled_at  DateTime
+  completed_at  DateTime?
+  notes         String?
+  outcome       String?
+  created_by_id String
+  created_at    DateTime     @default(now())
+
+  lead       Lead @relation(fields: [lead_id],       references: [id])
+  created_by User @relation(fields: [created_by_id], references: [id])
+
+  @@index([lead_id])
+  @@index([scheduled_at])
+  @@map("follow_ups")
+}
+
+// ─────────────────────────────────────────────
+// SEQUENCE COUNTERS (for auto IDs)
+// ─────────────────────────────────────────────
+
+model SequenceCounter {
+  entity   String @id
+  last_val Int    @default(0)
+
+  @@map("sequence_counters")
+}
