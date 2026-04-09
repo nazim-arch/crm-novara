@@ -355,6 +355,7 @@ model Task {
   created_by  User         @relation("TaskCreator",  fields: [created_by_id],  references: [id])
   lead        Lead?        @relation(fields: [lead_id],        references: [id])
   opportunity Opportunity? @relation(fields: [opportunity_id], references: [id])
+  followups   FollowUp[]
 
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
@@ -475,7 +476,8 @@ model Notification {
 
 model FollowUp {
   id            String       @id @default(cuid())
-  lead_id       String
+  lead_id       String?
+  task_id       String?
   type          FollowUpType
   scheduled_at  DateTime
   completed_at  DateTime?
@@ -484,10 +486,12 @@ model FollowUp {
   created_by_id String
   created_at    DateTime     @default(now())
 
-  lead       Lead @relation(fields: [lead_id],       references: [id])
-  created_by User @relation(fields: [created_by_id], references: [id])
+  lead       Lead? @relation(fields: [lead_id],       references: [id])
+  task       Task? @relation(fields: [task_id],       references: [id])
+  created_by User  @relation(fields: [created_by_id], references: [id])
 
   @@index([lead_id])
+  @@index([task_id])
   @@index([scheduled_at])
   @@map("follow_ups")
 }

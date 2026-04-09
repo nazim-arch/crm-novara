@@ -25,6 +25,7 @@ import {
 
 type User = { id: string; name: string };
 type Lead = { id: string; lead_number: string; full_name: string };
+type TaskItem = { id: string; task_number: string; title: string };
 
 const LEAD_SOURCES = ["Website", "Facebook", "Instagram", "Google Ads", "Referral", "Walk-in", "Cold Call", "Exhibition", "WhatsApp", "Other"];
 const FOLLOW_UP_TYPES = ["Call", "Email", "WhatsApp", "Visit", "Meeting"];
@@ -37,6 +38,7 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [dataLoaded, setDataLoaded] = useState(false);
 
   // Lead form
@@ -60,7 +62,9 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
   const [taskSector, setTaskSector] = useState("");
 
   // Follow-up form
+  const [fuLinkType, setFuLinkType] = useState<"lead" | "task">("lead");
   const [fuLeadId, setFuLeadId] = useState("none");
+  const [fuTaskId, setFuTaskId] = useState("none");
   const [fuType, setFuType] = useState("Call");
   const [fuDate, setFuDate] = useState("");
   const [fuNotes, setFuNotes] = useState("");
@@ -68,9 +72,10 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
   const loadData = useCallback(async () => {
     if (dataLoaded) return;
     try {
-      const [usersRes, leadsRes] = await Promise.all([
+      const [usersRes, leadsRes, tasksRes] = await Promise.all([
         fetch("/api/users/assignable"),
         fetch("/api/leads?page=1&limit=200"),
+        fetch("/api/tasks?page=1&limit=200&status=Todo,InProgress"),
       ]);
       if (usersRes.ok) {
         const d = await usersRes.json();
@@ -83,6 +88,16 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
             id: l.id,
             lead_number: l.lead_number,
             full_name: l.full_name,
+          }))
+        );
+      }
+      if (tasksRes.ok) {
+        const d = await tasksRes.json();
+        setTasks(
+          (d.data ?? []).map((t: { id: string; task_number: string; title: string }) => ({
+            id: t.id,
+            task_number: t.task_number,
+            title: t.title,
           }))
         );
       }
@@ -100,7 +115,7 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
     setLeadName(""); setLeadPhone(""); setLeadSource(""); setLeadTemperature("Cold");
     setOppName(""); setOppProject(""); setOppPropertyType(""); setOppLocation(""); setOppCommission("");
     setTaskTitle(""); setTaskAssignedTo(currentUserId); setTaskDueDate(""); setTaskLeadId("none"); setTaskSector("");
-    setFuLeadId("none"); setFuType("Call"); setFuDate(""); setFuNotes("");
+    setFuLinkType("lead"); setFuLeadId("none"); setFuTaskId("none"); setFuType("Call"); setFuDate(""); setFuNotes("");
   }
 
   async function submitLead() {
@@ -196,21 +211,24 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
   }
 
   async function submitFollowUp() {
-    if (fuLeadId === "none" || !fuDate) {
-      toast.error("Please select a lead and date");
+    if (!fuDate) {
+      toast.error("Date & time is required");
       return;
     }
     setLoading(true);
     try {
+      const body: Record<string, unknown> = {
+        type: fuType,
+        scheduled_at: fuDate,
+        notes: fuNotes || undefined,
+      };
+      if (fuLinkType === "lead" && fuLeadId !== "none") body.lead_id = fuLeadId;
+      if (fuLinkType === "task" && fuTaskId !== "none") body.task_id = fuTaskId;
+
       const res = await fetch("/api/follow-ups", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lead_id: fuLeadId,
-          type: fuType,
-          scheduled_at: fuDate,
-          notes: fuNotes || undefined,
-        }),
+        body: JSON.stringify(body),
       });
       const result = await res.json();
       if (!res.ok) { toast.error(result.error ?? "Failed to schedule follow-up"); return; }
@@ -233,6 +251,11 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
     : leads.find((l) => l.id === fuLeadId)
       ? `${leads.find((l) => l.id === fuLeadId)!.lead_number} – ${leads.find((l) => l.id === fuLeadId)!.full_name}`
       : "Select lead";
+  const fuTaskLabel = fuTaskId === "none"
+    ? "Select task"
+    : tasks.find((t) => t.id === fuTaskId)
+      ? `${tasks.find((t) => t.id === fuTaskId)!.task_number} – ${tasks.find((t) => t.id === fuTaskId)!.title}`
+      : "Select task";
 
   return (
     <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) resetForms(); }}>
@@ -420,22 +443,60 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
 
           {/* ── FOLLOW-UP ── */}
           <TabsContent value="followup" className="space-y-3 mt-4">
-            <div className="space-y-1.5">
-              <Label>Lead * (existing)</Label>
-              <Select value={fuLeadId} onValueChange={(v) => v && setFuLeadId(v)}>
-                <SelectTrigger>
-                  <SelectValue>{fuLeadLabel}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Select a lead</SelectItem>
-                  {leads.map((l) => (
-                    <SelectItem key={l.id} value={l.id}>
-                      {l.lead_number} – {l.full_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {/* Lead vs Task toggle */}
+            <div className="flex rounded-md border overflow-hidden text-sm">
+              <button
+                type="button"
+                onClick={() => setFuLinkType("lead")}
+                className={`flex-1 py-1.5 text-center transition-colors ${fuLinkType === "lead" ? "bg-primary text-primary-foreground" : "bg-transparent hover:bg-muted"}`}
+              >
+                Link to Lead
+              </button>
+              <button
+                type="button"
+                onClick={() => setFuLinkType("task")}
+                className={`flex-1 py-1.5 text-center transition-colors ${fuLinkType === "task" ? "bg-primary text-primary-foreground" : "bg-transparent hover:bg-muted"}`}
+              >
+                Link to Task
+              </button>
             </div>
+
+            {fuLinkType === "lead" ? (
+              <div className="space-y-1.5">
+                <Label>Lead *</Label>
+                <Select value={fuLeadId} onValueChange={(v) => v && setFuLeadId(v)}>
+                  <SelectTrigger>
+                    <SelectValue>{fuLeadLabel}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Select a lead</SelectItem>
+                    {leads.map((l) => (
+                      <SelectItem key={l.id} value={l.id}>
+                        {l.lead_number} – {l.full_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label>Task *</Label>
+                <Select value={fuTaskId} onValueChange={(v) => v && setFuTaskId(v)}>
+                  <SelectTrigger>
+                    <SelectValue>{fuTaskLabel}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Select a task</SelectItem>
+                    {tasks.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.task_number} – {t.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Type</Label>
