@@ -28,7 +28,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Checkbox } from "@/components/ui/checkbox";
 
 type User = { id: string; name: string; role: string };
 type Opportunity = { id: string; opp_number: string; name: string; project: string; property_type: string; location: string };
