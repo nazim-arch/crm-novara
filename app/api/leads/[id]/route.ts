@@ -75,7 +75,7 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
       );
     }
 
-    const { notes, ...updateData } = parsed.data;
+    const { notes, financing_required, ...updateData } = parsed.data;
 
     // Clean up empty strings to null
     const cleanData = Object.fromEntries(
@@ -85,6 +85,11 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
     // Map notes → alternate_requirement
     if (notes !== undefined) {
       cleanData.alternate_requirement = notes === "" ? null : notes;
+    }
+
+    // financing_required is boolean — pass through directly
+    if (financing_required !== undefined) {
+      cleanData.financing_required = financing_required;
     }
 
     const lead = await prisma.lead.update({

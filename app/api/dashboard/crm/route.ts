@@ -44,7 +44,7 @@ export async function GET() {
       _count: { id: true },
     }),
     prisma.lead.aggregate({
-      where: { deleted_at: null },
+      where: { deleted_at: null, status: { not: "Lost" } },
       _sum: { potential_lead_value: true, deal_value: true, commission_estimate: true },
     }),
     prisma.activity.findMany({

@@ -502,6 +502,25 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
                       <p className="text-xs text-destructive">{errors.potential_lead_value.message}</p>
                     )}
                   </div>
+                  <div className="space-y-1.5">
+                    <Label>Financing Required</Label>
+                    <Select
+                      defaultValue={
+                        defaultValues?.financing_required === true ? "yes"
+                        : defaultValues?.financing_required === false ? "no"
+                        : undefined
+                      }
+                      onValueChange={(v) => v && setValue("financing_required", v === "yes")}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="yes">Yes</SelectItem>
+                        <SelectItem value="no">No</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -534,6 +553,7 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
                         <SelectItem value="WhatsApp">WhatsApp</SelectItem>
                         <SelectItem value="Visit">Visit</SelectItem>
                         <SelectItem value="Meeting">Meeting</SelectItem>
+                        <SelectItem value="Activity">Activity</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

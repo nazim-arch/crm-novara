@@ -100,6 +100,7 @@ export async function POST(request: Request) {
       reason_for_interest,
       next_followup_date,
       notes: _notes,
+      financing_required,
       ...rest
     } = parsed.data;
 
@@ -118,6 +119,7 @@ export async function POST(request: Request) {
         timeline_to_buy: timeline_to_buy || null,
         reason_for_interest: reason_for_interest || null,
         next_followup_date: next_followup_date ?? null,
+        financing_required: financing_required ?? null,
         created_by_id: session.user.id,
       },
     });
@@ -153,6 +155,24 @@ export async function POST(request: Request) {
           entity_type: "Lead",
           entity_id: lead.id,
         },
+      });
+    }
+
+    // Notify all Admin users of new lead
+    const admins = await prisma.user.findMany({
+      where: { role: "Admin", is_active: true, id: { not: session.user.id } },
+      select: { id: true },
+    });
+    if (admins.length > 0) {
+      await prisma.notification.createMany({
+        data: admins.map((admin) => ({
+          user_id: admin.id,
+          type: "LeadAssigned" as const,
+          message: `New lead created: ${lead.full_name} (${lead.lead_number}) by ${session.user.name ?? session.user.email}`,
+          entity_type: "Lead" as const,
+          entity_id: lead.id,
+        })),
+        skipDuplicates: true,
       });
     }
 

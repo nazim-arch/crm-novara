@@ -6,7 +6,7 @@ import { z } from "zod";
 const createFollowUpSchema = z.object({
   lead_id: z.string().min(1).optional(),
   task_id: z.string().min(1).optional(),
-  type: z.enum(["Call", "Email", "WhatsApp", "Visit", "Meeting"]),
+  type: z.enum(["Call", "Email", "WhatsApp", "Visit", "Meeting", "Activity"]),
   scheduled_at: z.string().min(1),
   notes: z.string().optional(),
 });

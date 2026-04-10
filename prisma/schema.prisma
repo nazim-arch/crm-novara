@@ -28,10 +28,7 @@ enum LeadTemperature {
 
 enum LeadStatus {
   New
-  Contacted
   Qualified
-  Requirement
-  OpportunityTagged
   Visit
   FollowUp
   Negotiation
@@ -104,6 +101,7 @@ enum FollowUpType {
   WhatsApp
   Visit
   Meeting
+  Activity
 }
 
 enum EntityType {
@@ -198,7 +196,11 @@ model Lead {
   commission_estimate Decimal?      @db.Decimal(12, 2)
 
   // Financial
-  potential_lead_value  Decimal?      @db.Decimal(12, 2)
+  potential_lead_value    Decimal? @db.Decimal(12, 2)
+  financing_required      Boolean?
+  // Won deal fields
+  settlement_value        Decimal? @db.Decimal(12, 2)
+  deal_commission_percent Decimal? @db.Decimal(8, 4)
 
   // Advanced
   reason_not_interested String?

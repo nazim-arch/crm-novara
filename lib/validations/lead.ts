@@ -24,11 +24,12 @@ const leadBaseSchema = z.object({
   }),
   next_followup_date: z.coerce.date().optional(),
   followup_type: z
-    .enum(["Call", "Email", "WhatsApp", "Visit", "Meeting"])
+    .enum(["Call", "Email", "WhatsApp", "Visit", "Meeting", "Activity"])
     .optional(),
   reason_for_interest: z.string().optional().or(z.literal("")),
   notes: z.string().optional().or(z.literal("")),
   potential_lead_value: z.coerce.number().positive("Potential lead value must be a positive number"),
+  financing_required: z.boolean().optional(),
 });
 
 export const createLeadSchema = leadBaseSchema.refine(
@@ -45,10 +46,7 @@ export const changeStageSchema = z
   .object({
     to_stage: z.enum([
       "New",
-      "Contacted",
       "Qualified",
-      "Requirement",
-      "OpportunityTagged",
       "Visit",
       "FollowUp",
       "Negotiation",
@@ -71,13 +69,16 @@ export const changeStageSchema = z
       ])
       .optional(),
     lost_notes: z.string().optional().or(z.literal("")),
+    settlement_value: z.coerce.number().positive("Settlement value must be a positive number").optional(),
+    deal_commission_percent: z.coerce.number().min(0).max(100).optional(),
   })
   .refine(
     (data) => data.to_stage !== "Lost" || !!data.lost_reason,
-    {
-      message: "Lost reason is required when marking as Lost",
-      path: ["lost_reason"],
-    }
+    { message: "Lost reason is required when marking as Lost", path: ["lost_reason"] }
+  )
+  .refine(
+    (data) => data.to_stage !== "Won" || (!!data.settlement_value && data.deal_commission_percent !== undefined),
+    { message: "Settlement value and commission % are required when marking as Won", path: ["settlement_value"] }
   );
 
 export type CreateLeadInput = z.infer<typeof createLeadSchema>;

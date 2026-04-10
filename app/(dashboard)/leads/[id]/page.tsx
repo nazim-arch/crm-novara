@@ -161,8 +161,23 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
                 {lead.deal_value && (
                   <InfoItem label="Deal Value" value={formatCurrency(Number(lead.deal_value))} />
                 )}
-                {lead.commission_estimate && (
-                  <InfoItem label="Commission Est." value={formatCurrency(Number(lead.commission_estimate))} />
+                {lead.potential_lead_value && (
+                  <InfoItem label="Pipeline Value" value={formatCurrency(Number(lead.potential_lead_value))} />
+                )}
+                {lead.financing_required !== null && lead.financing_required !== undefined && (
+                  <InfoItem label="Financing Required" value={lead.financing_required ? "Yes" : "No"} />
+                )}
+                {lead.settlement_value && (
+                  <InfoItem label="Settlement Value" value={formatCurrency(Number(lead.settlement_value))} />
+                )}
+                {lead.deal_commission_percent && (
+                  <InfoItem label="Commission %" value={`${Number(lead.deal_commission_percent)}%`} />
+                )}
+                {lead.settlement_value && lead.deal_commission_percent && (
+                  <InfoItem
+                    label="Commission Earned"
+                    value={formatCurrency((Number(lead.settlement_value) * Number(lead.deal_commission_percent)) / 100)}
+                  />
                 )}
                 {lead.closing_probability !== null && (
                   <InfoItem label="Closing %" value={`${lead.closing_probability}%`} />
