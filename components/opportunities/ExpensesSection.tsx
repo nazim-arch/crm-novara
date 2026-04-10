@@ -143,12 +143,12 @@ export function ExpensesSection({
             Expenses ({expenses.length})
           </CardTitle>
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
+            <DialogTrigger render={
               <Button size="sm" variant="outline">
                 <Plus className="h-3.5 w-3.5 mr-1" />
                 Add Expense
               </Button>
-            </DialogTrigger>
+            } />
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle>Add Expense</DialogTitle>
