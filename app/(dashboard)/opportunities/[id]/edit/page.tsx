@@ -14,11 +14,14 @@ export default async function EditOpportunityPage({ params }: { params: Params }
 
   const { id } = await params;
 
-  const opp = await prisma.opportunity.findUnique({ where: { id, deleted_at: null } });
+  const opp = await prisma.opportunity.findUnique({
+    where: { id, deleted_at: null },
+    include: { configurations: { orderBy: { created_at: "asc" } } },
+  });
   if (!opp) notFound();
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <div className="p-6 max-w-3xl mx-auto">
       <div className="mb-6">
         <h1 className="text-xl font-semibold">Edit Opportunity</h1>
         <p className="text-sm text-muted-foreground font-mono">{opp.opp_number}</p>
@@ -29,17 +32,18 @@ export default async function EditOpportunityPage({ params }: { params: Params }
           name: opp.name,
           project: opp.project,
           developer: opp.developer ?? undefined,
-          sector: opp.sector ?? undefined,
           location: opp.location,
           property_type: opp.property_type,
-          unit_types: opp.unit_types,
-          price_min: opp.price_min ? Number(opp.price_min) : undefined,
-          price_max: opp.price_max ? Number(opp.price_max) : undefined,
-          commission_type: opp.commission_type,
-          commission_value: Number(opp.commission_value),
+          commission_percent: Number(opp.commission_percent),
           status: opp.status,
           notes: opp.notes ?? undefined,
         }}
+        existingConfigurations={opp.configurations.map((c) => ({
+          id: c.id,
+          label: c.label,
+          number_of_units: c.number_of_units,
+          price_per_unit: Number(c.price_per_unit),
+        }))}
       />
     </div>
   );

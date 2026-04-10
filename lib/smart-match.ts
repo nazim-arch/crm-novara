@@ -33,19 +33,14 @@ export async function findMatchingOpportunities(
       reasons.push("Property type matches");
     }
 
-    // Budget overlap (30 pts)
-    if (
-      lead.budget_min &&
-      lead.budget_max &&
-      opp.price_min &&
-      opp.price_max
-    ) {
-      const overlap =
-        Math.min(Number(lead.budget_max), Number(opp.price_max)) -
-        Math.max(Number(lead.budget_min), Number(opp.price_min));
-      if (overlap > 0) {
+    // Budget vs total sales value (30 pts)
+    if (lead.budget_max && opp.total_sales_value) {
+      const salesValue = Number(opp.total_sales_value);
+      const budgetMax = Number(lead.budget_max);
+      const budgetMin = Number(lead.budget_min ?? 0);
+      if (salesValue >= budgetMin && salesValue <= budgetMax * 1.2) {
         score += 30;
-        reasons.push("Budget overlaps with price range");
+        reasons.push("Budget aligns with opportunity value");
       }
     }
 

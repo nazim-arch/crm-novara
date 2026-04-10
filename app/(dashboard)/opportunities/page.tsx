@@ -2,7 +2,6 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { formatCurrency } from "@/lib/utils";
 import {
   Table,
   TableBody,
@@ -15,6 +14,12 @@ import { Plus, Building2 } from "lucide-react";
 import { hasPermission } from "@/lib/rbac";
 
 type SearchParams = Promise<{ status?: string; search?: string; page?: string }>;
+
+function formatCurrency(n: number) {
+  if (n >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(2)} Cr`;
+  if (n >= 1_00_000) return `₹${(n / 1_00_000).toFixed(2)} L`;
+  return `₹${n.toLocaleString("en-IN")}`;
+}
 
 export default async function OpportunitiesPage({ searchParams }: { searchParams: SearchParams }) {
   const session = await auth();
@@ -74,8 +79,8 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
               <TableHead>Name / Project</TableHead>
               <TableHead>Location</TableHead>
               <TableHead>Type</TableHead>
-              <TableHead>Price Range</TableHead>
               <TableHead>Commission</TableHead>
+              <TableHead>Possible Revenue</TableHead>
               <TableHead>Leads</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
@@ -102,15 +107,9 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
                   </TableCell>
                   <TableCell className="text-sm">{opp.location}</TableCell>
                   <TableCell className="text-sm">{opp.property_type}</TableCell>
+                  <TableCell className="text-sm">{Number(opp.commission_percent)}%</TableCell>
                   <TableCell className="text-sm">
-                    {opp.price_min || opp.price_max
-                      ? `${opp.price_min ? formatCurrency(Number(opp.price_min)) : "?"} – ${opp.price_max ? formatCurrency(Number(opp.price_max)) : "?"}`
-                      : "—"}
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {opp.commission_type === "Percentage"
-                      ? `${opp.commission_value}%`
-                      : formatCurrency(Number(opp.commission_value))}
+                    {opp.possible_revenue ? formatCurrency(Number(opp.possible_revenue)) : "—"}
                   </TableCell>
                   <TableCell className="text-sm">{opp._count.leads}</TableCell>
                   <TableCell>

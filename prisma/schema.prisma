@@ -52,11 +52,6 @@ enum Purpose {
   Investment
 }
 
-enum CommissionType {
-  Fixed
-  Percentage
-}
-
 enum OpportunityStatus {
   Active
   Inactive
@@ -244,44 +239,56 @@ model Lead {
 // ─────────────────────────────────────────────
 
 model Opportunity {
-  id               String            @id @default(cuid())
-  opp_number       String            @unique
-  name             String
-  project          String
-  sector           String?
-  developer        String?
-  property_type    PropertyType
-  unit_types       String[]
-  location         String
-  price_min        Decimal?          @db.Decimal(12, 2)
-  price_max        Decimal?          @db.Decimal(12, 2)
-  commission_type  CommissionType    @default(Percentage)
-  commission_value Decimal           @db.Decimal(8, 4)
-  status           OpportunityStatus @default(Active)
-  notes            String?
+  id                String            @id @default(cuid())
+  opp_number        String            @unique
+  name              String
+  project           String
+  developer         String?
+  property_type     PropertyType
+  location          String
+  commission_percent Decimal          @db.Decimal(8, 4)
+  status            OpportunityStatus @default(Active)
+  notes             String?
 
-  // Financial model
-  unit_value         Decimal?  @db.Decimal(12, 2)
-  number_of_units    Int?
-  total_sales_value  Decimal?  @db.Decimal(12, 2)
-  commission_percent Decimal?  @db.Decimal(8, 4)
-  possible_revenue   Decimal?  @db.Decimal(12, 2)
-  opportunity_source String?
-  closed_revenue     Decimal?  @db.Decimal(12, 2)
+  // Financial (auto-calculated from configurations)
+  total_sales_value Decimal? @db.Decimal(14, 2)
+  possible_revenue  Decimal? @db.Decimal(14, 2)
+  closed_revenue    Decimal? @db.Decimal(14, 2)
 
-  deleted_at       DateTime?
-  created_by_id    String
-  created_by       User              @relation("OppCreator", fields: [created_by_id], references: [id])
-  created_at       DateTime          @default(now())
-  updated_at       DateTime          @updatedAt
+  deleted_at    DateTime?
+  created_by_id String
+  created_by    User              @relation("OppCreator", fields: [created_by_id], references: [id])
+  created_at    DateTime          @default(now())
+  updated_at    DateTime          @updatedAt
 
-  leads    LeadOpportunity[]
-  tasks    Task[]
-  expenses OpportunityExpense[]
+  configurations OpportunityConfiguration[]
+  leads          LeadOpportunity[]
+  tasks          Task[]
+  expenses       OpportunityExpense[]
 
   @@index([status])
   @@index([property_type])
   @@map("opportunities")
+}
+
+// ─────────────────────────────────────────────
+// OPPORTUNITY CONFIGURATION (inventory rows)
+// ─────────────────────────────────────────────
+
+model OpportunityConfiguration {
+  id              String   @id @default(cuid())
+  opportunity_id  String
+  label           String
+  number_of_units Int
+  price_per_unit  Decimal  @db.Decimal(12, 2)
+  row_total       Decimal  @db.Decimal(14, 2)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  opportunity Opportunity @relation(fields: [opportunity_id], references: [id])
+
+  @@index([opportunity_id])
+  @@map("opportunity_configurations")
 }
 
 // ─────────────────────────────────────────────

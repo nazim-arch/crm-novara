@@ -219,8 +219,8 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
           project: oppProject,
           property_type: oppPropertyType,
           location: oppLocation,
-          commission_type: "Percentage",
-          commission_value: parseFloat(oppCommission),
+          commission_percent: parseFloat(oppCommission),
+          configurations: [{ label: "TBD", number_of_units: 1, price_per_unit: 1 }],
         }),
       });
       const result = await res.json();

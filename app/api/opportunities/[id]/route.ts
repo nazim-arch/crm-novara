@@ -19,6 +19,7 @@ export async function GET(_request: Request, { params }: { params: Params }) {
       where: { id, deleted_at: null },
       include: {
         created_by: { select: { id: true, name: true } },
+        configurations: { orderBy: { created_at: "asc" } },
         leads: {
           include: {
             lead: {
@@ -29,6 +30,8 @@ export async function GET(_request: Request, { params }: { params: Params }) {
                 phone: true,
                 status: true,
                 temperature: true,
+                settlement_value: true,
+                deal_commission_percent: true,
               },
             },
           },
@@ -72,9 +75,41 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
       );
     }
 
+    const { configurations, notes, developer, ...rest } = parsed.data;
+
+    const activeConfigs = configurations.filter((c) => !c._delete);
+
+    // Recompute financial totals
+    const total_sales_value = activeConfigs.reduce(
+      (sum, row) => sum + row.number_of_units * row.price_per_unit,
+      0
+    );
+    const possible_revenue = (total_sales_value * rest.commission_percent) / 100;
+
+    // Delete all existing configurations and recreate (simplest safe approach)
+    await prisma.opportunityConfiguration.deleteMany({
+      where: { opportunity_id: id },
+    });
+
     const opp = await prisma.opportunity.update({
       where: { id, deleted_at: null },
-      data: { ...parsed.data, updated_at: new Date() },
+      data: {
+        ...rest,
+        developer: developer || null,
+        notes: notes || null,
+        total_sales_value,
+        possible_revenue,
+        updated_at: new Date(),
+        configurations: {
+          create: activeConfigs.map((row) => ({
+            label: row.label,
+            number_of_units: row.number_of_units,
+            price_per_unit: row.price_per_unit,
+            row_total: row.number_of_units * row.price_per_unit,
+          })),
+        },
+      },
+      include: { configurations: true },
     });
 
     return NextResponse.json({ data: opp });

@@ -67,18 +67,22 @@ async function main() {
       opp_number: "NOV-OPP-000001",
       name: "Skyline Heights - Phase 1",
       project: "Skyline Heights",
-      sector: "Residential",
       developer: "Novara Developers",
       property_type: "Apartment",
-      unit_types: ["1BHK", "2BHK", "3BHK"],
       location: "Wakad, Pune",
-      price_min: 6500000,
-      price_max: 12000000,
-      commission_type: "Percentage",
-      commission_value: 2.5,
+      commission_percent: 2.5,
+      total_sales_value: 92500000,
+      possible_revenue: 2312500,
       status: "Active",
       notes: "Premium project with amenities. RERA approved.",
       created_by_id: admin.id,
+      configurations: {
+        create: [
+          { label: "1BHK", number_of_units: 20, price_per_unit: 6500000, row_total: 130000000 },
+          { label: "2BHK", number_of_units: 30, price_per_unit: 8500000, row_total: 255000000 },
+          { label: "3BHK", number_of_units: 10, price_per_unit: 12000000, row_total: 120000000 },
+        ],
+      },
     },
   });
 
