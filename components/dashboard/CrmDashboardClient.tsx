@@ -498,8 +498,8 @@ export function CrmDashboardClient({
                   <XAxis dataKey="stage" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} allowDecimals={false} width={30} />
                   <Tooltip
-                    formatter={(val: number, name: string) =>
-                      name === "value" ? [fc(val), "Pipeline Value"] : [val, "Leads"]
+                    formatter={(val, name) =>
+                      name === "value" ? [fc(Number(val)), "Pipeline Value"] : [val, "Leads"]
                     }
                     contentStyle={{ fontSize: 12 }}
                   />
