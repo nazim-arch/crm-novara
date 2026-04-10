@@ -14,13 +14,13 @@ const leadBaseSchema = z.object({
   budget_min: z.coerce.number().positive().optional(),
   budget_max: z.coerce.number().positive().optional(),
   property_type: z.enum(["Residential", "Commercial", "Plot", "Villa", "Apartment", "Office"], {
-    required_error: "Property type is required",
+    message: "Property type is required",
   }),
   unit_type: z.string().optional().or(z.literal("")),
   location_preference: z.string().optional().or(z.literal("")),
   timeline_to_buy: z.string().optional().or(z.literal("")),
   purpose: z.enum(["EndUse", "Investment"], {
-    required_error: "Purpose is required",
+    message: "Purpose is required",
   }),
   next_followup_date: z.coerce.date().optional(),
   followup_type: z
