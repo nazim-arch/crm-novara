@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   BarChart, Bar, PieChart, Pie, Cell, ResponsiveContainer,
-  XAxis, YAxis, Tooltip, Legend, Sector,
+  XAxis, YAxis, Tooltip, Legend,
 } from "recharts";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -545,13 +545,6 @@ export function CrmDashboardClient({
                     outerRadius={75}
                     paddingAngle={3}
                     dataKey="value"
-                    activeIndex={activePieIndex}
-                    activeShape={(props: React.SVGProps<SVGPathElement> & { outerRadius?: number }) => (
-                      <Sector
-                        {...props}
-                        outerRadius={(props.outerRadius ?? 75) + 6}
-                      />
-                    )}
                     onMouseEnter={(_, index) => setActivePieIndex(index)}
                     onMouseLeave={() => setActivePieIndex(undefined)}
                     cursor="pointer"
@@ -560,7 +553,8 @@ export function CrmDashboardClient({
                       <Cell
                         key={i}
                         fill={entry.color}
-                        opacity={activePieIndex === undefined || activePieIndex === i ? 1 : 0.55}
+                        opacity={activePieIndex === undefined || activePieIndex === i ? 1 : 0.45}
+                        style={{ transition: "opacity 0.15s ease, r 0.15s ease" }}
                       />
                     ))}
                   </Pie>
