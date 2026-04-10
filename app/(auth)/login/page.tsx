@@ -52,9 +52,9 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-primary text-primary-foreground font-bold text-xl mb-3">
-            N
+            D
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight">Novara CRM</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">DealStack</h1>
           <p className="text-sm text-muted-foreground mt-1">Internal platform</p>
         </div>
 

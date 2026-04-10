@@ -10,8 +10,8 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "Novara CRM",
-  description: "Internal CRM and Task Management for Novara",
+  title: "DealStack",
+  description: "Internal CRM and Task Management — DealStack",
 };
 
 export default function RootLayout({

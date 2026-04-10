@@ -3,9 +3,9 @@ import { prisma } from "@/lib/prisma";
 type Entity = "LEAD" | "OPP" | "TASK";
 
 const PREFIX: Record<Entity, string> = {
-  LEAD: "NOV-LEAD",
-  OPP: "NOV-OPP",
-  TASK: "NOV-TASK",
+  LEAD: "DS-LEAD",
+  OPP: "DS-OPP",
+  TASK: "DS-TASK",
 };
 
 export async function generateId(entity: Entity): Promise<string> {

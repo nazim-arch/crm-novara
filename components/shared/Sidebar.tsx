@@ -52,9 +52,9 @@ export function Sidebar() {
       <div className="h-14 flex items-center px-4 border-b">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm">
-            N
+            D
           </div>
-          <span className="font-semibold text-sm">Novara CRM</span>
+          <span className="font-semibold text-sm">DealStack</span>
         </div>
       </div>
 
