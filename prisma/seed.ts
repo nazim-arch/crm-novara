@@ -103,7 +103,7 @@ async function main() {
       whatsapp: "9876543210",
       lead_source: "Website",
       temperature: "Hot",
-      status: "Contacted",
+      status: "Qualified",
       budget_min: 7000000,
       budget_max: 10000000,
       property_type: "Apartment",
@@ -145,7 +145,7 @@ async function main() {
     data: {
       lead_id: lead.id,
       from_stage: "New",
-      to_stage: "Contacted",
+      to_stage: "Qualified",
       changed_by_id: admin.id,
       notes: "Initial contact made via phone",
     },
@@ -158,7 +158,7 @@ async function main() {
       entity_id: lead.id,
       action: "stage_changed",
       actor_id: admin.id,
-      metadata: { from: "New", to: "Contacted", notes: "Initial contact made via phone" },
+      metadata: { from: "New", to: "Qualified", notes: "Initial contact made via phone" },
     },
   });
 
