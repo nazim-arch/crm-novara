@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LeadStatusBadge, TemperatureBadge } from "@/components/shared/LeadStatusBadge";
 import { ArrowLeft, Edit } from "lucide-react";
 import { hasPermission } from "@/lib/rbac";
+import { ExpensesSection } from "@/components/opportunities/ExpensesSection";
 
 type Params = Promise<{ id: string }>;
 
@@ -47,7 +48,14 @@ export default async function OpportunityDetailPage({ params }: { params: Params
 
   if (!opp) notFound();
 
+  const expenses = await prisma.opportunityExpense.findMany({
+    where: { opportunity_id: id },
+    include: { added_by: { select: { id: true, name: true } } },
+    orderBy: { expense_date: "desc" },
+  });
+
   const canEdit = session?.user && hasPermission(session.user.role, "opportunity:update");
+  const isAdmin = session?.user.role === "Admin";
 
   const totalSalesValue = Number(opp.total_sales_value ?? 0);
   const possibleRevenue = Number(opp.possible_revenue ?? 0);
@@ -175,6 +183,19 @@ export default async function OpportunityDetailPage({ params }: { params: Params
               )}
             </CardContent>
           </Card>
+
+          {/* Expenses */}
+          <ExpensesSection
+            opportunityId={id}
+            expenses={expenses.map((e) => ({
+              ...e,
+              amount: Number(e.amount),
+            }))}
+            possibleRevenue={possibleRevenue}
+            closedRevenue={closedRevenue}
+            currentUserId={session?.user.id ?? ""}
+            isAdmin={isAdmin}
+          />
         </div>
 
         {/* Tagged Leads */}
