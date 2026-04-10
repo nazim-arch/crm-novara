@@ -158,7 +158,7 @@ export function ExpensesSection({
                   <Label>
                     Category <span className="text-destructive">*</span>
                   </Label>
-                  <Select onValueChange={(v) => v && setValue("category", v)}>
+                  <Select onValueChange={(v) => v && setValue("category", v as string)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
