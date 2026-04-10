@@ -101,6 +101,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
               <TableHead>Status</TableHead>
               <TableHead>Temp</TableHead>
               <TableHead>Assigned To</TableHead>
+              <TableHead>Property Type</TableHead>
               <TableHead>Follow-up</TableHead>
               <TableHead className="text-right">Pipeline Value</TableHead>
             </TableRow>
@@ -108,7 +109,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
           <TableBody>
             {leads.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
                   No leads found
                 </TableCell>
               </TableRow>
@@ -136,6 +137,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
                     <TemperatureBadge temperature={lead.temperature} />
                   </TableCell>
                   <TableCell className="text-sm">{lead.assigned_to.name}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{lead.property_type ?? "—"}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {lead.next_followup_date ? (
                       <span
