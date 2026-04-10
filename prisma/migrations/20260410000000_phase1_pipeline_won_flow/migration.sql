@@ -27,6 +27,9 @@ CREATE TYPE "LeadStatus_new" AS ENUM (
   'Won', 'Lost', 'OnHold', 'Recycle'
 );
 
+-- Drop the DEFAULT first — PostgreSQL cannot auto-cast defaults when changing enum type
+ALTER TABLE "leads" ALTER COLUMN "status" DROP DEFAULT;
+
 ALTER TABLE "leads"
   ALTER COLUMN "status" TYPE "LeadStatus_new"
   USING "status"::text::"LeadStatus_new";
@@ -41,6 +44,9 @@ ALTER TABLE "lead_stage_history"
 
 DROP TYPE "LeadStatus";
 ALTER TYPE "LeadStatus_new" RENAME TO "LeadStatus";
+
+-- Re-add the default after rename
+ALTER TABLE "leads" ALTER COLUMN "status" SET DEFAULT 'New'::"LeadStatus";
 
 -- ─────────────────────────────────────────────────────────────────
 -- 4. Add Activity to FollowUpType enum
