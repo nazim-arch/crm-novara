@@ -477,7 +477,7 @@ export function LeadForm({
                     {selectedOpp && unitTypeOptions.length > 0 ? (
                       <Select
                         value={watch("unit_type") || "__none__"}
-                        onValueChange={(v) => setValue("unit_type", v === "__none__" ? "" : v)}
+                        onValueChange={(v) => setValue("unit_type", !v || v === "__none__" ? "" : v)}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select unit type…" />
