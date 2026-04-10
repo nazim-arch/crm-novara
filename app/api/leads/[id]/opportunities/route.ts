@@ -49,11 +49,11 @@ export async function POST(request: Request, { params }: { params: Params }) {
   const opp = await prisma.opportunity.findUnique({ where: { id: opportunity_id, deleted_at: null } });
   if (!opp) return NextResponse.json({ error: "Opportunity not found" }, { status: 404 });
 
-  // Upsert — safe if already tagged
-  const tagged = await prisma.leadOpportunity.upsert({
-    where: { lead_id_opportunity_id: { lead_id: id, opportunity_id } },
-    create: { lead_id: id, opportunity_id, tagged_by_id: session.user.id, notes },
-    update: { notes },
+  // Enforce single-opportunity rule: remove any existing links for this lead first
+  await prisma.leadOpportunity.deleteMany({ where: { lead_id: id } });
+
+  const tagged = await prisma.leadOpportunity.create({
+    data: { lead_id: id, opportunity_id, tagged_by_id: session.user.id, notes },
   });
 
   // Log activity

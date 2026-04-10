@@ -23,12 +23,22 @@ export default async function EditLeadPage({ params }: { params: Params }) {
     }),
     prisma.opportunity.findMany({
       where: { deleted_at: null, status: "Active" },
-      select: { id: true, opp_number: true, name: true, project: true, property_type: true, location: true },
+      select: {
+        id: true,
+        opp_number: true,
+        name: true,
+        project: true,
+        property_type: true,
+        location: true,
+        configurations: { select: { label: true }, orderBy: { created_at: "asc" } },
+      },
       orderBy: { name: "asc" },
     }),
     prisma.leadOpportunity.findMany({
       where: { lead_id: id },
       select: { opportunity_id: true },
+      orderBy: { tagged_at: "desc" },
+      take: 1,
     }),
   ]);
 
@@ -43,7 +53,7 @@ export default async function EditLeadPage({ params }: { params: Params }) {
       <LeadForm
         users={users}
         opportunities={opportunities}
-        defaultTaggedOpportunityIds={taggedOpps.map((t) => t.opportunity_id)}
+        defaultTaggedOpportunityId={taggedOpps[0]?.opportunity_id}
         currentUserId={session.user.id}
         leadId={lead.id}
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

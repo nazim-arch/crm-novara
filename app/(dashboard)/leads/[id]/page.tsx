@@ -256,25 +256,26 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
             </CardContent>
           </Card>
 
-          {/* Linked Opportunities */}
+          {/* Linked Opportunity (single) */}
           {lead.opportunities.length > 0 && (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium">
-                  Opportunities ({lead.opportunities.length})
-                </CardTitle>
+                <CardTitle className="text-sm font-medium">Linked Opportunity</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2">
-                {lead.opportunities.map(({ opportunity }) => (
-                  <Link
-                    key={opportunity.id}
-                    href={`/opportunities/${opportunity.id}`}
-                    className="block p-3 rounded-lg border hover:bg-muted/30 transition-colors"
-                  >
-                    <p className="font-medium text-sm">{opportunity.name}</p>
-                    <p className="text-xs text-muted-foreground">{opportunity.location}</p>
-                  </Link>
-                ))}
+              <CardContent>
+                {(() => {
+                  const { opportunity } = lead.opportunities[0];
+                  return (
+                    <Link
+                      href={`/opportunities/${opportunity.id}`}
+                      className="block p-3 rounded-lg border hover:bg-muted/30 transition-colors"
+                    >
+                      <p className="font-medium text-sm">{opportunity.name}</p>
+                      <p className="text-xs text-muted-foreground font-mono">{opportunity.opp_number}</p>
+                      <p className="text-xs text-muted-foreground">{opportunity.location}</p>
+                    </Link>
+                  );
+                })()}
               </CardContent>
             </Card>
           )}

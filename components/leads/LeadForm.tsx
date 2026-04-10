@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -21,21 +20,24 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DuplicateWarningModal } from "./DuplicateWarningModal";
-import { Loader2, ChevronsUpDown, Check } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 
 type User = { id: string; name: string; role: string };
-type Opportunity = { id: string; opp_number: string; name: string; project: string; property_type: string; location: string };
+type Opportunity = {
+  id: string;
+  opp_number: string;
+  name: string;
+  project: string;
+  property_type: string;
+  location: string;
+  configurations: { label: string }[];
+};
 
 interface LeadFormProps {
   users: User[];
   opportunities?: Opportunity[];
-  defaultTaggedOpportunityIds?: string[];
+  defaultTaggedOpportunityId?: string;
   currentUserId: string;
   defaultValues?: Partial<CreateLeadInput>;
   leadId?: string;
@@ -46,7 +48,18 @@ const LEAD_SOURCES = [
   "Referral", "Walk-in", "Cold Call", "Exhibition", "WhatsApp", "Other",
 ];
 
-export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityIds = [], currentUserId, defaultValues, leadId }: LeadFormProps) {
+const PROPERTY_TYPES = [
+  "Residential", "Commercial", "Plot", "Villa", "Apartment", "Office",
+] as const;
+
+export function LeadForm({
+  users,
+  opportunities = [],
+  defaultTaggedOpportunityId,
+  currentUserId,
+  defaultValues,
+  leadId,
+}: LeadFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [showDuplicates, setShowDuplicates] = useState(false);
@@ -57,9 +70,17 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
   }>({ exact_matches: [], name_similar: [] });
 
   const isEditing = !!leadId;
-  const [selectedOppIds, setSelectedOppIds] = useState<string[]>(defaultTaggedOpportunityIds);
-  const [oppPopoverOpen, setOppPopoverOpen] = useState(false);
-  const [oppError, setOppError] = useState("");
+
+  // ── Single opportunity selection ──────────────────────────────────────────
+  const [selectedOppId, setSelectedOppId] = useState<string>(defaultTaggedOpportunityId ?? "");
+
+  // Derived: selected opportunity object
+  const selectedOpp = opportunities.find((o) => o.id === selectedOppId) ?? null;
+
+  // Unit type options: labels from selected opportunity's configurations
+  const unitTypeOptions = selectedOpp?.configurations.map((c) => c.label) ?? [];
+
+  // ── User selects ──────────────────────────────────────────────────────────
   const [leadOwnerId, setLeadOwnerId] = useState(defaultValues?.lead_owner_id ?? currentUserId);
   const [assignedToId, setAssignedToId] = useState(defaultValues?.assigned_to_id ?? currentUserId);
 
@@ -85,6 +106,21 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
   const fullName = watch("full_name");
   const nextFollowupDate = watch("next_followup_date");
 
+  // ── When opportunity changes, auto-fill property_type and clear unit_type ─
+  useEffect(() => {
+    if (selectedOpp) {
+      setValue(
+        "property_type",
+        selectedOpp.property_type as CreateLeadInput["property_type"]
+      );
+      // Clear unit_type so user picks from new options
+      setValue("unit_type", "");
+    }
+  // Only re-run when selectedOppId changes, not on every selectedOpp reference change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedOppId]);
+
+  // ── Duplicate detection ───────────────────────────────────────────────────
   const checkDuplicates = useDebouncedCallback(
     async (p: string, e: string, n: string) => {
       if (!p && !e && !n) return;
@@ -114,14 +150,8 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
     }
   }, [phone, email, fullName, isEditing, checkDuplicates]);
 
+  // ── Submit ────────────────────────────────────────────────────────────────
   const submitLead = async (data: CreateLeadInput, skipDuplicateCheck = false) => {
-    // Validate opportunities (required if any exist in the system)
-    if (opportunities.length > 0 && selectedOppIds.length === 0) {
-      setOppError("Please link at least one opportunity");
-      return;
-    }
-    setOppError("");
-
     if (!skipDuplicateCheck && !isEditing) {
       const params = new URLSearchParams();
       if (data.phone) params.set("phone", data.phone);
@@ -156,18 +186,14 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
       }
       toast.success(isEditing ? "Lead updated" : "Lead created");
 
-      // Tag selected opportunities
-      if (selectedOppIds.length > 0) {
+      // Tag the single selected opportunity (API handles replacing any existing one)
+      if (selectedOppId) {
         const savedLeadId = result.data?.id ?? leadId;
-        await Promise.allSettled(
-          selectedOppIds.map((opp_id) =>
-            fetch(`/api/leads/${savedLeadId}/opportunities`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ opportunity_id: opp_id }),
-            })
-          )
-        );
+        await fetch(`/api/leads/${savedLeadId}/opportunities`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ opportunity_id: selectedOppId }),
+        });
       }
 
       // Auto-create follow-up if next_followup_date + followup_type are set (new leads only)
@@ -341,115 +367,82 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
                 <CardTitle className="text-base">Property Requirement</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Opportunity multi-select */}
+
+                {/* ── Single Opportunity Selector ──────────────────────── */}
                 {opportunities.length > 0 && (
                   <div className="space-y-1.5">
-                    <Label>Link Opportunities <span className="text-destructive">*</span></Label>
-                    <Popover open={oppPopoverOpen} onOpenChange={setOppPopoverOpen}>
-                      <PopoverTrigger
-                        className="flex h-8 w-full items-center justify-between rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <span className={selectedOppIds.length === 0 ? "text-muted-foreground" : ""}>
-                          {selectedOppIds.length === 0
-                            ? "Select opportunities…"
-                            : selectedOppIds.length === 1
-                            ? opportunities.find((o) => o.id === selectedOppIds[0])?.name ?? "1 selected"
-                            : `${selectedOppIds.length} opportunities selected`}
-                        </span>
-                        <ChevronsUpDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                      </PopoverTrigger>
-                      <PopoverContent className="w-96 p-0" align="start">
-                        <div className="max-h-64 overflow-y-auto p-1">
-                          {opportunities.map((opp) => {
-                            const checked = selectedOppIds.includes(opp.id);
-                            return (
-                              <button
-                                key={opp.id}
-                                type="button"
-                                onClick={() =>
-                                  setSelectedOppIds((prev) =>
-                                    checked ? prev.filter((id) => id !== opp.id) : [...prev, opp.id]
-                                  )
-                                }
-                                className="flex w-full items-start gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
-                              >
-                                <Checkbox checked={checked} className="mt-0.5 shrink-0" />
-                                <div className="min-w-0">
-                                  <p className="font-medium truncate">{opp.name}</p>
-                                  <p className="text-xs text-muted-foreground truncate">
-                                    {opp.opp_number} · {opp.project} · {opp.location}
-                                  </p>
-                                </div>
-                                {checked && <Check className="ml-auto h-4 w-4 shrink-0 text-primary" />}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        {selectedOppIds.length > 0 && (
-                          <div className="border-t p-2">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedOppIds([])}
-                              className="w-full rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                            >
-                              Clear all
-                            </button>
-                          </div>
-                        )}
-                      </PopoverContent>
-                    </Popover>
-                    {selectedOppIds.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        {selectedOppIds.map((id) => {
-                          const opp = opportunities.find((o) => o.id === id);
-                          if (!opp) return null;
-                          return (
-                            <span
-                              key={id}
-                              className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary"
-                            >
-                              {opp.opp_number} – {opp.name}
-                              <button
-                                type="button"
-                                onClick={() => setSelectedOppIds((prev) => prev.filter((x) => x !== id))}
-                                className="ml-0.5 hover:text-destructive"
-                              >
-                                ×
-                              </button>
+                    <Label>Link Opportunity</Label>
+                    <Select
+                      value={selectedOppId || "__none__"}
+                      onValueChange={(v) => {
+                        const newId = v === "__none__" ? "" : v;
+                        setSelectedOppId(newId);
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select opportunity…">
+                          {selectedOpp
+                            ? `${selectedOpp.opp_number} – ${selectedOpp.name}`
+                            : "None (no opportunity linked)"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">
+                          <span className="text-muted-foreground">None</span>
+                        </SelectItem>
+                        {opportunities.map((opp) => (
+                          <SelectItem key={opp.id} value={opp.id}>
+                            <span className="font-medium">{opp.name}</span>
+                            <span className="text-muted-foreground text-xs ml-2">
+                              {opp.opp_number} · {opp.location}
                             </span>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {oppError && (
-                      <p className="text-xs text-destructive">{oppError}</p>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {selectedOpp && (
+                      <p className="text-xs text-muted-foreground">
+                        {selectedOpp.project} · {selectedOpp.location}
+                      </p>
                     )}
                   </div>
                 )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+                  {/* ── Property Type: auto-filled from opportunity ──────── */}
                   <div className="space-y-1.5">
-                    <Label>Property Type <span className="text-destructive">*</span></Label>
-                    <Select
-                      defaultValue={defaultValues?.property_type}
-                      onValueChange={(v) => v && setValue("property_type", v as CreateLeadInput["property_type"])}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Residential">Residential</SelectItem>
-                        <SelectItem value="Commercial">Commercial</SelectItem>
-                        <SelectItem value="Plot">Plot</SelectItem>
-                        <SelectItem value="Villa">Villa</SelectItem>
-                        <SelectItem value="Apartment">Apartment</SelectItem>
-                        <SelectItem value="Office">Office</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Label>
+                      Property Type <span className="text-destructive">*</span>
+                      {selectedOpp && (
+                        <span className="ml-1 text-xs text-muted-foreground font-normal">(from opportunity)</span>
+                      )}
+                    </Label>
+                    {selectedOpp ? (
+                      // Read-only when opportunity is selected — value auto-set via useEffect
+                      <div className="flex h-8 items-center rounded-lg border border-input bg-muted/40 px-2.5 text-sm text-muted-foreground">
+                        {selectedOpp.property_type}
+                      </div>
+                    ) : (
+                      <Select
+                        defaultValue={defaultValues?.property_type}
+                        onValueChange={(v) => v && setValue("property_type", v as CreateLeadInput["property_type"])}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PROPERTY_TYPES.map((pt) => (
+                            <SelectItem key={pt} value={pt}>{pt}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                     {errors.property_type && (
                       <p className="text-xs text-destructive">{errors.property_type.message}</p>
                     )}
                   </div>
+
                   <div className="space-y-1.5">
                     <Label>Purpose <span className="text-destructive">*</span></Label>
                     <Select
@@ -468,14 +461,50 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
                       <p className="text-xs text-destructive">{errors.purpose.message}</p>
                     )}
                   </div>
+
                   <div className="space-y-1.5">
                     <Label htmlFor="location_preference">Location Preference</Label>
                     <Input id="location_preference" {...register("location_preference")} placeholder="e.g. Wakad, Pune" />
                   </div>
+
+                  {/* ── Unit Type: dropdown from opp configs, else free text ─ */}
                   <div className="space-y-1.5">
-                    <Label htmlFor="unit_type">Unit Type</Label>
-                    <Input id="unit_type" {...register("unit_type")} placeholder="e.g. 2BHK, 3BHK" />
+                    <Label>
+                      Unit Type
+                      {selectedOpp && unitTypeOptions.length > 0 && (
+                        <span className="ml-1 text-xs text-muted-foreground font-normal">(from opportunity inventory)</span>
+                      )}
+                    </Label>
+                    {selectedOpp && unitTypeOptions.length > 0 ? (
+                      <Select
+                        value={watch("unit_type") || "__none__"}
+                        onValueChange={(v) => setValue("unit_type", v === "__none__" ? "" : v)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select unit type…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">
+                            <span className="text-muted-foreground">Select unit type…</span>
+                          </SelectItem>
+                          {unitTypeOptions.map((label) => (
+                            <SelectItem key={label} value={label}>{label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : selectedOpp && unitTypeOptions.length === 0 ? (
+                      <div className="flex h-8 items-center rounded-lg border border-input bg-muted/20 px-2.5 text-sm text-muted-foreground">
+                        No inventory configured for this opportunity
+                      </div>
+                    ) : (
+                      <Input
+                        id="unit_type"
+                        {...register("unit_type")}
+                        placeholder="e.g. 2BHK, 3BHK (select an opportunity to see options)"
+                      />
+                    )}
                   </div>
+
                   <div className="space-y-1.5">
                     <Label htmlFor="budget_min">Budget Min (₹)</Label>
                     <Input id="budget_min" type="number" {...register("budget_min")} />

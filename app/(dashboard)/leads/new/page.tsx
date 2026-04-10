@@ -18,7 +18,15 @@ export default async function NewLeadPage() {
     }),
     prisma.opportunity.findMany({
       where: { deleted_at: null, status: "Active" },
-      select: { id: true, opp_number: true, name: true, project: true, property_type: true, location: true },
+      select: {
+        id: true,
+        opp_number: true,
+        name: true,
+        project: true,
+        property_type: true,
+        location: true,
+        configurations: { select: { label: true }, orderBy: { created_at: "asc" } },
+      },
       orderBy: { name: "asc" },
     }),
   ]);

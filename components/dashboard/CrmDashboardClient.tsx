@@ -1,16 +1,17 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import {
   Users, Flame, Activity, Trophy, CalendarClock, AlertTriangle,
-  TrendingUp, DollarSign, Wallet, PiggyBank, Receipt, Target,
+  TrendingUp, DollarSign, Wallet, PiggyBank, Target,
   CheckSquare, Clock, CheckCircle2, XCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   BarChart, Bar, PieChart, Pie, Cell, ResponsiveContainer,
-  XAxis, YAxis, Tooltip, Legend,
+  XAxis, YAxis, Tooltip, Legend, Sector,
 } from "recharts";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -226,6 +227,8 @@ export function CrmDashboardClient({
   recentActivities,
   taskStats,
 }: Props) {
+  const [activePieIndex, setActivePieIndex] = useState<number | undefined>(undefined);
+
   // Sort stage distribution per defined order
   const sortedStages = [...stageDistribution].sort(
     (a, b) => STAGE_ORDER.indexOf(a.stage) - STAGE_ORDER.indexOf(b.stage)
@@ -498,12 +501,29 @@ export function CrmDashboardClient({
                   <XAxis dataKey="stage" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} allowDecimals={false} width={30} />
                   <Tooltip
+                    cursor={{ fill: "hsl(var(--muted))", opacity: 0.6 }}
+                    contentStyle={{
+                      fontSize: 12,
+                      borderRadius: 8,
+                      border: "1px solid hsl(var(--border))",
+                      background: "hsl(var(--popover))",
+                      color: "hsl(var(--popover-foreground))",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                      padding: "8px 12px",
+                    }}
                     formatter={(val, name) =>
                       name === "value" ? [fc(Number(val)), "Pipeline Value"] : [val, "Leads"]
                     }
-                    contentStyle={{ fontSize: 12 }}
+                    labelStyle={{ fontWeight: 600, marginBottom: 4 }}
                   />
-                  <Bar dataKey="count" name="Leads" fill="#3b82f6" radius={[3, 3, 0, 0]} />
+                  <Bar
+                    dataKey="count"
+                    name="Leads"
+                    fill="#3b82f6"
+                    radius={[3, 3, 0, 0]}
+                    cursor="pointer"
+                    activeBar={{ fill: "#2563eb", opacity: 1 }}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -525,12 +545,37 @@ export function CrmDashboardClient({
                     outerRadius={75}
                     paddingAngle={3}
                     dataKey="value"
+                    activeIndex={activePieIndex}
+                    activeShape={(props: React.SVGProps<SVGPathElement> & { outerRadius?: number }) => (
+                      <Sector
+                        {...props}
+                        outerRadius={(props.outerRadius ?? 75) + 6}
+                      />
+                    )}
+                    onMouseEnter={(_, index) => setActivePieIndex(index)}
+                    onMouseLeave={() => setActivePieIndex(undefined)}
+                    cursor="pointer"
                   >
                     {tempData.map((entry, i) => (
-                      <Cell key={i} fill={entry.color} />
+                      <Cell
+                        key={i}
+                        fill={entry.color}
+                        opacity={activePieIndex === undefined || activePieIndex === i ? 1 : 0.55}
+                      />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={{ fontSize: 12 }} />
+                  <Tooltip
+                    contentStyle={{
+                      fontSize: 12,
+                      borderRadius: 8,
+                      border: "1px solid hsl(var(--border))",
+                      background: "hsl(var(--popover))",
+                      color: "hsl(var(--popover-foreground))",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                      padding: "8px 12px",
+                    }}
+                    formatter={(val) => [val, "Leads"]}
+                  />
                   <Legend iconSize={10} wrapperStyle={{ fontSize: 12 }} />
                 </PieChart>
               </ResponsiveContainer>
@@ -547,8 +592,27 @@ export function CrmDashboardClient({
                 <BarChart data={sourceData} layout="vertical" margin={{ top: 0, right: 20, bottom: 0, left: 80 }}>
                   <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={78} />
-                  <Tooltip contentStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="value" name="Leads" fill="#8b5cf6" radius={[0, 3, 3, 0]} />
+                  <Tooltip
+                    cursor={{ fill: "hsl(var(--muted))", opacity: 0.6 }}
+                    contentStyle={{
+                      fontSize: 12,
+                      borderRadius: 8,
+                      border: "1px solid hsl(var(--border))",
+                      background: "hsl(var(--popover))",
+                      color: "hsl(var(--popover-foreground))",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                      padding: "8px 12px",
+                    }}
+                    formatter={(val) => [val, "Leads"]}
+                  />
+                  <Bar
+                    dataKey="value"
+                    name="Leads"
+                    fill="#8b5cf6"
+                    radius={[0, 3, 3, 0]}
+                    cursor="pointer"
+                    activeBar={{ fill: "#7c3aed", opacity: 1 }}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
