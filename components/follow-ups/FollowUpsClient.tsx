@@ -177,7 +177,7 @@ export function FollowUpsClient({
             />
           </div>
           {isManagerOrAdmin && (
-            <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+            <Select value={assigneeFilter} onValueChange={(v) => v && setAssigneeFilter(v)}>
               <SelectTrigger className="h-8 w-44 text-sm">
                 <SelectValue placeholder="All assignees" />
               </SelectTrigger>
