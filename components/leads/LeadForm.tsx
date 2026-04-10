@@ -59,6 +59,7 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
   const isEditing = !!leadId;
   const [selectedOppIds, setSelectedOppIds] = useState<string[]>(defaultTaggedOpportunityIds);
   const [oppPopoverOpen, setOppPopoverOpen] = useState(false);
+  const [oppError, setOppError] = useState("");
   const [leadOwnerId, setLeadOwnerId] = useState(defaultValues?.lead_owner_id ?? currentUserId);
   const [assignedToId, setAssignedToId] = useState(defaultValues?.assigned_to_id ?? currentUserId);
 
@@ -114,6 +115,13 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
   }, [phone, email, fullName, isEditing, checkDuplicates]);
 
   const submitLead = async (data: CreateLeadInput, skipDuplicateCheck = false) => {
+    // Validate opportunities (required if any exist in the system)
+    if (opportunities.length > 0 && selectedOppIds.length === 0) {
+      setOppError("Please link at least one opportunity");
+      return;
+    }
+    setOppError("");
+
     if (!skipDuplicateCheck && !isEditing) {
       const params = new URLSearchParams();
       if (data.phone) params.set("phone", data.phone);
@@ -336,7 +344,7 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
                 {/* Opportunity multi-select */}
                 {opportunities.length > 0 && (
                   <div className="space-y-1.5">
-                    <Label>Link Opportunities</Label>
+                    <Label>Link Opportunities <span className="text-destructive">*</span></Label>
                     <Popover open={oppPopoverOpen} onOpenChange={setOppPopoverOpen}>
                       <PopoverTrigger
                         className="flex h-8 w-full items-center justify-between rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -413,12 +421,15 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
                         })}
                       </div>
                     )}
+                    {oppError && (
+                      <p className="text-xs text-destructive">{oppError}</p>
+                    )}
                   </div>
                 )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label>Property Type</Label>
+                    <Label>Property Type <span className="text-destructive">*</span></Label>
                     <Select
                       defaultValue={defaultValues?.property_type}
                       onValueChange={(v) => v && setValue("property_type", v as CreateLeadInput["property_type"])}
@@ -435,9 +446,12 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
                         <SelectItem value="Office">Office</SelectItem>
                       </SelectContent>
                     </Select>
+                    {errors.property_type && (
+                      <p className="text-xs text-destructive">{errors.property_type.message}</p>
+                    )}
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Purpose</Label>
+                    <Label>Purpose <span className="text-destructive">*</span></Label>
                     <Select
                       defaultValue={defaultValues?.purpose}
                       onValueChange={(v) => v && setValue("purpose", v as CreateLeadInput["purpose"])}
@@ -450,6 +464,9 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
                         <SelectItem value="Investment">Investment</SelectItem>
                       </SelectContent>
                     </Select>
+                    {errors.purpose && (
+                      <p className="text-xs text-destructive">{errors.purpose.message}</p>
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="location_preference">Location Preference</Label>
@@ -479,8 +496,11 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
                     <Input id="reason_for_interest" {...register("reason_for_interest")} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="potential_lead_value">Potential Lead Value (₹)</Label>
+                    <Label htmlFor="potential_lead_value">Potential Lead Value (₹) <span className="text-destructive">*</span></Label>
                     <Input id="potential_lead_value" type="number" {...register("potential_lead_value")} placeholder="Estimated deal value" />
+                    {errors.potential_lead_value && (
+                      <p className="text-xs text-destructive">{errors.potential_lead_value.message}</p>
+                    )}
                   </div>
                 </div>
               </CardContent>
