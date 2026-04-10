@@ -102,7 +102,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
               <TableHead>Temp</TableHead>
               <TableHead>Assigned To</TableHead>
               <TableHead>Follow-up</TableHead>
-              <TableHead className="text-right">Budget</TableHead>
+              <TableHead className="text-right">Pipeline Value</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -152,8 +152,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
                     )}
                   </TableCell>
                   <TableCell className="text-right text-sm">
-                    {lead.budget_max
-                      ? formatCurrency(Number(lead.budget_max))
+                    {lead.potential_lead_value
+                      ? formatCurrency(Number(lead.potential_lead_value))
                       : "—"}
                   </TableCell>
                 </TableRow>

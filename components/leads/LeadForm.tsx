@@ -59,9 +59,6 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
   const isEditing = !!leadId;
   const [selectedOppIds, setSelectedOppIds] = useState<string[]>(defaultTaggedOpportunityIds);
   const [oppPopoverOpen, setOppPopoverOpen] = useState(false);
-  const [scheduleFollowup, setScheduleFollowup] = useState(false);
-  const [followupDate, setFollowupDate] = useState("");
-  const [followupType, setFollowupType] = useState("Call");
   const [leadOwnerId, setLeadOwnerId] = useState(defaultValues?.lead_owner_id ?? currentUserId);
   const [assignedToId, setAssignedToId] = useState(defaultValues?.assigned_to_id ?? currentUserId);
 
@@ -85,6 +82,7 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
   const phone = watch("phone");
   const email = watch("email");
   const fullName = watch("full_name");
+  const nextFollowupDate = watch("next_followup_date");
 
   const checkDuplicates = useDebouncedCallback(
     async (p: string, e: string, n: string) => {
@@ -164,21 +162,20 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
         );
       }
 
-      // Schedule follow-up if requested (new leads only)
-      if (!isEditing && scheduleFollowup && followupDate && result.data?.id) {
+      // Auto-create follow-up if next_followup_date + followup_type are set (new leads only)
+      if (!isEditing && data.next_followup_date && data.followup_type && result.data?.id) {
         try {
           await fetch("/api/follow-ups", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               lead_id: result.data.id,
-              scheduled_at: followupDate,
-              type: followupType,
+              scheduled_at: new Date(data.next_followup_date as unknown as string).toISOString(),
+              type: data.followup_type,
             }),
           });
-          toast.success("Follow-up scheduled");
         } catch {
-          toast.error("Lead created but follow-up scheduling failed");
+          // Follow-up creation is non-critical — lead already saved
         }
       }
 
@@ -214,14 +211,14 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label htmlFor="full_name">Full Name *</Label>
+                    <Label htmlFor="full_name">Full Name <span className="text-destructive">*</span></Label>
                     <Input id="full_name" {...register("full_name")} />
                     {errors.full_name && (
                       <p className="text-xs text-destructive">{errors.full_name.message}</p>
                     )}
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="phone">Phone *</Label>
+                    <Label htmlFor="phone">Phone <span className="text-destructive">*</span></Label>
                     <Input id="phone" type="tel" {...register("phone")} />
                     {errors.phone && (
                       <p className="text-xs text-destructive">{errors.phone.message}</p>
@@ -239,7 +236,7 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                   <div className="space-y-1.5">
-                    <Label>Lead Source *</Label>
+                    <Label>Lead Source <span className="text-destructive">*</span></Label>
                     <Select
                       defaultValue={defaultValues?.lead_source}
                       onValueChange={(v) => v && setValue("lead_source", v)}
@@ -258,7 +255,7 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
                     )}
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Temperature *</Label>
+                    <Label>Temperature <span className="text-destructive">*</span></Label>
                     <Select
                       defaultValue={defaultValues?.temperature ?? "Cold"}
                       onValueChange={(v) => v && setValue("temperature", v as CreateLeadInput["temperature"])}
@@ -275,7 +272,7 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Lead Owner *</Label>
+                    <Label>Lead Owner <span className="text-destructive">*</span></Label>
                     <Select
                       value={leadOwnerId}
                       onValueChange={(v) => { if (v) { setLeadOwnerId(v); setValue("lead_owner_id", v); } }}
@@ -296,7 +293,7 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
                     )}
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Assigned To *</Label>
+                    <Label>Assigned To <span className="text-destructive">*</span></Label>
                     <Select
                       value={assignedToId}
                       onValueChange={(v) => { if (v) { setAssignedToId(v); setValue("assigned_to_id", v); } }}
@@ -526,46 +523,10 @@ export function LeadForm({ users, opportunities = [], defaultTaggedOpportunityId
                   <Textarea id="notes" {...register("notes")} rows={4} placeholder="Any additional context..." />
                 </div>
 
-                {!isEditing && (
-                  <div className="border rounded-lg p-4 space-y-3">
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id="schedule_followup"
-                        checked={scheduleFollowup}
-                        onCheckedChange={(v) => setScheduleFollowup(!!v)}
-                      />
-                      <Label htmlFor="schedule_followup" className="cursor-pointer font-medium">
-                        Schedule follow-up on creation
-                      </Label>
-                    </div>
-                    {scheduleFollowup && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                        <div className="space-y-1.5">
-                          <Label>Follow-up Date &amp; Time</Label>
-                          <Input
-                            type="datetime-local"
-                            value={followupDate}
-                            onChange={(e) => setFollowupDate(e.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label>Type</Label>
-                          <Select defaultValue="Call" onValueChange={(v) => v && setFollowupType(v)}>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Call">Call</SelectItem>
-                              <SelectItem value="Email">Email</SelectItem>
-                              <SelectItem value="WhatsApp">WhatsApp</SelectItem>
-                              <SelectItem value="Visit">Visit</SelectItem>
-                              <SelectItem value="Meeting">Meeting</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                {!isEditing && nextFollowupDate && (
+                  <p className="text-xs text-muted-foreground">
+                    A follow-up record will be created automatically when this lead is saved.
+                  </p>
                 )}
               </CardContent>
             </Card>
