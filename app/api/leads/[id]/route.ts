@@ -78,7 +78,7 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
     const { notes, financing_required, ...updateData } = parsed.data;
 
     // Clean up empty strings to null
-    const cleanData = Object.fromEntries(
+    const cleanData: Record<string, unknown> = Object.fromEntries(
       Object.entries(updateData).map(([k, v]) => [k, v === "" ? null : v])
     );
 
