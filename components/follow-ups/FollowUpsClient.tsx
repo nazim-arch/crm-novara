@@ -109,7 +109,7 @@ export function FollowUpsClient({
     });
   }, [leads, search, assigneeFilter]);
 
-  // Split into tab buckets
+  // Split into tab buckets (cumulative — next 7 days includes next 3 days, etc.)
   const buckets = useMemo(() => {
     const overdue: FollowUpLead[] = [];
     const todayLeads: FollowUpLead[] = [];
@@ -119,10 +119,10 @@ export function FollowUpsClient({
     const hot: FollowUpLead[] = [];
     const noDate: FollowUpLead[] = [];
 
+    const todayEnd = endOfDay(today);
     const end3 = endOfDay(addDays(today, 3));
     const end7 = endOfDay(addDays(today, 7));
     const end30 = endOfDay(addDays(today, 30));
-    const todayEnd = endOfDay(today);
 
     for (const lead of filtered) {
       if (lead.temperature === "Hot") hot.push(lead);
@@ -133,16 +133,15 @@ export function FollowUpsClient({
       }
 
       const d = new Date(lead.next_followup_date);
+
       if (d < today) {
         overdue.push(lead);
-      } else if (d <= todayEnd) {
-        todayLeads.push(lead);
-      } else if (d <= end3) {
-        next3.push(lead);
-      } else if (d <= end7) {
-        next7.push(lead);
-      } else if (d <= end30) {
-        next30.push(lead);
+      } else {
+        // Cumulative: each window includes all leads from today onward up to that day
+        if (d <= todayEnd) todayLeads.push(lead);
+        if (d <= end3) next3.push(lead);
+        if (d <= end7) next7.push(lead);
+        if (d <= end30) next30.push(lead);
       }
     }
 
