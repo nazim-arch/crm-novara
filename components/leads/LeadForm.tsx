@@ -375,8 +375,7 @@ export function LeadForm({
                     <Select
                       value={selectedOppId || "__none__"}
                       onValueChange={(v) => {
-                        const newId = v === "__none__" ? "" : v;
-                        setSelectedOppId(newId);
+                        setSelectedOppId(!v || v === "__none__" ? "" : v);
                       }}
                     >
                       <SelectTrigger>
