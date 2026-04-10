@@ -22,6 +22,10 @@ WHERE "to_stage" IN ('Contacted', 'Requirement', 'OpportunityTagged');
 -- ─────────────────────────────────────────────────────────────────
 -- 3. Replace LeadStatus enum (remove Contacted, Requirement, OpportunityTagged)
 -- ─────────────────────────────────────────────────────────────────
+
+-- Clean up partial state from any previous failed run
+DROP TYPE IF EXISTS "LeadStatus_new";
+
 CREATE TYPE "LeadStatus_new" AS ENUM (
   'New', 'Qualified', 'Visit', 'FollowUp', 'Negotiation',
   'Won', 'Lost', 'OnHold', 'Recycle'
