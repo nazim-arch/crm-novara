@@ -122,6 +122,10 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
     try {
       const res = await fetch(`/api/users/${user.id}/reassign`);
       const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Failed to check user workload");
+        return;
+      }
       const workload = data.data as { leadCount: number; taskCount: number };
 
       if (workload.leadCount > 0 || workload.taskCount > 0) {

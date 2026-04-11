@@ -11,16 +11,21 @@ const reassignSchema = z.object({
 });
 
 export async function GET(_req: Request, { params }: { params: Params }) {
-  const session = await auth();
-  if (!session?.user || !hasPermission(session.user.role, "user:manage")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  try {
+    const session = await auth();
+    if (!session?.user || !hasPermission(session.user.role, "user:manage")) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const { id } = await params;
+    const [leadCount, taskCount] = await Promise.all([
+      prisma.lead.count({ where: { assigned_to_id: id, deleted_at: null } }),
+      prisma.task.count({ where: { assigned_to_id: id, deleted_at: null, status: { notIn: ["Done", "Cancelled"] } } }),
+    ]);
+    return NextResponse.json({ data: { leadCount, taskCount } });
+  } catch (error) {
+    console.error("GET /api/users/[id]/reassign:", error);
+    return NextResponse.json({ error: "Failed to check workload" }, { status: 500 });
   }
-  const { id } = await params;
-  const [leadCount, taskCount] = await Promise.all([
-    prisma.lead.count({ where: { assigned_to_id: id, deleted_at: null } }),
-    prisma.task.count({ where: { assigned_to_id: id, deleted_at: null, status: { notIn: ["Done", "Cancelled"] } } }),
-  ]);
-  return NextResponse.json({ data: { leadCount, taskCount } });
 }
 
 export async function POST(request: Request, { params }: { params: Params }) {
