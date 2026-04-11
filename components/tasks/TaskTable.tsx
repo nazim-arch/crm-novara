@@ -84,20 +84,22 @@ export function TaskTable({ tasks, users, currentParams }: TaskTableProps) {
           </SelectContent>
         </Select>
 
-        <Select
-          value={currentParams.assigned_to ?? "all"}
-          onValueChange={(v) => updateParam("assigned_to", v ?? "all")}
-        >
-          <SelectTrigger className="w-44">
-            <SelectValue placeholder="Assigned to" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All users</SelectItem>
-            {users.map((u) => (
-              <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {users.length > 0 && (
+          <Select
+            value={currentParams.assigned_to ?? "all"}
+            onValueChange={(v) => updateParam("assigned_to", v ?? "all")}
+          >
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="Assigned to" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All users</SelectItem>
+              {users.map((u) => (
+                <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         {hasFilters && (
           <Button
