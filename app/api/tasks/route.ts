@@ -14,7 +14,7 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
-    const limit = Math.min(100, Number(searchParams.get("limit") ?? "20"));
+    const limit = Math.min(200, Number(searchParams.get("limit") ?? "20"));
     const status = searchParams.get("status");
     const assigned_to = searchParams.get("assigned_to");
     const lead_id = searchParams.get("lead_id");
@@ -24,7 +24,14 @@ export async function GET(request: Request) {
 
     const andConditions: Prisma.TaskWhereInput[] = [{ deleted_at: null }];
 
-    if (status && status !== "all") andConditions.push({ status: status as Prisma.EnumTaskStatusFilter });
+    if (status && status !== "all") {
+      const statuses = status.split(",").map((s) => s.trim()).filter(Boolean);
+      if (statuses.length === 1) {
+        andConditions.push({ status: statuses[0] as Prisma.EnumTaskStatusFilter });
+      } else {
+        andConditions.push({ status: { in: statuses as Prisma.EnumTaskStatusFilter[] } });
+      }
+    }
     if (assigned_to && assigned_to !== "all") andConditions.push({ assigned_to_id: assigned_to });
     if (lead_id) andConditions.push({ lead_id });
     if (priority && priority !== "all") andConditions.push({ priority: priority as Prisma.EnumTaskPriorityFilter });
