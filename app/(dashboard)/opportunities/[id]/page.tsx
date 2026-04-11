@@ -97,9 +97,11 @@ export default async function OpportunityDetailPage({ params }: { params: Params
             <p className="text-xl font-semibold text-primary">
               {possibleRevenue > 0 ? formatCurrency(possibleRevenue) : "—"}
             </p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {Number(opp.commission_percent)}% commission
-            </p>
+            {canViewFinancials && (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {Number(opp.commission_percent)}% commission
+              </p>
+            )}
           </div>
           <div className="p-4 rounded-lg border bg-green-500/5 border-green-500/20">
             <p className="text-xs text-muted-foreground mb-1">Closed Revenue</p>
@@ -124,7 +126,7 @@ export default async function OpportunityDetailPage({ params }: { params: Params
                 <InfoItem label="Developer" value={opp.developer} />
                 <InfoItem label="Location" value={opp.location} />
                 <InfoItem label="Property Type" value={opp.property_type} />
-                <InfoItem label="Commission" value={`${Number(opp.commission_percent)}%`} />
+                {canViewFinancials && <InfoItem label="Commission" value={`${Number(opp.commission_percent)}%`} />}
                 <InfoItem label="Status" value={opp.status} />
                 <InfoItem label="Created by" value={opp.created_by.name} />
               </div>
