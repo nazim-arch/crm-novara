@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
+import { useMemo, useState } from "react";
 import {
   Table,
   TableBody,
@@ -17,12 +17,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
 import { TaskStatusBadge, PriorityBadge } from "@/components/shared/LeadStatusBadge";
 import { formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { X } from "lucide-react";
-import { useCallback } from "react";
+import { AlertTriangle, Clock, Search } from "lucide-react";
+import { startOfDay, endOfDay, addDays } from "date-fns";
 
 type Task = {
   id: string;
@@ -46,147 +47,168 @@ interface TaskTableProps {
   currentParams: { status?: string; assigned_to?: string };
 }
 
-export function TaskTable({ tasks, users, currentParams }: TaskTableProps) {
-  const router = useRouter();
-  const pathname = usePathname();
+const ACTIVE_STATUSES = ["Todo", "InProgress"];
 
-  const updateParam = useCallback(
-    (key: string, value: string) => {
-      const params = new URLSearchParams(
-        Object.entries(currentParams).filter(([, v]) => v) as [string, string][]
-      );
-      if (value && value !== "all") params.set(key, value);
-      else params.delete(key);
-      params.delete("page");
-      router.push(`${pathname}?${params.toString()}`);
-    },
-    [router, pathname, currentParams]
-  );
+export function TaskTable({ tasks, users }: TaskTableProps) {
+  const [search, setSearch] = useState("");
+  const [assigneeFilter, setAssigneeFilter] = useState("all");
 
-  const hasFilters = currentParams.status || currentParams.assigned_to;
+  const today = new Date();
+  const todayStart = startOfDay(today);
+  const todayEnd = endOfDay(today);
+
+  const filtered = useMemo(() => {
+    return tasks.filter((t) => {
+      if (assigneeFilter !== "all" && t.assigned_to.id !== assigneeFilter) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        if (!t.title.toLowerCase().includes(q) && !t.task_number.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [tasks, search, assigneeFilter]);
+
+  const buckets = useMemo(() => {
+    const overdue = filtered.filter(
+      (t) => ACTIVE_STATUSES.includes(t.status) && new Date(t.due_date) < todayStart
+    );
+    const todayTasks = filtered.filter(
+      (t) => ACTIVE_STATUSES.includes(t.status) && new Date(t.due_date) >= todayStart && new Date(t.due_date) <= todayEnd
+    );
+    const next3 = filtered.filter(
+      (t) => ACTIVE_STATUSES.includes(t.status) && new Date(t.due_date) > todayEnd && new Date(t.due_date) <= endOfDay(addDays(today, 3))
+    );
+    const next7 = filtered.filter(
+      (t) => ACTIVE_STATUSES.includes(t.status) && new Date(t.due_date) > todayEnd && new Date(t.due_date) <= endOfDay(addDays(today, 7))
+    );
+    const allActive = filtered.filter((t) => ACTIVE_STATUSES.includes(t.status));
+    const done = filtered.filter((t) => t.status === "Done");
+    return { overdue, today: todayTasks, next3, next7, allActive, done };
+  }, [filtered, todayStart, todayEnd, today]);
 
   return (
-    <div className="space-y-3">
-      <div className="flex gap-2 flex-wrap">
-        <Select
-          value={currentParams.status ?? "all"}
-          onValueChange={(v) => updateParam("status", v ?? "all")}
-        >
-          <SelectTrigger className="w-36">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="Todo">To Do</SelectItem>
-            <SelectItem value="InProgress">In Progress</SelectItem>
-            <SelectItem value="Done">Done</SelectItem>
-            <SelectItem value="Cancelled">Cancelled</SelectItem>
-          </SelectContent>
-        </Select>
-
+    <div className="space-y-4">
+      {/* Header filters */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            placeholder="Search title or number…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8 h-8 w-52 text-sm"
+          />
+        </div>
         {users.length > 0 && (
-          <Select
-            value={currentParams.assigned_to ?? "all"}
-            onValueChange={(v) => updateParam("assigned_to", v ?? "all")}
-          >
-            <SelectTrigger className="w-44">
-              <SelectValue placeholder="Assigned to" />
+          <Select value={assigneeFilter} onValueChange={(v) => v && setAssigneeFilter(v)}>
+            <SelectTrigger className="h-8 w-44 text-sm">
+              <SelectValue placeholder="All assignees" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All users</SelectItem>
+              <SelectItem value="all">All assignees</SelectItem>
               {users.map((u) => (
                 <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         )}
-
-        {hasFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => router.push(pathname)}
-            className="text-muted-foreground"
-          >
-            <X className="h-4 w-4 mr-1" />
-            Clear
-          </Button>
-        )}
       </div>
 
-      <div className="rounded-lg border bg-card overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/50">
-              <TableHead>Task</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Priority</TableHead>
-              <TableHead>Due Date</TableHead>
-              <TableHead>Assigned To</TableHead>
-              <TableHead>Linked To</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {tasks.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
-                  No tasks found
-                </TableCell>
-              </TableRow>
-            ) : (
-              tasks.map((task) => {
-                const isOverdue =
-                  new Date(task.due_date) < new Date() &&
-                  !["Done", "Cancelled"].includes(task.status);
-                return (
-                  <TableRow key={task.id} className="hover:bg-muted/30">
-                    <TableCell>
-                      <Link
-                        href={`/tasks/${task.id}`}
-                        className="font-medium hover:underline"
-                      >
-                        {task.title}
-                      </Link>
-                      <p className="text-xs text-muted-foreground font-mono">{task.task_number}</p>
-                    </TableCell>
-                    <TableCell>
-                      <TaskStatusBadge status={task.status} />
-                    </TableCell>
-                    <TableCell>
-                      <PriorityBadge priority={task.priority} />
-                    </TableCell>
-                    <TableCell
-                      className={cn("text-sm", isOverdue && "text-destructive font-medium")}
-                    >
-                      {formatDate(task.due_date)}
-                    </TableCell>
-                    <TableCell className="text-sm">{task.assigned_to.name}</TableCell>
-                    <TableCell className="text-sm">
-                      {task.lead ? (
-                        <Link
-                          href={`/leads/${task.lead.id}`}
-                          className="text-primary hover:underline text-xs"
-                        >
-                          {task.lead.lead_number}
-                        </Link>
-                      ) : task.opportunity ? (
-                        <Link
-                          href={`/opportunities/${task.opportunity.id}`}
-                          className="text-primary hover:underline text-xs"
-                        >
-                          {task.opportunity.opp_number}
-                        </Link>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">Standalone</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })
+      {/* Bucket tabs */}
+      <Tabs defaultValue="overdue">
+        <TabsList className="flex-wrap h-auto gap-1">
+          <TabsTrigger value="overdue" className="gap-1.5">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Overdue
+            {buckets.overdue.length > 0 && (
+              <span className="ml-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold px-1.5 py-0">
+                {buckets.overdue.length}
+              </span>
             )}
-          </TableBody>
-        </Table>
-      </div>
+          </TabsTrigger>
+          <TabsTrigger value="today" className="gap-1.5">
+            <Clock className="h-3.5 w-3.5" />
+            Today ({buckets.today.length})
+          </TabsTrigger>
+          <TabsTrigger value="next3">Next 3 Days ({buckets.next3.length})</TabsTrigger>
+          <TabsTrigger value="next7">Next 7 Days ({buckets.next7.length})</TabsTrigger>
+          <TabsTrigger value="allActive">All Active ({buckets.allActive.length})</TabsTrigger>
+          <TabsTrigger value="done">Done ({buckets.done.length})</TabsTrigger>
+        </TabsList>
+
+        {(["overdue", "today", "next3", "next7", "allActive", "done"] as const).map((key) => (
+          <TabsContent key={key} value={key} className="mt-4">
+            <TaskGrid tasks={buckets[key]} />
+          </TabsContent>
+        ))}
+      </Tabs>
+    </div>
+  );
+}
+
+function TaskGrid({ tasks }: { tasks: Task[] }) {
+  return (
+    <div className="rounded-lg border bg-card overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/50">
+            <TableHead>Task</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Priority</TableHead>
+            <TableHead>Due Date</TableHead>
+            <TableHead>Assigned To</TableHead>
+            <TableHead>Linked To</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {tasks.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
+                No tasks in this category
+              </TableCell>
+            </TableRow>
+          ) : (
+            tasks.map((task) => {
+              const isOverdue =
+                new Date(task.due_date) < new Date() &&
+                !["Done", "Cancelled"].includes(task.status);
+              return (
+                <TableRow key={task.id} className="hover:bg-muted/30">
+                  <TableCell>
+                    <Link href={`/tasks/${task.id}`} className="font-medium hover:underline">
+                      {task.title}
+                    </Link>
+                    <p className="text-xs text-muted-foreground font-mono">{task.task_number}</p>
+                  </TableCell>
+                  <TableCell>
+                    <TaskStatusBadge status={task.status} />
+                  </TableCell>
+                  <TableCell>
+                    <PriorityBadge priority={task.priority} />
+                  </TableCell>
+                  <TableCell className={cn("text-sm", isOverdue && "text-destructive font-medium")}>
+                    {formatDate(task.due_date)}
+                  </TableCell>
+                  <TableCell className="text-sm">{task.assigned_to.name}</TableCell>
+                  <TableCell className="text-sm">
+                    {task.lead ? (
+                      <Link href={`/leads/${task.lead.id}`} className="text-primary hover:underline text-xs">
+                        {task.lead.lead_number}
+                      </Link>
+                    ) : task.opportunity ? (
+                      <Link href={`/opportunities/${task.opportunity.id}`} className="text-primary hover:underline text-xs">
+                        {task.opportunity.opp_number}
+                      </Link>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">Standalone</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })
+          )}
+        </TableBody>
+      </Table>
     </div>
   );
 }
