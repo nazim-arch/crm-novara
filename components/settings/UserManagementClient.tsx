@@ -244,11 +244,11 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
 
       <div className="flex justify-end">
         <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) setFormErrors({}); }}>
-          <DialogTrigger asChild>
+          <DialogTrigger render={
             <Button>
               <Plus className="h-4 w-4 mr-1" /> Add User
             </Button>
-          </DialogTrigger>
+          } />
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Create New User</DialogTitle>
