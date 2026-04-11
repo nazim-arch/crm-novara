@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { generateId } from "@/lib/id-generator";
 import { createOpportunitySchema } from "@/lib/validations/opportunity";
 import { hasPermission, leadScopeFilter } from "@/lib/rbac";
+import type { Prisma } from "@/lib/generated/prisma";
 
 export async function GET(request: Request) {
   try {
@@ -17,9 +18,9 @@ export async function GET(request: Request) {
     const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
     const limit = 20;
 
-    const where: Record<string, unknown> = {
+    const where: Prisma.OpportunityWhereInput = {
       deleted_at: null,
-      ...(status && status !== "all" && { status }),
+      ...(status && status !== "all" && { status: status as Prisma.EnumOpportunityStatusFilter }),
       ...(search && {
         OR: [
           { name: { contains: search, mode: "insensitive" } },
@@ -36,9 +37,9 @@ export async function GET(request: Request) {
     }
 
     const [total, opportunities] = await Promise.all([
-      prisma.opportunity.count({ where: where as Parameters<typeof prisma.opportunity.count>[0]["where"] }),
+      prisma.opportunity.count({ where }),
       prisma.opportunity.findMany({
-        where: where as Parameters<typeof prisma.opportunity.findMany>[0]["where"],
+        where,
         include: {
           created_by: { select: { id: true, name: true } },
           _count: { select: { leads: true } },
