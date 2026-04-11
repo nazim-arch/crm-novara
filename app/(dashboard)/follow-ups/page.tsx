@@ -5,10 +5,10 @@ import { FollowUpsClient } from "@/components/follow-ups/FollowUpsClient";
 export default async function FollowUpsPage() {
   const session = await auth();
 
-  const isSales = session?.user.role === "Sales";
-  const isManagerOrAdmin =
-    session?.user.role === "Admin" || session?.user.role === "Manager";
-  const userFilter = isSales ? { assigned_to_id: session?.user.id } : {};
+  const role = session?.user.role ?? "";
+  const isScoped = role === "Sales" || role === "Operations";
+  const isManagerOrAdmin = role === "Admin" || role === "Manager";
+  const userFilter = isScoped ? { assigned_to_id: session?.user.id } : {};
 
   const [leads, users] = await Promise.all([
     prisma.lead.findMany({
