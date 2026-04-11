@@ -52,7 +52,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           </div>
         </header>
         <main className="flex-1 overflow-auto bg-muted/30">{children}</main>
-        <QuickAddModal currentUserId={user.id} />
+        <QuickAddModal currentUserId={user.id} role={user.role} />
       </div>
     </div>
   );

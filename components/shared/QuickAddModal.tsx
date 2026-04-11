@@ -56,7 +56,7 @@ function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => voi
   );
 }
 
-export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
+export function QuickAddModal({ currentUserId, role }: { currentUserId: string; role: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -317,12 +317,12 @@ export function QuickAddModal({ currentUserId }: { currentUserId: string }) {
           <DialogTitle>Quick Add</DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="lead">
-          <TabsList className="w-full grid grid-cols-4">
-            <TabsTrigger value="lead" className="gap-1 text-xs"><Users className="h-3.5 w-3.5" />Lead</TabsTrigger>
-            <TabsTrigger value="opportunity" className="gap-1 text-xs"><Building2 className="h-3.5 w-3.5" />Opp</TabsTrigger>
+        <Tabs defaultValue={role === "Operations" ? "task" : "lead"}>
+          <TabsList className={`w-full grid ${role === "Operations" ? "grid-cols-1" : "grid-cols-4"}`}>
+            {role !== "Operations" && <TabsTrigger value="lead" className="gap-1 text-xs"><Users className="h-3.5 w-3.5" />Lead</TabsTrigger>}
+            {role !== "Operations" && <TabsTrigger value="opportunity" className="gap-1 text-xs"><Building2 className="h-3.5 w-3.5" />Opp</TabsTrigger>}
             <TabsTrigger value="task" className="gap-1 text-xs"><CheckSquare className="h-3.5 w-3.5" />Task</TabsTrigger>
-            <TabsTrigger value="followup" className="gap-1 text-xs"><CalendarClock className="h-3.5 w-3.5" />Follow-up</TabsTrigger>
+            {role !== "Operations" && <TabsTrigger value="followup" className="gap-1 text-xs"><CalendarClock className="h-3.5 w-3.5" />Follow-up</TabsTrigger>}
           </TabsList>
 
           {/* ── LEAD ── */}
