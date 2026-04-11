@@ -18,6 +18,9 @@ export default async function TaskDashboardPage() {
   const todayStart = startOfDay(today);
   const todayEnd = endOfDay(today);
 
+  const isScoped = session.user.role === "Operations";
+  const scopeFilter = isScoped ? { assigned_to_id: session.user.id } : {};
+
   const [
     totalTasks,
     overdueTasks,
@@ -26,10 +29,11 @@ export default async function TaskDashboardPage() {
     byAssignee,
     revenueAtRisk,
   ] = await Promise.all([
-    prisma.task.count({ where: { deleted_at: null, status: { notIn: ["Done", "Cancelled"] } } }),
+    prisma.task.count({ where: { deleted_at: null, ...scopeFilter, status: { notIn: ["Done", "Cancelled"] } } }),
     prisma.task.count({
       where: {
         deleted_at: null,
+        ...scopeFilter,
         due_date: { lt: todayStart },
         status: { notIn: ["Done", "Cancelled"] },
       },
@@ -37,6 +41,7 @@ export default async function TaskDashboardPage() {
     prisma.task.count({
       where: {
         deleted_at: null,
+        ...scopeFilter,
         due_date: { gte: todayStart, lte: todayEnd },
         status: { notIn: ["Done", "Cancelled"] },
       },
@@ -50,12 +55,13 @@ export default async function TaskDashboardPage() {
     }),
     prisma.task.groupBy({
       by: ["assigned_to_id"],
-      where: { deleted_at: null, status: { notIn: ["Done", "Cancelled"] } },
+      where: { deleted_at: null, ...scopeFilter, status: { notIn: ["Done", "Cancelled"] } },
       _count: { id: true },
     }),
     prisma.task.aggregate({
       where: {
         deleted_at: null,
+        ...scopeFilter,
         revenue_tagged: true,
         revenue_amount: { not: null },
         due_date: { lt: todayStart },
@@ -81,7 +87,7 @@ export default async function TaskDashboardPage() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Task Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Team task overview</p>
+        <p className="text-sm text-muted-foreground">{isScoped ? "Your task overview" : "Team task overview"}</p>
       </div>
 
       <TaskStatsCards
