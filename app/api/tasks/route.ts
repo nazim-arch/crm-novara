@@ -5,6 +5,7 @@ import { generateId } from "@/lib/id-generator";
 import { createTaskSchema } from "@/lib/validations/task";
 import { hasPermission, taskScopeFilter } from "@/lib/rbac";
 import type { Prisma } from "@/lib/generated/prisma/client";
+import { TaskStatus } from "@/lib/generated/prisma/client";
 
 export async function GET(request: Request) {
   try {
@@ -25,11 +26,11 @@ export async function GET(request: Request) {
     const andConditions: Prisma.TaskWhereInput[] = [{ deleted_at: null }];
 
     if (status && status !== "all") {
-      const statuses = status.split(",").map((s) => s.trim()).filter(Boolean);
+      const statuses = status.split(",").map((s) => s.trim()).filter(Boolean) as TaskStatus[];
       if (statuses.length === 1) {
-        andConditions.push({ status: statuses[0] as Prisma.EnumTaskStatusFilter });
+        andConditions.push({ status: statuses[0] });
       } else {
-        andConditions.push({ status: { in: statuses as Prisma.EnumTaskStatusFilter[] } });
+        andConditions.push({ status: { in: statuses } });
       }
     }
     if (assigned_to && assigned_to !== "all") andConditions.push({ assigned_to_id: assigned_to });
