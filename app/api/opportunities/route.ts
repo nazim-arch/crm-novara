@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { generateId } from "@/lib/id-generator";
 import { createOpportunitySchema } from "@/lib/validations/opportunity";
 import { hasPermission, leadScopeFilter } from "@/lib/rbac";
-import type { Prisma } from "@/lib/generated/prisma";
+import type { Prisma } from "@/lib/generated/prisma/client";
 
 export async function GET(request: Request) {
   try {
