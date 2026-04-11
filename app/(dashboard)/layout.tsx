@@ -5,33 +5,24 @@ import { NotificationBell } from "@/components/shared/NotificationBell";
 import { QuickAddModal } from "@/components/shared/QuickAddModal";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { getInitials } from "@/lib/utils";
 import { SignOutButton } from "@/components/shared/SignOutButton";
 
-export default async function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
-  if (!session?.user) {
-    redirect("/login");
-  }
+  if (!session?.user) redirect("/login");
 
   const user = session.user;
+  const displayName = user.short_name || user.name || user.email || "U";
   const initials = getInitials(user.name ?? user.email ?? "U");
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar />
+      <Sidebar role={user.role} />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Top header */}
         <header className="h-14 border-b bg-card flex items-center justify-between px-4 shrink-0">
           <div />
           <div className="flex items-center gap-2">
@@ -47,10 +38,8 @@ export default async function DashboardLayout({
               <DropdownMenuContent align="end" className="w-48">
                 <div className="px-2 py-1.5">
                   <p className="text-sm font-medium truncate">{user.name}</p>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {user.email}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{user.role}</p>
+                  <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                  <p className="text-xs text-muted-foreground">{user.role === "Operations" ? "Sage Operations" : user.role}</p>
                 </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem>
@@ -62,12 +51,7 @@ export default async function DashboardLayout({
             </DropdownMenu>
           </div>
         </header>
-
-        {/* Main content */}
-        <main className="flex-1 overflow-auto bg-muted/30">
-          {children}
-        </main>
-
+        <main className="flex-1 overflow-auto bg-muted/30">{children}</main>
         <QuickAddModal currentUserId={user.id} />
       </div>
     </div>

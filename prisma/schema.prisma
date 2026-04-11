@@ -124,6 +124,7 @@ enum NotificationType {
 model User {
   id            String   @id @default(cuid())
   name          String
+  short_name    String   @default("")
   email         String   @unique
   password_hash String
   role          UserRole @default(Sales)

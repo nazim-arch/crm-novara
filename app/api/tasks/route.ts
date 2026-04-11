@@ -3,15 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { generateId } from "@/lib/id-generator";
 import { createTaskSchema } from "@/lib/validations/task";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermission, taskScopeFilter } from "@/lib/rbac";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
 export async function GET(request: Request) {
   try {
     const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!hasPermission(session.user.role, "task:read")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
@@ -22,18 +21,21 @@ export async function GET(request: Request) {
     const priority = searchParams.get("priority");
     const overdue = searchParams.get("overdue") === "true";
     const revenue = searchParams.get("revenue") === "true";
-    const my_tasks = searchParams.get("my_tasks") === "true";
 
-    const where: Prisma.TaskWhereInput = {
-      deleted_at: null,
-      ...(status && status !== "all" && { status: status as Prisma.EnumTaskStatusFilter }),
-      ...(assigned_to && assigned_to !== "all" && { assigned_to_id: assigned_to }),
-      ...(lead_id && { lead_id }),
-      ...(priority && priority !== "all" && { priority: priority as Prisma.EnumTaskPriorityFilter }),
-      ...(overdue && { due_date: { lt: new Date() }, status: { notIn: ["Done", "Cancelled"] } }),
-      ...(revenue && { revenue_tagged: true }),
-      ...(my_tasks && { assigned_to_id: session.user.id }),
-    };
+    const andConditions: Prisma.TaskWhereInput[] = [{ deleted_at: null }];
+
+    if (status && status !== "all") andConditions.push({ status: status as Prisma.EnumTaskStatusFilter });
+    if (assigned_to && assigned_to !== "all") andConditions.push({ assigned_to_id: assigned_to });
+    if (lead_id) andConditions.push({ lead_id });
+    if (priority && priority !== "all") andConditions.push({ priority: priority as Prisma.EnumTaskPriorityFilter });
+    if (overdue) andConditions.push({ due_date: { lt: new Date() }, status: { notIn: ["Done", "Cancelled"] } });
+    if (revenue) andConditions.push({ revenue_tagged: true });
+
+    // Role-based scoping — always restrict Sales and Operations to own tasks
+    const scope = taskScopeFilter(session.user.role, session.user.id);
+    if (scope) andConditions.push(scope);
+
+    const where: Prisma.TaskWhereInput = { AND: andConditions };
 
     const [total, tasks] = await Promise.all([
       prisma.task.count({ where }),
@@ -51,10 +53,7 @@ export async function GET(request: Request) {
       }),
     ]);
 
-    return NextResponse.json({
-      data: tasks,
-      meta: { total, page, limit, pages: Math.ceil(total / limit) },
-    });
+    return NextResponse.json({ data: tasks, meta: { total, page, limit, pages: Math.ceil(total / limit) } });
   } catch (error) {
     console.error("GET /api/tasks:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -64,55 +63,38 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    if (!hasPermission(session.user.role, "task:create")) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!hasPermission(session.user.role, "task:create")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
     const parsed = createTaskSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Validation failed", details: parsed.error.flatten() },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten() }, { status: 400 });
     }
 
     const { sector, notes, description, ...rest } = parsed.data;
-
-    // Generate ID outside transaction (Neon HTTP driver compatibility)
     const task_number = await generateId("TASK");
     const task = await prisma.task.create({
       data: {
-        task_number,
-        ...rest,
-        sector: sector || null,
-        notes: notes || null,
-        description: description || null,
+        task_number, ...rest,
+        sector: sector || null, notes: notes || null, description: description || null,
         created_by_id: session.user.id,
       },
     });
 
-    // Notify assigned user
     if (task.assigned_to_id !== session.user.id) {
       await prisma.notification.create({
         data: {
-          user_id: task.assigned_to_id,
-          type: "TaskAssigned",
+          user_id: task.assigned_to_id, type: "TaskAssigned",
           message: `New task assigned to you: ${task.title} (${task.task_number})`,
-          entity_type: "Task",
-          entity_id: task.id,
+          entity_type: "Task", entity_id: task.id,
         },
       });
     }
 
     await prisma.activity.create({
       data: {
-        entity_type: "Task",
-        entity_id: task.id,
-        action: "task_created",
+        entity_type: "Task", entity_id: task.id, action: "task_created",
         actor_id: session.user.id,
         metadata: { task_number: task.task_number, title: task.title },
       },

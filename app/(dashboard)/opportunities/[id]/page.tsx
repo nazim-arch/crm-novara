@@ -9,6 +9,7 @@ import { ArrowLeft, Edit } from "lucide-react";
 import { hasPermission } from "@/lib/rbac";
 import { ExpensesSection } from "@/components/opportunities/ExpensesSection";
 
+
 type Params = Promise<{ id: string }>;
 
 function formatCurrency(n: number) {
@@ -56,6 +57,7 @@ export default async function OpportunityDetailPage({ params }: { params: Params
 
   const canEdit = session?.user && hasPermission(session.user.role, "opportunity:update");
   const isAdmin = session?.user.role === "Admin";
+  const canViewFinancials = session?.user ? hasPermission(session.user.role, "financial:view") : false;
 
   const totalSalesValue = Number(opp.total_sales_value ?? 0);
   const possibleRevenue = Number(opp.possible_revenue ?? 0);
@@ -82,30 +84,32 @@ export default async function OpportunityDetailPage({ params }: { params: Params
       </div>
 
       {/* Financial Summary */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="p-4 rounded-lg border bg-card">
-          <p className="text-xs text-muted-foreground mb-1">Total Sales Value</p>
-          <p className="text-xl font-semibold">
-            {totalSalesValue > 0 ? formatCurrency(totalSalesValue) : "—"}
-          </p>
+      {canViewFinancials && (
+        <div className="grid grid-cols-3 gap-4">
+          <div className="p-4 rounded-lg border bg-card">
+            <p className="text-xs text-muted-foreground mb-1">Total Sales Value</p>
+            <p className="text-xl font-semibold">
+              {totalSalesValue > 0 ? formatCurrency(totalSalesValue) : "—"}
+            </p>
+          </div>
+          <div className="p-4 rounded-lg border bg-primary/5 border-primary/20">
+            <p className="text-xs text-muted-foreground mb-1">Possible Revenue</p>
+            <p className="text-xl font-semibold text-primary">
+              {possibleRevenue > 0 ? formatCurrency(possibleRevenue) : "—"}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {Number(opp.commission_percent)}% commission
+            </p>
+          </div>
+          <div className="p-4 rounded-lg border bg-green-500/5 border-green-500/20">
+            <p className="text-xs text-muted-foreground mb-1">Closed Revenue</p>
+            <p className="text-xl font-semibold text-green-600">
+              {closedRevenue > 0 ? formatCurrency(closedRevenue) : "—"}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">From Won deals</p>
+          </div>
         </div>
-        <div className="p-4 rounded-lg border bg-primary/5 border-primary/20">
-          <p className="text-xs text-muted-foreground mb-1">Possible Revenue</p>
-          <p className="text-xl font-semibold text-primary">
-            {possibleRevenue > 0 ? formatCurrency(possibleRevenue) : "—"}
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {Number(opp.commission_percent)}% commission
-          </p>
-        </div>
-        <div className="p-4 rounded-lg border bg-green-500/5 border-green-500/20">
-          <p className="text-xs text-muted-foreground mb-1">Closed Revenue</p>
-          <p className="text-xl font-semibold text-green-600">
-            {closedRevenue > 0 ? formatCurrency(closedRevenue) : "—"}
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">From Won deals</p>
-        </div>
-      </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
@@ -185,17 +189,19 @@ export default async function OpportunityDetailPage({ params }: { params: Params
           </Card>
 
           {/* Expenses */}
-          <ExpensesSection
-            opportunityId={id}
-            expenses={expenses.map((e) => ({
-              ...e,
-              amount: Number(e.amount),
-            }))}
-            possibleRevenue={possibleRevenue}
-            closedRevenue={closedRevenue}
-            currentUserId={session?.user.id ?? ""}
-            isAdmin={isAdmin}
-          />
+          {canViewFinancials && (
+            <ExpensesSection
+              opportunityId={id}
+              expenses={expenses.map((e) => ({
+                ...e,
+                amount: Number(e.amount),
+              }))}
+              possibleRevenue={possibleRevenue}
+              closedRevenue={closedRevenue}
+              currentUserId={session?.user.id ?? ""}
+              isAdmin={isAdmin}
+            />
+          )}
         </div>
 
         {/* Tagged Leads */}

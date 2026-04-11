@@ -18,37 +18,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       async authorize(credentials) {
         try {
           const parsed = loginSchema.safeParse(credentials);
-          if (!parsed.success) {
-            console.error("Auth: validation failed", parsed.error);
-            return null;
-          }
+          if (!parsed.success) return null;
 
           const user = await prisma.user.findUnique({
             where: { email: parsed.data.email },
           });
-          if (!user) {
-            console.error("Auth: user not found", parsed.data.email);
-            return null;
-          }
-          if (!user.is_active) {
-            console.error("Auth: user inactive", parsed.data.email);
-            return null;
-          }
+          if (!user || !user.is_active) return null;
 
-          const valid = await bcrypt.compare(
-            parsed.data.password,
-            user.password_hash
-          );
-          if (!valid) {
-            console.error("Auth: password mismatch for", parsed.data.email);
-            return null;
-          }
+          const valid = await bcrypt.compare(parsed.data.password, user.password_hash);
+          if (!valid) return null;
 
           return {
             id: user.id,
             name: user.name,
             email: user.email,
             role: user.role,
+            short_name: user.short_name,
           };
         } catch (error) {
           console.error("Auth: unexpected error", error);
@@ -62,6 +47,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.role = (user as { role?: string }).role ?? "";
         token.id = user.id ?? "";
+        token.short_name = (user as { short_name?: string }).short_name ?? "";
       }
       return token;
     },
@@ -69,6 +55,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (session.user) {
         session.user.role = token.role as string;
         session.user.id = token.id as string;
+        session.user.short_name = (token.short_name as string) ?? "";
       }
       return session;
     },

@@ -14,6 +14,7 @@ export async function GET() {
   const users = await prisma.user.findMany({
     select: {
       id: true,
+      short_name: true,
       name: true,
       email: true,
       role: true,
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 422 });
   }
 
-  const { name, email, password, role, phone } = parsed.data;
+  const { short_name, name, email, password, role, phone } = parsed.data;
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
@@ -48,8 +49,8 @@ export async function POST(request: Request) {
 
   const password_hash = await bcrypt.hash(password, 12);
   const user = await prisma.user.create({
-    data: { name, email, password_hash, role, phone },
-    select: { id: true, name: true, email: true, role: true, is_active: true, created_at: true },
+    data: { short_name, name, email, password_hash, role, phone: phone || null },
+    select: { id: true, short_name: true, name: true, email: true, role: true, is_active: true, created_at: true },
   });
 
   return NextResponse.json({ data: user }, { status: 201 });

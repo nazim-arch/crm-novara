@@ -6,17 +6,19 @@ export const loginSchema = z.object({
 });
 
 export const createUserSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters"),
+  short_name: z.string().min(1, "Short name is required").max(20, "Short name too long"),
+  name: z.string().min(2, "Full name must be at least 2 characters"),
   email: z.string().email("Invalid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
-  role: z.enum(["Admin", "Manager", "Sales", "Operations", "Viewer"]).default("Sales"),
+  role: z.enum(["Admin", "Sales", "Operations", "Manager", "Viewer"]).default("Sales"),
   phone: z.string().optional().or(z.literal("")),
 });
 
 export const updateUserSchema = z.object({
+  short_name: z.string().min(1).max(20).optional(),
   name: z.string().min(2).optional(),
   phone: z.string().optional().or(z.literal("")),
-  role: z.enum(["Admin", "Manager", "Sales", "Operations", "Viewer"]).optional(),
+  role: z.enum(["Admin", "Sales", "Operations", "Manager", "Viewer"]).optional(),
   is_active: z.boolean().optional(),
 });
 

@@ -3,82 +3,76 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import {
-  BarChart3,
-  Users,
-  Building2,
-  CheckSquare,
-  CalendarClock,
-  Settings,
-  LayoutDashboard,
-} from "lucide-react";
+import { BarChart3, Users, Building2, CheckSquare, CalendarClock, Settings, LayoutDashboard } from "lucide-react";
 
-const navItems = [
+const NAV_CONFIG = [
   {
     label: "Dashboards",
     items: [
-      { href: "/dashboard/crm", label: "CRM Overview", icon: LayoutDashboard },
-      { href: "/dashboard/tasks", label: "Task Overview", icon: BarChart3 },
+      { href: "/dashboard/crm", label: "CRM Overview", icon: LayoutDashboard, roles: ["Admin", "Manager", "Sales", "Viewer"] },
+      { href: "/dashboard/tasks", label: "Task Overview", icon: BarChart3, roles: ["Admin", "Manager", "Viewer"] },
     ],
   },
   {
     label: "CRM",
     items: [
-      { href: "/leads", label: "Leads", icon: Users },
-      { href: "/opportunities", label: "Opportunities", icon: Building2 },
-      { href: "/follow-ups", label: "Follow-ups", icon: CalendarClock },
+      { href: "/leads", label: "Leads", icon: Users, roles: ["Admin", "Manager", "Sales", "Viewer"] },
+      { href: "/opportunities", label: "Opportunities", icon: Building2, roles: ["Admin", "Manager", "Sales", "Viewer"] },
+      { href: "/follow-ups", label: "Follow-ups", icon: CalendarClock, roles: ["Admin", "Manager", "Sales", "Operations", "Viewer"] },
     ],
   },
   {
     label: "Tasks",
     items: [
-      { href: "/tasks", label: "Tasks", icon: CheckSquare },
+      { href: "/tasks", label: "Tasks", icon: CheckSquare, roles: ["Admin", "Manager", "Sales", "Operations", "Viewer"] },
     ],
   },
   {
     label: "Settings",
     items: [
-      { href: "/settings/users", label: "Users", icon: Settings },
+      { href: "/settings/users", label: "Users", icon: Settings, roles: ["Admin"] },
     ],
   },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  role: string;
+}
+
+export function Sidebar({ role }: SidebarProps) {
   const pathname = usePathname();
+
+  const visibleNav = NAV_CONFIG
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => item.roles.includes(role)),
+    }))
+    .filter((section) => section.items.length > 0);
 
   return (
     <aside className="w-56 shrink-0 border-r bg-card flex flex-col h-full">
-      {/* Logo */}
       <div className="h-14 flex items-center px-4 border-b">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm">
-            D
-          </div>
+          <div className="w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm">D</div>
           <span className="font-semibold text-sm">DealStack</span>
         </div>
       </div>
-
-      {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-4 px-2">
-        {navItems.map((section) => (
+        {visibleNav.map((section) => (
           <div key={section.label} className="mb-4">
             <p className="px-2 mb-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
               {section.label}
             </p>
             {section.items.map((item) => {
               const Icon = item.icon;
-              const isActive =
-                pathname === item.href ||
-                (item.href !== "/" && pathname.startsWith(item.href));
+              const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   className={cn(
                     "flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm transition-colors",
-                    isActive
-                      ? "bg-primary/10 text-primary font-medium"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    isActive ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:text-foreground hover:bg-muted"
                   )}
                 >
                   <Icon className="h-4 w-4 shrink-0" />

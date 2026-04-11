@@ -44,23 +44,24 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
     return NextResponse.json({ data: { success: true } });
   }
 
-  // General update (admin can update role/is_active; self can update name/phone)
+  // General update
   const parsed = updateUserSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 422 });
   }
 
-  const { name, phone, role, is_active } = parsed.data;
+  const { short_name, name, phone, role, is_active } = parsed.data;
   const updateData: Record<string, unknown> = {};
   if (name !== undefined) updateData.name = name;
-  if (phone !== undefined) updateData.phone = phone;
+  if (phone !== undefined) updateData.phone = phone || null;
+  if (short_name !== undefined) updateData.short_name = short_name;
   if (isAdmin && role !== undefined) updateData.role = role;
   if (isAdmin && is_active !== undefined) updateData.is_active = is_active;
 
   const updated = await prisma.user.update({
     where: { id },
     data: updateData,
-    select: { id: true, name: true, email: true, role: true, is_active: true, phone: true },
+    select: { id: true, short_name: true, name: true, email: true, role: true, is_active: true, phone: true },
   });
 
   return NextResponse.json({ data: updated });

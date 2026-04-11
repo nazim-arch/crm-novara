@@ -3,14 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { generateId } from "@/lib/id-generator";
 import { createOpportunitySchema } from "@/lib/validations/opportunity";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermission, leadScopeFilter } from "@/lib/rbac";
 
 export async function GET(request: Request) {
   try {
     const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!hasPermission(session.user.role, "opportunity:read")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
@@ -18,22 +17,28 @@ export async function GET(request: Request) {
     const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
     const limit = 20;
 
-    const where = {
-      deleted_at: null as null,
-      ...(status && status !== "all" && { status: status as "Active" | "Inactive" | "Sold" }),
+    const where: Record<string, unknown> = {
+      deleted_at: null,
+      ...(status && status !== "all" && { status }),
       ...(search && {
         OR: [
-          { name: { contains: search, mode: "insensitive" as const } },
-          { project: { contains: search, mode: "insensitive" as const } },
-          { location: { contains: search, mode: "insensitive" as const } },
+          { name: { contains: search, mode: "insensitive" } },
+          { project: { contains: search, mode: "insensitive" } },
+          { location: { contains: search, mode: "insensitive" } },
         ],
       }),
     };
 
+    // Sales: only opportunities linked to their own leads
+    if (session.user.role === "Sales") {
+      const leadScope = leadScopeFilter("Sales", session.user.id)!;
+      where.leads = { some: { lead: leadScope } };
+    }
+
     const [total, opportunities] = await Promise.all([
-      prisma.opportunity.count({ where }),
+      prisma.opportunity.count({ where: where as Parameters<typeof prisma.opportunity.count>[0]["where"] }),
       prisma.opportunity.findMany({
-        where,
+        where: where as Parameters<typeof prisma.opportunity.findMany>[0]["where"],
         include: {
           created_by: { select: { id: true, name: true } },
           _count: { select: { leads: true } },
@@ -45,10 +50,7 @@ export async function GET(request: Request) {
       }),
     ]);
 
-    return NextResponse.json({
-      data: opportunities,
-      meta: { total, page, limit, pages: Math.ceil(total / limit) },
-    });
+    return NextResponse.json({ data: opportunities, meta: { total, page, limit, pages: Math.ceil(total / limit) } });
   } catch (error) {
     console.error("GET /api/opportunities:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -58,48 +60,30 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    if (!hasPermission(session.user.role, "opportunity:create")) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!hasPermission(session.user.role, "opportunity:create")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
     const parsed = createOpportunitySchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Validation failed", details: parsed.error.flatten() },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten() }, { status: 400 });
     }
 
     const { configurations, notes, developer, ...rest } = parsed.data;
-
-    // Compute financial totals from configurations
-    const total_sales_value = configurations.reduce(
-      (sum, row) => sum + row.number_of_units * row.price_per_unit,
-      0
-    );
+    const total_sales_value = configurations.reduce((sum, row) => sum + row.number_of_units * row.price_per_unit, 0);
     const possible_revenue = (total_sales_value * rest.commission_percent) / 100;
-
     const opp_number = await generateId("OPP");
 
     const opportunity = await prisma.opportunity.create({
       data: {
-        opp_number,
-        ...rest,
-        developer: developer || null,
-        notes: notes || null,
-        total_sales_value,
-        possible_revenue,
+        opp_number, ...rest,
+        developer: developer || null, notes: notes || null,
+        total_sales_value, possible_revenue,
         created_by_id: session.user.id,
         configurations: {
           create: configurations.map((row) => ({
-            label: row.label,
-            number_of_units: row.number_of_units,
-            price_per_unit: row.price_per_unit,
-            row_total: row.number_of_units * row.price_per_unit,
+            label: row.label, number_of_units: row.number_of_units,
+            price_per_unit: row.price_per_unit, row_total: row.number_of_units * row.price_per_unit,
           })),
         },
       },

@@ -2,52 +2,45 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { updateLeadSchema } from "@/lib/validations/lead";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermission, leadScopeFilter } from "@/lib/rbac";
 
 type Params = Promise<{ id: string }>;
+
+async function verifyLeadAccess(leadId: string, role: string, userId: string) {
+  const scope = leadScopeFilter(role, userId);
+  if (!scope) return true; // Admin/Manager — no restriction
+  const lead = await prisma.lead.findFirst({
+    where: { id: leadId, deleted_at: null, ...scope },
+    select: { id: true },
+  });
+  return !!lead;
+}
 
 export async function GET(_request: Request, { params }: { params: Params }) {
   try {
     const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!hasPermission(session.user.role, "lead:read")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await params;
+    if (!(await verifyLeadAccess(id, session.user.role, session.user.id))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const lead = await prisma.lead.findUnique({
       where: { id, deleted_at: null },
       include: {
         assigned_to: { select: { id: true, name: true, email: true, avatar_url: true } },
         lead_owner: { select: { id: true, name: true, email: true } },
         created_by: { select: { id: true, name: true } },
-        opportunities: {
-          include: {
-            opportunity: true,
-            tagged_by: { select: { id: true, name: true } },
-          },
-        },
-        tasks: {
-          where: { deleted_at: null },
-          include: {
-            assigned_to: { select: { id: true, name: true } },
-          },
-          orderBy: { due_date: "asc" },
-        },
-        stage_history: {
-          include: { changed_by: { select: { id: true, name: true } } },
-          orderBy: { changed_at: "desc" },
-        },
-        followups: {
-          orderBy: { scheduled_at: "desc" },
-          include: { created_by: { select: { id: true, name: true } } },
-        },
+        opportunities: { include: { opportunity: true, tagged_by: { select: { id: true, name: true } } } },
+        tasks: { where: { deleted_at: null }, include: { assigned_to: { select: { id: true, name: true } } }, orderBy: { due_date: "asc" } },
+        stage_history: { include: { changed_by: { select: { id: true, name: true } } }, orderBy: { changed_at: "desc" } },
+        followups: { orderBy: { scheduled_at: "desc" }, include: { created_by: { select: { id: true, name: true } } } },
       },
     });
 
-    if (!lead) {
-      return NextResponse.json({ error: "Lead not found" }, { status: 404 });
-    }
-
+    if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     return NextResponse.json({ data: lead });
   } catch (error) {
     console.error("GET /api/leads/[id]:", error);
@@ -58,39 +51,26 @@ export async function GET(_request: Request, { params }: { params: Params }) {
 export async function PATCH(request: Request, { params }: { params: Params }) {
   try {
     const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    if (!hasPermission(session.user.role, "lead:update")) {
+    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!hasPermission(session.user.role, "lead:update")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const { id } = await params;
+    if (!(await verifyLeadAccess(id, session.user.role, session.user.id))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const { id } = await params;
     const body = await request.json();
     const parsed = updateLeadSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Validation failed", details: parsed.error.flatten() },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten() }, { status: 400 });
     }
 
     const { notes, financing_required, ...updateData } = parsed.data;
-
-    // Clean up empty strings to null
     const cleanData: Record<string, unknown> = Object.fromEntries(
       Object.entries(updateData).map(([k, v]) => [k, v === "" ? null : v])
     );
-
-    // Map notes → alternate_requirement
-    if (notes !== undefined) {
-      cleanData.alternate_requirement = notes === "" ? null : notes;
-    }
-
-    // financing_required is boolean — pass through directly
-    if (financing_required !== undefined) {
-      cleanData.financing_required = financing_required;
-    }
+    if (notes !== undefined) cleanData.alternate_requirement = notes === "" ? null : notes;
+    if (financing_required !== undefined) cleanData.financing_required = financing_required;
 
     const lead = await prisma.lead.update({
       where: { id, deleted_at: null },
@@ -99,11 +79,8 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
 
     await prisma.activity.create({
       data: {
-        entity_type: "Lead",
-        entity_id: id,
-        action: "lead_updated",
-        actor_id: session.user.id,
-        metadata: { fields: Object.keys(cleanData) },
+        entity_type: "Lead", entity_id: id, action: "lead_updated",
+        actor_id: session.user.id, metadata: { fields: Object.keys(cleanData) },
       },
     });
 
@@ -117,12 +94,8 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
 export async function DELETE(_request: Request, { params }: { params: Params }) {
   try {
     const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    if (!hasPermission(session.user.role, "lead:delete")) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!hasPermission(session.user.role, "lead:delete")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await params;
     await prisma.lead.update({

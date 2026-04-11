@@ -92,6 +92,7 @@ interface RecentActivity {
 interface TaskStats { todo: number; inProgress: number; done: number; overdue: number }
 
 interface Props {
+  canViewFinancials: boolean;
   kpis: Kpis;
   todayLeads: TodayLead[];
   overdueLeads: OverdueLead[];
@@ -216,6 +217,7 @@ function TempBadge({ temp }: { temp: string | null }) {
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export function CrmDashboardClient({
+  canViewFinancials,
   kpis,
   todayLeads,
   overdueLeads,
@@ -292,48 +294,52 @@ export function CrmDashboardClient({
           />
         </div>
 
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 mt-5">
-          Revenue KPIs
-        </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          <KpiCard
-            label="Overdue Follow-ups"
-            value={kpis.overdueFollowUps}
-            icon={AlertTriangle}
-            iconClass={kpis.overdueFollowUps > 0 ? "text-destructive" : "text-muted-foreground"}
-            valueClass={kpis.overdueFollowUps > 0 ? "text-destructive" : ""}
-            href="/follow-ups"
-          />
-          <KpiCard
-            label="Pipeline Value"
-            value={kpis.pipelineValue > 0 ? fc(kpis.pipelineValue) : "—"}
-            sub="Active lead potential"
-            icon={TrendingUp}
-          />
-          <KpiCard
-            label="Total Sales Value"
-            value={kpis.totalSalesValue > 0 ? fc(kpis.totalSalesValue) : "—"}
-            sub="All opportunity inventory"
-            icon={DollarSign}
-            href="/opportunities"
-          />
-          <KpiCard
-            label="Possible Revenue"
-            value={kpis.possibleRevenue > 0 ? fc(kpis.possibleRevenue) : "—"}
-            sub="Commission (active)"
-            icon={Wallet}
-            iconClass="text-primary"
-            valueClass="text-primary"
-          />
-          <KpiCard
-            label="Net Profit"
-            value={kpis.closedRevenue > 0 ? fc(kpis.netProfit) : "—"}
-            sub={kpis.totalExpense > 0 ? `Expense: ${fc(kpis.totalExpense)}` : "No expenses"}
-            icon={PiggyBank}
-            iconClass={kpis.netProfit >= 0 ? "text-green-600" : "text-destructive"}
-            valueClass={kpis.netProfit >= 0 ? "text-green-600" : "text-destructive"}
-          />
-        </div>
+        {canViewFinancials && (
+          <>
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 mt-5">
+              Revenue KPIs
+            </h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              <KpiCard
+                label="Overdue Follow-ups"
+                value={kpis.overdueFollowUps}
+                icon={AlertTriangle}
+                iconClass={kpis.overdueFollowUps > 0 ? "text-destructive" : "text-muted-foreground"}
+                valueClass={kpis.overdueFollowUps > 0 ? "text-destructive" : ""}
+                href="/follow-ups"
+              />
+              <KpiCard
+                label="Pipeline Value"
+                value={kpis.pipelineValue > 0 ? fc(kpis.pipelineValue) : "—"}
+                sub="Active lead potential"
+                icon={TrendingUp}
+              />
+              <KpiCard
+                label="Total Sales Value"
+                value={kpis.totalSalesValue > 0 ? fc(kpis.totalSalesValue) : "—"}
+                sub="All opportunity inventory"
+                icon={DollarSign}
+                href="/opportunities"
+              />
+              <KpiCard
+                label="Possible Revenue"
+                value={kpis.possibleRevenue > 0 ? fc(kpis.possibleRevenue) : "—"}
+                sub="Commission (active)"
+                icon={Wallet}
+                iconClass="text-primary"
+                valueClass="text-primary"
+              />
+              <KpiCard
+                label="Net Profit"
+                value={kpis.closedRevenue > 0 ? fc(kpis.netProfit) : "—"}
+                sub={kpis.totalExpense > 0 ? `Expense: ${fc(kpis.totalExpense)}` : "No expenses"}
+                icon={PiggyBank}
+                iconClass={kpis.netProfit >= 0 ? "text-green-600" : "text-destructive"}
+                valueClass={kpis.netProfit >= 0 ? "text-green-600" : "text-destructive"}
+              />
+            </div>
+          </>
+        )}
       </section>
 
       {/* ── Section 2: Today's Focus ──────────────────────────────────── */}
@@ -615,69 +621,71 @@ export function CrmDashboardClient({
       </section>
 
       {/* ── Section 4: Opportunity & Revenue Intelligence ─────────────── */}
-      <section>
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-          Opportunity & Revenue Intelligence
-        </h2>
-        <Card>
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Target className="h-4 w-4" />
-                Top Active Opportunities
-              </CardTitle>
-              <Link href="/opportunities" className="text-xs text-primary hover:underline">
-                View All
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {topOpportunities.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-2">No active opportunities</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-xs text-muted-foreground">
-                      <th className="text-left py-2 pr-4">Opportunity</th>
-                      <th className="text-right py-2 px-4">Possible Revenue</th>
-                      <th className="text-right py-2 px-4">Closed Revenue</th>
-                      <th className="text-right py-2 px-4">Total Expense</th>
-                      <th className="text-right py-2 px-4">Net Profit</th>
-                      <th className="text-right py-2 pl-4">Leads</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {topOpportunities.map((o) => (
-                      <tr key={o.id} className="border-b last:border-0 hover:bg-muted/20">
-                        <td className="py-2 pr-4">
-                          <Link href={`/opportunities/${o.id}`} className="hover:text-primary">
-                            <p className="font-medium">{o.name}</p>
-                            <p className="text-[10px] text-muted-foreground font-mono">{o.opp_number}</p>
-                          </Link>
-                        </td>
-                        <td className="py-2 px-4 text-right text-primary font-medium">
-                          {o.possible_revenue > 0 ? fc(o.possible_revenue) : "—"}
-                        </td>
-                        <td className="py-2 px-4 text-right text-green-600 font-medium">
-                          {o.closed_revenue > 0 ? fc(o.closed_revenue) : "—"}
-                        </td>
-                        <td className="py-2 px-4 text-right text-destructive">
-                          {o.total_expense > 0 ? fc(o.total_expense) : "—"}
-                        </td>
-                        <td className={`py-2 px-4 text-right font-semibold ${o.net_profit >= 0 ? "text-green-600" : "text-destructive"}`}>
-                          {o.closed_revenue > 0 ? fc(o.net_profit) : "—"}
-                        </td>
-                        <td className="py-2 pl-4 text-right text-muted-foreground">{o.leads_count}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+      {canViewFinancials && (
+        <section>
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+            Opportunity & Revenue Intelligence
+          </h2>
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Target className="h-4 w-4" />
+                  Top Active Opportunities
+                </CardTitle>
+                <Link href="/opportunities" className="text-xs text-primary hover:underline">
+                  View All
+                </Link>
               </div>
-            )}
-          </CardContent>
-        </Card>
-      </section>
+            </CardHeader>
+            <CardContent>
+              {topOpportunities.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-2">No active opportunities</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-xs text-muted-foreground">
+                        <th className="text-left py-2 pr-4">Opportunity</th>
+                        <th className="text-right py-2 px-4">Possible Revenue</th>
+                        <th className="text-right py-2 px-4">Closed Revenue</th>
+                        <th className="text-right py-2 px-4">Total Expense</th>
+                        <th className="text-right py-2 px-4">Net Profit</th>
+                        <th className="text-right py-2 pl-4">Leads</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {topOpportunities.map((o) => (
+                        <tr key={o.id} className="border-b last:border-0 hover:bg-muted/20">
+                          <td className="py-2 pr-4">
+                            <Link href={`/opportunities/${o.id}`} className="hover:text-primary">
+                              <p className="font-medium">{o.name}</p>
+                              <p className="text-[10px] text-muted-foreground font-mono">{o.opp_number}</p>
+                            </Link>
+                          </td>
+                          <td className="py-2 px-4 text-right text-primary font-medium">
+                            {o.possible_revenue > 0 ? fc(o.possible_revenue) : "—"}
+                          </td>
+                          <td className="py-2 px-4 text-right text-green-600 font-medium">
+                            {o.closed_revenue > 0 ? fc(o.closed_revenue) : "—"}
+                          </td>
+                          <td className="py-2 px-4 text-right text-destructive">
+                            {o.total_expense > 0 ? fc(o.total_expense) : "—"}
+                          </td>
+                          <td className={`py-2 px-4 text-right font-semibold ${o.net_profit >= 0 ? "text-green-600" : "text-destructive"}`}>
+                            {o.closed_revenue > 0 ? fc(o.net_profit) : "—"}
+                          </td>
+                          <td className="py-2 pl-4 text-right text-muted-foreground">{o.leads_count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </section>
+      )}
 
       {/* ── Section 5 & 6: Activity Feed + Task Stats ─────────────────── */}
       <section>
