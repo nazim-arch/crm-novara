@@ -55,6 +55,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
   ]);
 
   const canCreate = session?.user && hasPermission(session.user.role, "opportunity:create");
+  const canViewFinancials = session?.user && hasPermission(session.user.role, "financial:view");
 
   return (
     <div className="p-6 space-y-4">
@@ -79,8 +80,8 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
               <TableHead>Name / Project</TableHead>
               <TableHead>Location</TableHead>
               <TableHead>Type</TableHead>
-              <TableHead>Commission</TableHead>
-              <TableHead>Possible Revenue</TableHead>
+              {canViewFinancials && <TableHead>Commission</TableHead>}
+              {canViewFinancials && <TableHead>Possible Revenue</TableHead>}
               <TableHead>Leads</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
@@ -88,7 +89,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
           <TableBody>
             {opportunities.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={canViewFinancials ? 8 : 6} className="text-center py-12 text-muted-foreground">
                   <Building2 className="h-8 w-8 mx-auto mb-2 opacity-30" />
                   No opportunities yet
                 </TableCell>
@@ -107,10 +108,12 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
                   </TableCell>
                   <TableCell className="text-sm">{opp.location}</TableCell>
                   <TableCell className="text-sm">{opp.property_type}</TableCell>
-                  <TableCell className="text-sm">{Number(opp.commission_percent)}%</TableCell>
-                  <TableCell className="text-sm">
-                    {opp.possible_revenue ? formatCurrency(Number(opp.possible_revenue)) : "—"}
-                  </TableCell>
+                  {canViewFinancials && <TableCell className="text-sm">{Number(opp.commission_percent)}%</TableCell>}
+                  {canViewFinancials && (
+                    <TableCell className="text-sm">
+                      {opp.possible_revenue ? formatCurrency(Number(opp.possible_revenue)) : "—"}
+                    </TableCell>
+                  )}
                   <TableCell className="text-sm">{opp._count.leads}</TableCell>
                   <TableCell>
                     <span
