@@ -58,6 +58,7 @@ export default async function OpportunityDetailPage({ params }: { params: Params
   const canEdit = session?.user && hasPermission(session.user.role, "opportunity:update");
   const isAdmin = session?.user.role === "Admin";
   const canViewFinancials = session?.user ? hasPermission(session.user.role, "financial:view") : false;
+  const canAddExpense = session?.user ? (isAdmin || session.user.role === "Sales") : false;
 
   const totalSalesValue = Number(opp.total_sales_value ?? 0);
   const possibleRevenue = Number(opp.possible_revenue ?? 0);
@@ -190,8 +191,8 @@ export default async function OpportunityDetailPage({ params }: { params: Params
             </CardContent>
           </Card>
 
-          {/* Expenses */}
-          {canViewFinancials && (
+          {/* Expenses — visible to Admin and Sales; financial summary only to Admin */}
+          {canAddExpense && (
             <ExpensesSection
               opportunityId={id}
               expenses={expenses.map((e) => ({
@@ -202,6 +203,7 @@ export default async function OpportunityDetailPage({ params }: { params: Params
               closedRevenue={closedRevenue}
               currentUserId={session?.user.id ?? ""}
               isAdmin={isAdmin}
+              canViewFinancials={canViewFinancials}
             />
           )}
         </div>

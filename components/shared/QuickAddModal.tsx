@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Users, Building2, CheckSquare, CalendarClock, Loader2, Pencil } from "lucide-react";
+import { Plus, Users, Building2, CheckSquare, CalendarClock, Loader2, Pencil, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,6 +32,7 @@ const LEAD_SOURCES = ["Website", "Facebook", "Instagram", "Google Ads", "Referra
 const FOLLOW_UP_TYPES = ["Call", "Email", "WhatsApp", "Visit", "Meeting"];
 const PROPERTY_TYPES = ["Residential", "Commercial", "Plot", "Villa", "Apartment", "Office"];
 const SECTORS = ["Novara", "Sage", "Podcast", "Trade"];
+const EXPENSE_CATEGORIES = ["Meta Ads", "Google Ads", "Ads", "Marketing", "Site Visits", "Travel / Petrol", "Shared Commission", "Operational Expense", "Miscellaneous"];
 
 type Mode = "new" | "edit";
 
@@ -106,6 +107,13 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
   const [fuDate, setFuDate] = useState("");
   const [fuNotes, setFuNotes] = useState("");
 
+  // Expense form
+  const [expOppId, setExpOppId] = useState("none");
+  const [expCategory, setExpCategory] = useState("");
+  const [expAmount, setExpAmount] = useState("");
+  const [expDate, setExpDate] = useState(new Date().toISOString().split("T")[0]);
+  const [expDescription, setExpDescription] = useState("");
+
   const loadData = useCallback(async () => {
     if (dataLoaded) return;
     try {
@@ -166,6 +174,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
     setOppName(""); setOppProject(""); setOppPropertyType(""); setOppLocation(""); setOppCommission("");
     setTaskTitle(""); setTaskAssignedTo(currentUserId); setTaskDueDate(""); setTaskLeadId("none"); setTaskOppId("none"); setTaskSector("");
     setFuLinkType("lead"); setFuLeadId("none"); setFuTaskId("none"); setFuType("Call"); setFuDate(""); setFuNotes("");
+    setExpOppId("none"); setExpCategory(""); setExpAmount(""); setExpDate(new Date().toISOString().split("T")[0]); setExpDescription("");
   }
 
   function navigateToEdit(path: string) {
@@ -297,6 +306,28 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
     finally { setLoading(false); }
   }
 
+  async function submitExpense() {
+    if (expOppId === "none") { toast.error("Select an opportunity"); return; }
+    if (!expCategory) { toast.error("Select a category"); return; }
+    if (!expAmount || isNaN(Number(expAmount)) || Number(expAmount) <= 0) { toast.error("Enter a valid amount"); return; }
+    if (!expDate) { toast.error("Enter a date"); return; }
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/opportunities/${expOppId}/expenses`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category: expCategory, amount: Number(expAmount), expense_date: expDate, description: expDescription }),
+      });
+      const result = await res.json();
+      if (!res.ok) { toast.error(result.error ?? "Failed to add expense"); return; }
+      toast.success("Expense added");
+      setOpen(false);
+      resetForms();
+      router.refresh();
+    } catch { toast.error("Something went wrong"); }
+    finally { setLoading(false); }
+  }
+
   const taskAssigneeName = users.find((u) => u.id === taskAssignedTo)?.name ?? "Select user";
   const taskLeadLabel = taskLeadId === "none" ? "No lead" : leads.find((l) => l.id === taskLeadId) ? `${leads.find((l) => l.id === taskLeadId)!.lead_number} – ${leads.find((l) => l.id === taskLeadId)!.full_name}` : "Select lead";
   const taskOppLabel = taskOppId === "none" ? "No opportunity" : opps.find((o) => o.id === taskOppId) ? `${opps.find((o) => o.id === taskOppId)!.opp_number} – ${opps.find((o) => o.id === taskOppId)!.name}` : "Select opportunity";
@@ -317,12 +348,19 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
           <DialogTitle>Quick Add</DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue={role === "Operations" ? "task" : "lead"}>
-          <TabsList className={`w-full grid ${role === "Operations" ? "grid-cols-1" : "grid-cols-4"}`}>
-            {role !== "Operations" && <TabsTrigger value="lead" className="gap-1 text-xs"><Users className="h-3.5 w-3.5" />Lead</TabsTrigger>}
-            {role !== "Operations" && <TabsTrigger value="opportunity" className="gap-1 text-xs"><Building2 className="h-3.5 w-3.5" />Opp</TabsTrigger>}
+        {/* Sales: Lead, Task, Follow-up, Expense | Admin: all 5 | Operations: Task only */}
+        {(() => {
+          const canExpense = role === "Admin" || role === "Sales";
+          const isOps = role === "Operations";
+          const cols = isOps ? 1 : canExpense ? 5 : 4;
+          return (
+        <Tabs defaultValue={isOps ? "task" : "lead"}>
+          <TabsList className={`w-full grid grid-cols-${cols}`}>
+            {!isOps && <TabsTrigger value="lead" className="gap-1 text-xs"><Users className="h-3.5 w-3.5" />Lead</TabsTrigger>}
+            {role === "Admin" && <TabsTrigger value="opportunity" className="gap-1 text-xs"><Building2 className="h-3.5 w-3.5" />Opp</TabsTrigger>}
             <TabsTrigger value="task" className="gap-1 text-xs"><CheckSquare className="h-3.5 w-3.5" />Task</TabsTrigger>
-            {role !== "Operations" && <TabsTrigger value="followup" className="gap-1 text-xs"><CalendarClock className="h-3.5 w-3.5" />Follow-up</TabsTrigger>}
+            {!isOps && <TabsTrigger value="followup" className="gap-1 text-xs"><CalendarClock className="h-3.5 w-3.5" />Follow-up</TabsTrigger>}
+            {canExpense && <TabsTrigger value="expense" className="gap-1 text-xs"><Receipt className="h-3.5 w-3.5" />Expense</TabsTrigger>}
           </TabsList>
 
           {/* ── LEAD ── */}
@@ -637,7 +675,58 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
               </>
             )}
           </TabsContent>
+
+          {/* ── EXPENSE ── */}
+          {(role === "Admin" || role === "Sales") && (
+            <TabsContent value="expense" className="space-y-3 mt-4">
+              <div className="space-y-1.5">
+                <Label>Opportunity <span className="text-destructive">*</span></Label>
+                <Select value={expOppId} onValueChange={(v) => v && setExpOppId(v)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue>
+                      {expOppId === "none" ? "Select opportunity" : opps.find(o => o.id === expOppId) ? `${opps.find(o => o.id === expOppId)!.opp_number} – ${opps.find(o => o.id === expOppId)!.name}` : "Select opportunity"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Select opportunity</SelectItem>
+                    {opps.map(o => <SelectItem key={o.id} value={o.id}>{o.opp_number} – {o.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Category <span className="text-destructive">*</span></Label>
+                <Select value={expCategory || "__none__"} onValueChange={(v) => setExpCategory(!v || v === "__none__" ? "" : v)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Select category</SelectItem>
+                    {EXPENSE_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Amount (₹) <span className="text-destructive">*</span></Label>
+                  <Input type="number" min="0" value={expAmount} onChange={(e) => setExpAmount(e.target.value)} placeholder="0" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Date <span className="text-destructive">*</span></Label>
+                  <Input type="date" value={expDate} onChange={(e) => setExpDate(e.target.value)} />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Description</Label>
+                <Input value={expDescription} onChange={(e) => setExpDescription(e.target.value)} placeholder="Optional note" />
+              </div>
+              <Button className="w-full" onClick={submitExpense} disabled={loading}>
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Add Expense
+              </Button>
+            </TabsContent>
+          )}
         </Tabs>
+        );})()}
       </DialogContent>
     </Dialog>
   );

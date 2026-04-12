@@ -47,6 +47,7 @@ interface ExpensesSectionProps {
   closedRevenue: number;
   currentUserId: string;
   isAdmin: boolean;
+  canViewFinancials?: boolean;
 }
 
 function formatCurrency(n: number) {
@@ -70,6 +71,7 @@ export function ExpensesSection({
   closedRevenue,
   currentUserId,
   isAdmin,
+  canViewFinancials = true,
 }: ExpensesSectionProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -310,8 +312,8 @@ export function ExpensesSection({
           </div>
         )}
 
-        {/* Financial summary */}
-        <div className="grid grid-cols-3 gap-3 pt-2 border-t">
+        {/* Financial summary — Admin only */}
+        {canViewFinancials && <div className="grid grid-cols-3 gap-3 pt-2 border-t">
           <div className="p-3 rounded-lg bg-muted/40">
             <p className="text-xs text-muted-foreground mb-0.5">Total Expense</p>
             <p className="font-semibold text-destructive">
@@ -332,7 +334,7 @@ export function ExpensesSection({
             </p>
             <p className="text-[10px] text-muted-foreground">Closed − Expense</p>
           </div>
-        </div>
+        </div>}
       </CardContent>
     </Card>
   );

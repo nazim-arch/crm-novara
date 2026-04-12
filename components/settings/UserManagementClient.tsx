@@ -13,7 +13,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, UserCheck, UserX, AlertTriangle, Loader2 } from "lucide-react";
+import { Plus, UserCheck, UserX, AlertTriangle, Loader2, Pencil, Trash2 } from "lucide-react";
 
 type User = {
   id: string;
@@ -52,18 +52,31 @@ function roleLabel(role: string) {
   return ALL_ROLES.find(r => r.value === role)?.label ?? role;
 }
 
+const EMPTY_FORM = { short_name: "", name: "", email: "", password: "", role: "Sales", phone: "" };
+
 interface UserManagementClientProps {
   users: User[];
 }
 
 export function UserManagementClient({ users: initialUsers }: UserManagementClientProps) {
   const router = useRouter();
+
+  // Create
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ short_name: "", name: "", email: "", password: "", role: "Sales", phone: "" });
+  const [form, setForm] = useState(EMPTY_FORM);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
-  // Reassignment state
+  // Edit
+  const [editUser, setEditUser] = useState<User | null>(null);
+  const [editForm, setEditForm] = useState({ short_name: "", name: "", email: "", phone: "", role: "", new_password: "" });
+  const [editSaving, setEditSaving] = useState(false);
+
+  // Delete
+  const [deleteUser, setDeleteUser] = useState<User | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Reassignment
   const [reassignUserId, setReassignUserId] = useState<string | null>(null);
   const [reassignWorkload, setReassignWorkload] = useState<{ leadCount: number; taskCount: number } | null>(null);
   const [reassignTo, setReassignTo] = useState("");
@@ -71,6 +84,7 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
 
   const activeUsers = initialUsers.filter((u) => u.is_active);
 
+  // ── Create ──────────────────────────────────────────────────────────────────
   const validateForm = () => {
     const errors: Record<string, string> = {};
     if (!form.short_name.trim()) errors.short_name = "Short name is required";
@@ -91,13 +105,10 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
         body: JSON.stringify(form),
       });
       const result = await res.json();
-      if (!res.ok) {
-        toast.error(typeof result.error === "string" ? result.error : "Failed to create user");
-        return;
-      }
+      if (!res.ok) { toast.error(typeof result.error === "string" ? result.error : "Failed to create user"); return; }
       toast.success("User created successfully");
       setCreateOpen(false);
-      setForm({ short_name: "", name: "", email: "", password: "", role: "Sales", phone: "" });
+      setForm(EMPTY_FORM);
       setFormErrors({});
       router.refresh();
     } catch {
@@ -107,27 +118,91 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
     }
   };
 
-  const handleRoleChange = async (userId: string, role: string) => {
-    const res = await fetch(`/api/users/${userId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role }),
-    });
-    if (!res.ok) { toast.error("Failed to update role"); return; }
-    toast.success("Role updated");
-    router.refresh();
+  // ── Edit ─────────────────────────────────────────────────────────────────────
+  const openEdit = (user: User) => {
+    setEditUser(user);
+    setEditForm({ short_name: user.short_name, name: user.name, email: user.email, phone: user.phone ?? "", role: user.role, new_password: "" });
   };
 
+  const handleSaveEdit = async () => {
+    if (!editUser) return;
+    setEditSaving(true);
+    try {
+      const payload: Record<string, unknown> = {
+        short_name: editForm.short_name,
+        name: editForm.name,
+        phone: editForm.phone,
+        role: editForm.role,
+      };
+      // Email change — send as separate field (needs special handling if needed)
+      // For now, update everything via PATCH
+      if (editForm.new_password && editForm.new_password.length >= 8) {
+        // Admin reset: use a dedicated admin-reset endpoint or reuse PATCH with admin override
+        const pwRes = await fetch(`/api/users/${editUser.id}/reset-password`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ new_password: editForm.new_password }),
+        });
+        if (!pwRes.ok) { toast.error("Failed to reset password"); setEditSaving(false); return; }
+      }
+      const res = await fetch(`/api/users/${editUser.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) { toast.error("Failed to update user"); return; }
+      toast.success("User updated");
+      setEditUser(null);
+      router.refresh();
+    } catch {
+      toast.error("Something went wrong");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  // ── Delete ───────────────────────────────────────────────────────────────────
+  const initiateDelete = async (user: User) => {
+    try {
+      const res = await fetch(`/api/users/${user.id}/reassign`);
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error ?? "Failed to check user workload"); return; }
+      const workload = data.data as { leadCount: number; taskCount: number };
+      if (workload.leadCount > 0 || workload.taskCount > 0) {
+        setReassignUserId(user.id);
+        setReassignWorkload(workload);
+        setReassignTo("");
+      } else {
+        setDeleteUser(user);
+      }
+    } catch {
+      toast.error("Failed to check user workload");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteUser) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/users/${deleteUser.id}`, { method: "DELETE" });
+      if (!res.ok) { const d = await res.json(); toast.error(d.error ?? "Failed to delete user"); return; }
+      toast.success("User deleted");
+      setDeleteUser(null);
+      router.refresh();
+    } catch {
+      toast.error("Something went wrong");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // ── Deactivate ───────────────────────────────────────────────────────────────
   const initiateDeactivate = async (user: User) => {
     try {
       const res = await fetch(`/api/users/${user.id}/reassign`);
       const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error ?? "Failed to check user workload");
-        return;
-      }
+      if (!res.ok) { toast.error(data.error ?? "Failed to check user workload"); return; }
       const workload = data.data as { leadCount: number; taskCount: number };
-
       if (workload.leadCount > 0 || workload.taskCount > 0) {
         setReassignUserId(user.id);
         setReassignWorkload(workload);
@@ -190,13 +265,13 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
 
   return (
     <div className="space-y-4">
-      {/* Reassign modal */}
+      {/* ── Reassign modal ──────────────────────────────────────────────────── */}
       <Dialog open={!!reassignUserId} onOpenChange={(open) => { if (!open) { setReassignUserId(null); setReassignWorkload(null); } }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-orange-500" />
-              Deactivate {reassignUser?.name}
+              Reassign work for {reassignUser?.name}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
@@ -206,38 +281,23 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
                 {(reassignWorkload?.leadCount ?? 0) > 0 && <li>{reassignWorkload?.leadCount} active lead(s)</li>}
                 {(reassignWorkload?.taskCount ?? 0) > 0 && <li>{reassignWorkload?.taskCount} open task(s)</li>}
               </ul>
-              <p className="mt-2 text-orange-600 dark:text-orange-400">Reassign their work before deactivating:</p>
+              <p className="mt-2 text-orange-600 dark:text-orange-400">Reassign before proceeding:</p>
             </div>
             <div className="space-y-1.5">
               <Label>Reassign to</Label>
-              <Select
-                value={reassignTo || "__none__"}
-                onValueChange={(v) => setReassignTo(!v || v === "__none__" ? "" : v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select user to reassign to..." />
-                </SelectTrigger>
+              <Select value={reassignTo || "__none__"} onValueChange={(v) => setReassignTo(!v || v === "__none__" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder="Select user to reassign to..." /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">
-                    <span className="text-muted-foreground">Skip reassignment</span>
-                  </SelectItem>
-                  {activeUsers
-                    .filter(u => u.id !== reassignUserId)
-                    .map((u) => (
-                      <SelectItem key={u.id} value={u.id}>
-                        {u.name} ({roleLabel(u.role)})
-                      </SelectItem>
-                    ))}
+                  <SelectItem value="__none__"><span className="text-muted-foreground">Skip reassignment</span></SelectItem>
+                  {activeUsers.filter(u => u.id !== reassignUserId).map((u) => (
+                    <SelectItem key={u.id} value={u.id}>{u.name} ({roleLabel(u.role)})</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => { setReassignUserId(null); setReassignWorkload(null); }}>Cancel</Button>
-              <Button
-                variant="destructive"
-                onClick={handleReassignAndDeactivate}
-                disabled={reassigning}
-              >
+              <Button variant="destructive" onClick={handleReassignAndDeactivate} disabled={reassigning}>
                 {reassigning && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {reassignTo ? "Reassign & Deactivate" : "Deactivate Anyway"}
               </Button>
@@ -246,83 +306,119 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
         </DialogContent>
       </Dialog>
 
+      {/* ── Edit modal ──────────────────────────────────────────────────────── */}
+      <Dialog open={!!editUser} onOpenChange={(open) => { if (!open) setEditUser(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit User — {editUser?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Short Name <span className="text-destructive">*</span></Label>
+                <Input value={editForm.short_name} onChange={(e) => setEditForm(f => ({ ...f, short_name: e.target.value }))} maxLength={20} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>User Group <span className="text-destructive">*</span></Label>
+                <Select value={editForm.role} onValueChange={(v) => v && setEditForm(f => ({ ...f, role: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {ALL_ROLES.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Full Name <span className="text-destructive">*</span></Label>
+              <Input value={editForm.name} onChange={(e) => setEditForm(f => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Phone</Label>
+              <Input value={editForm.phone} onChange={(e) => setEditForm(f => ({ ...f, phone: e.target.value }))} placeholder="+91..." />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Reset Password <span className="text-xs text-muted-foreground">(leave blank to keep current)</span></Label>
+              <Input type="password" value={editForm.new_password} onChange={(e) => setEditForm(f => ({ ...f, new_password: e.target.value }))} placeholder="Min 8 characters" />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setEditUser(null)}>Cancel</Button>
+              <Button onClick={handleSaveEdit} disabled={editSaving}>
+                {editSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save Changes
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete confirm modal ─────────────────────────────────────────────── */}
+      <Dialog open={!!deleteUser} onOpenChange={(open) => { if (!open) setDeleteUser(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-destructive" />
+              Delete {deleteUser?.name}?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <p className="text-sm text-muted-foreground">
+              This will permanently delete the user account. This action cannot be undone.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setDeleteUser(null)}>Cancel</Button>
+              <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+                {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Delete Permanently
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Add User button ──────────────────────────────────────────────────── */}
       <div className="flex justify-end">
         <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) setFormErrors({}); }}>
           <DialogTrigger render={
-            <Button>
-              <Plus className="h-4 w-4 mr-1" /> Add User
-            </Button>
+            <Button><Plus className="h-4 w-4 mr-1" /> Add User</Button>
           } />
           <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Create New User</DialogTitle>
-            </DialogHeader>
+            <DialogHeader><DialogTitle>Create New User</DialogTitle></DialogHeader>
             <div className="space-y-4 pt-2">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>Short Name <span className="text-destructive">*</span></Label>
-                  <Input
-                    value={form.short_name}
-                    onChange={(e) => setForm((f) => ({ ...f, short_name: e.target.value }))}
-                    placeholder="e.g. Nazim"
-                    maxLength={20}
-                  />
+                  <Input value={form.short_name} onChange={(e) => setForm((f) => ({ ...f, short_name: e.target.value }))} placeholder="e.g. Nazim" maxLength={20} />
                   {formErrors.short_name && <p className="text-xs text-destructive">{formErrors.short_name}</p>}
                   <p className="text-[10px] text-muted-foreground">Used in avatars & compact views</p>
                 </div>
                 <div className="space-y-1.5">
                   <Label>User Group <span className="text-destructive">*</span></Label>
-                  <Select
-                    value={form.role}
-                    onValueChange={(v) => v && setForm((f) => ({ ...f, role: v }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
+                  <Select value={form.role} onValueChange={(v) => v && setForm((f) => ({ ...f, role: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {ACTIVE_ROLES.map((r) => (
-                        <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
-                      ))}
+                      {ACTIVE_ROLES.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
               </div>
               <div className="space-y-1.5">
                 <Label>Full Name <span className="text-destructive">*</span></Label>
-                <Input
-                  value={form.name}
-                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="Full legal name"
-                />
+                <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Full legal name" />
                 {formErrors.name && <p className="text-xs text-destructive">{formErrors.name}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label>Email <span className="text-destructive">*</span></Label>
-                <Input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                  placeholder="user@novara.in"
-                />
+                <Input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="user@novara.in" />
                 {formErrors.email && <p className="text-xs text-destructive">{formErrors.email}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label>Password <span className="text-destructive">*</span></Label>
-                <Input
-                  type="password"
-                  value={form.password}
-                  onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                  placeholder="Min 8 characters"
-                />
+                <Input type="password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} placeholder="Min 8 characters" />
                 {formErrors.password && <p className="text-xs text-destructive">{formErrors.password}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label>Phone</Label>
-                <Input
-                  value={form.phone}
-                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                  placeholder="+91..."
-                />
+                <Input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+91..." />
               </div>
               <Button onClick={handleCreate} disabled={creating} className="w-full">
                 {creating ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creating...</> : "Create User"}
@@ -332,6 +428,7 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
         </Dialog>
       </div>
 
+      {/* ── Users list ──────────────────────────────────────────────────────── */}
       <Card>
         <CardContent className="p-0">
           <div className="divide-y">
@@ -360,22 +457,18 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
                     {roleLabel(user.role)}
                   </span>
 
-                  {user.is_active && (
-                    <Select
-                      defaultValue={user.role}
-                      onValueChange={(v) => v && handleRoleChange(user.id, v)}
-                    >
-                      <SelectTrigger className="w-36 h-7 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ALL_ROLES.map((r) => (
-                          <SelectItem key={r.value} value={r.value} className="text-xs">{r.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
+                  {/* Edit */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => openEdit(user)}
+                    className="text-muted-foreground hover:text-foreground"
+                    title="Edit user"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
 
+                  {/* Activate / Deactivate */}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -384,6 +477,17 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
                     title={user.is_active ? "Deactivate" : "Activate"}
                   >
                     {user.is_active ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
+                  </Button>
+
+                  {/* Delete */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => initiateDelete(user)}
+                    className="text-muted-foreground hover:text-destructive"
+                    title="Delete user"
+                  >
+                    <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
