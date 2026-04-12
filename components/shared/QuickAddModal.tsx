@@ -348,19 +348,20 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
           <DialogTitle>Quick Add</DialogTitle>
         </DialogHeader>
 
-        {/* Sales: Lead, Task, Follow-up, Expense | Admin: all 5 | Operations: Task only */}
-        {(() => {
-          const canExpense = role === "Admin" || role === "Sales";
-          const isOps = role === "Operations";
-          const cols = isOps ? 1 : canExpense ? 5 : 4;
-          return (
-        <Tabs defaultValue={isOps ? "task" : "lead"}>
-          <TabsList className={`w-full grid grid-cols-${cols}`}>
-            {!isOps && <TabsTrigger value="lead" className="gap-1 text-xs"><Users className="h-3.5 w-3.5" />Lead</TabsTrigger>}
-            {role === "Admin" && <TabsTrigger value="opportunity" className="gap-1 text-xs"><Building2 className="h-3.5 w-3.5" />Opp</TabsTrigger>}
+        {/* Admin: Lead / Opp / Task / Follow-up / Expense  (5 tabs)
+            Sales:  Lead / Task / Follow-up / Expense         (4 tabs)
+            Ops:    Task only                                  (1 tab)  */}
+        <Tabs defaultValue={role === "Operations" ? "task" : "lead"}>
+          <TabsList className={
+            role === "Operations" ? "w-full grid grid-cols-1"
+            : role === "Sales"    ? "w-full grid grid-cols-4"
+            :                       "w-full grid grid-cols-5"
+          }>
+            {role !== "Operations" && <TabsTrigger value="lead" className="gap-1 text-xs"><Users className="h-3.5 w-3.5" />Lead</TabsTrigger>}
+            {role === "Admin"       && <TabsTrigger value="opportunity" className="gap-1 text-xs"><Building2 className="h-3.5 w-3.5" />Opp</TabsTrigger>}
             <TabsTrigger value="task" className="gap-1 text-xs"><CheckSquare className="h-3.5 w-3.5" />Task</TabsTrigger>
-            {!isOps && <TabsTrigger value="followup" className="gap-1 text-xs"><CalendarClock className="h-3.5 w-3.5" />Follow-up</TabsTrigger>}
-            {canExpense && <TabsTrigger value="expense" className="gap-1 text-xs"><Receipt className="h-3.5 w-3.5" />Expense</TabsTrigger>}
+            {role !== "Operations" && <TabsTrigger value="followup" className="gap-1 text-xs"><CalendarClock className="h-3.5 w-3.5" />Follow-up</TabsTrigger>}
+            {(role === "Admin" || role === "Sales") && <TabsTrigger value="expense" className="gap-1 text-xs"><Receipt className="h-3.5 w-3.5" />Expense</TabsTrigger>}
           </TabsList>
 
           {/* ── LEAD ── */}
@@ -726,7 +727,6 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
             </TabsContent>
           )}
         </Tabs>
-        );})()}
       </DialogContent>
     </Dialog>
   );
