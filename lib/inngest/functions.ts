@@ -63,7 +63,9 @@ export const generateLeadsFunction = inngest.createFunction(
     });
 
     // Step 3: Score and save leads
+    // step.run() JSON-serialises its return value — re-hydrate Date fields
     const scoredLeads = rawSignals
+      .map(signal => ({ ...signal, capturedAt: new Date(signal.capturedAt) }))
       .map(signal => scoreSignal(signal, scraperConfig))
       .sort((a, b) => b.totalScore - a.totalScore)
       .slice(0, 50);
