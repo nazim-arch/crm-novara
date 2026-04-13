@@ -70,7 +70,7 @@ export const generateLeadsFunction = inngest.createFunction(
       .sort((a, b) => b.totalScore - a.totalScore)
       .slice(0, 50);
 
-    const campaignContext = { city, microMarkets, budgetMin, budgetMax, propertyType, bhkConfig };
+    const campaignContext = { city, microMarkets, budgetMin, budgetMax, propertyType, bhkConfig: bhkConfig ?? undefined };
 
     // Step 4: AI insights + persist leads
     await step.run('save-leads-with-insights', async () => {
