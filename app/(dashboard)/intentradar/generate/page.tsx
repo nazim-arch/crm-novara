@@ -72,6 +72,7 @@ export default function GenerateLeadsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState('');
+  const [progressDetail, setProgressDetail] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   // Form state
@@ -102,11 +103,11 @@ export default function GenerateLeadsPage() {
     if (!canGenerate) return;
     setLoading(true);
     setError(null);
-    setProgress('Initializing campaign...');
+    setProgress('Queuing campaign...');
+    setProgressDetail('');
 
     try {
-      setProgress('Scanning sources for buyer signals...');
-
+      // Fire the job — returns in <1s with a campaignId
       const res = await fetch('/api/intentradar/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -126,16 +127,49 @@ export default function GenerateLeadsPage() {
 
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error || 'Generation failed');
+        throw new Error(err.error || 'Failed to queue generation');
       }
 
-      const data = await res.json();
-      setProgress(`Found ${data.summary.totalLeads} leads! Redirecting...`);
+      const { campaignId } = await res.json();
+      setProgress('Scanning sources for buyer signals...');
+      setProgressDetail('This runs in the background — typically 2-5 minutes');
 
-      // Navigate to leads page with campaign ID
-      setTimeout(() => {
-        router.push(`/intentradar/leads?campaignId=${data.campaignId}`);
-      }, 1500);
+      // Poll for completion every 5 seconds
+      const POLL_INTERVAL = 5000;
+      const MAX_WAIT_MS = 10 * 60 * 1000; // 10 minutes
+      const startedAt = Date.now();
+
+      const poll = async (): Promise<void> => {
+        if (Date.now() - startedAt > MAX_WAIT_MS) {
+          // Timed out on frontend — job still running, redirect anyway
+          router.push(`/intentradar/leads?campaignId=${campaignId}`);
+          return;
+        }
+
+        const statusRes = await fetch(`/api/intentradar/generate/status?campaignId=${campaignId}`);
+        const { campaign } = await statusRes.json();
+
+        if (campaign.status === 'completed') {
+          setProgress(`Found ${campaign.totalLeads} leads! Redirecting...`);
+          setProgressDetail(`${campaign.hotLeads} HOT · ${campaign.warmLeads} WARM · ${campaign.coolLeads} COOL`);
+          setTimeout(() => router.push(`/intentradar/leads?campaignId=${campaignId}`), 1500);
+          return;
+        }
+
+        if (campaign.status === 'failed') {
+          throw new Error('Lead generation failed. Check server logs.');
+        }
+
+        // still running — show live progress message
+        if (campaign.status === 'running') {
+          setProgress('Scanning sources for buyer signals...');
+          setProgressDetail(`Running for ${Math.round((Date.now() - startedAt) / 1000)}s…`);
+        }
+
+        setTimeout(poll, POLL_INTERVAL);
+      };
+
+      setTimeout(poll, POLL_INTERVAL);
     } catch (e: any) {
       setError(e.message || 'Something went wrong');
       setLoading(false);
@@ -288,7 +322,7 @@ export default function GenerateLeadsPage() {
           <div style={{ padding: 40 }}>
             <div style={{ width: 48, height: 48, margin: '0 auto 16px', border: '4px solid #eef2ff', borderTopColor: '#4338ca', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
             <p style={{ fontSize: 15, fontWeight: 600, color: '#4338ca', marginBottom: 4 }}>{progress}</p>
-            <p style={{ fontSize: 12, color: '#a8a29e' }}>This may take 1-2 minutes depending on sources selected</p>
+            <p style={{ fontSize: 12, color: '#a8a29e' }}>{progressDetail || 'Starting up…'}</p>
             <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
           </div>
         ) : (
