@@ -13,6 +13,7 @@ const API_KEY_FIELDS = [
   { key: 'api_key_telegram_bot', label: 'Telegram Bot Token', category: 'api_keys', placeholder: '123456:ABC-DEF...', required: false },
   { key: 'api_key_twitter', label: 'Twitter/X Bearer Token', category: 'api_keys', placeholder: 'AAAA...', required: false },
   { key: 'api_key_meta', label: 'Meta Graph API Token', category: 'api_keys', placeholder: 'EAA...', required: false },
+  { key: 'api_key_serp', label: 'SerpAPI Key', category: 'api_keys', placeholder: 'Enables Instagram, Facebook & LinkedIn signal search via Google', required: false },
   { key: 'api_key_hunter', label: 'Hunter.io API Key', category: 'api_keys', placeholder: 'For email enrichment', required: false },
 ];
 

@@ -276,6 +276,118 @@ function isRelevantComment(content: string, config: ScraperConfig): boolean {
   return mentionsLocation || hasBuyingIntent;
 }
 
+// ─── SERP API SCRAPER (Instagram / Facebook / LinkedIn via Google Search) ───
+// Uses SerpAPI to search Google with site: filters — no Meta/LinkedIn API approval needed.
+// Only runs if api_key_serp is configured. Gracefully skips if not set.
+
+async function serpSearch(
+  query: string,
+  platform: string,
+  config: ScraperConfig,
+  apiKey: string
+): Promise<RawSignal[]> {
+  const signals: RawSignal[] = [];
+  try {
+    const params = new URLSearchParams({
+      engine: 'google',
+      q: query,
+      api_key: apiKey,
+      num: '20',
+      gl: 'in',   // India-biased results
+      hl: 'en',
+    });
+    const res = await fetch(`https://serpapi.com/search?${params}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+
+    for (const result of data.organic_results || []) {
+      const content = `${result.title || ''} ${result.snippet || ''}`.trim();
+      if (content.length < 20) continue;
+      if (!isRelevantComment(content, config)) continue;
+
+      signals.push({
+        platform,
+        authorHandle: result.displayed_link,
+        authorName: undefined,
+        content,
+        sourceUrl: result.link,
+        capturedAt: new Date(),
+        sourceType: 'post',
+        rawData: { title: result.title, position: result.position },
+      });
+    }
+  } catch (e) {
+    console.error(`SerpAPI search error for "${query}" (${platform}):`, e);
+  }
+  return signals;
+}
+
+export async function scrapeSerpInstagram(config: ScraperConfig): Promise<RawSignal[]> {
+  const apiKey = await getApiKey('serp');
+  if (!apiKey) {
+    console.log('SerpAPI key not configured — skipping Instagram');
+    return [];
+  }
+
+  const signals: RawSignal[] = [];
+  const queries = [
+    `site:instagram.com "${config.city}" ${config.propertyType} buy`,
+    `site:instagram.com "${config.city}" ${config.microMarkets[0] || ''} property`,
+    `site:instagram.com NRI "${config.city}" apartment`,
+    ...config.microMarkets.slice(0, 2).map(m => `site:instagram.com "${m}" ${config.propertyType}`),
+  ].filter(Boolean);
+
+  for (const query of queries) {
+    const results = await serpSearch(query, 'instagram', config, apiKey);
+    signals.push(...results);
+  }
+  return signals;
+}
+
+export async function scrapeSerpFacebook(config: ScraperConfig): Promise<RawSignal[]> {
+  const apiKey = await getApiKey('serp');
+  if (!apiKey) {
+    console.log('SerpAPI key not configured — skipping Facebook');
+    return [];
+  }
+
+  const signals: RawSignal[] = [];
+  const queries = [
+    `site:facebook.com/groups "${config.city}" ${config.propertyType} buy`,
+    `site:facebook.com/groups NRI "${config.city}" property`,
+    `site:facebook.com/groups "${config.city}" flat budget crore`,
+    ...config.microMarkets.slice(0, 2).map(m => `site:facebook.com/groups "${m}" apartment`),
+  ].filter(Boolean);
+
+  for (const query of queries) {
+    const results = await serpSearch(query, 'facebook', config, apiKey);
+    signals.push(...results);
+  }
+  return signals;
+}
+
+export async function scrapeSerpLinkedIn(config: ScraperConfig): Promise<RawSignal[]> {
+  const apiKey = await getApiKey('serp');
+  if (!apiKey) {
+    console.log('SerpAPI key not configured — skipping LinkedIn');
+    return [];
+  }
+
+  const signals: RawSignal[] = [];
+  const queries = [
+    `site:linkedin.com "relocating to ${config.city}"`,
+    `site:linkedin.com "moving to ${config.city}" property`,
+    `site:linkedin.com "${config.city}" "looking for" apartment`,
+    `site:linkedin.com NRI "${config.city}" real estate`,
+  ];
+
+  for (const query of queries) {
+    const results = await serpSearch(query, 'linkedin', config, apiKey);
+    signals.push(...results);
+  }
+  return signals;
+}
+
 // ─── MASTER SCRAPER ───
 export async function runAllScrapers(config: ScraperConfig, sources: string[]): Promise<RawSignal[]> {
   const allSignals: RawSignal[] = [];
@@ -283,6 +395,9 @@ export async function runAllScrapers(config: ScraperConfig, sources: string[]): 
     youtube: scrapeYouTube,
     reddit: scrapeReddit,
     google_maps: scrapeGoogleMaps,
+    instagram: scrapeSerpInstagram,
+    facebook: scrapeSerpFacebook,
+    linkedin: scrapeSerpLinkedIn,
     '99acres': scrapePropertyPortals,
     magicbricks: scrapePropertyPortals,
     housing: scrapePropertyPortals,

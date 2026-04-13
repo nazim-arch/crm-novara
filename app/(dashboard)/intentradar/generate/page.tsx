@@ -36,13 +36,13 @@ const SOURCES = [
   { id: 'youtube', label: 'YouTube', icon: '🎬', desc: 'Comment monitoring on property channels' },
   { id: 'reddit', label: 'Reddit', icon: '💬', desc: 'r/IndianRealEstate, city subreddits' },
   { id: 'google_maps', label: 'Google Maps', icon: '📍', desc: 'Reviews on project locations' },
-  { id: 'instagram', label: 'Instagram', icon: '📸', desc: 'Builder/influencer page comments' },
+  { id: 'instagram', label: 'Instagram', icon: '📸', desc: 'Public posts via SerpAPI (optional key)' },
+  { id: 'facebook', label: 'Facebook Groups', icon: '👥', desc: 'Public group posts via SerpAPI (optional key)' },
+  { id: 'linkedin', label: 'LinkedIn', icon: '💼', desc: 'Relocation & job-change posts via SerpAPI (optional key)' },
   { id: 'twitter', label: 'Twitter/X', icon: '🐦', desc: 'Relocation & property discussions' },
   { id: 'telegram', label: 'Telegram', icon: '✈️', desc: 'Public real estate groups' },
-  { id: 'facebook', label: 'Facebook', icon: '👥', desc: 'NRI and local buyer groups' },
   { id: '99acres', label: '99acres', icon: '🏢', desc: 'Buyer forums & want-ads' },
   { id: 'magicbricks', label: 'MagicBricks', icon: '🧱', desc: 'Listings & reviews' },
-  { id: 'linkedin', label: 'LinkedIn', icon: '💼', desc: 'Job changes & relocations' },
 ];
 
 export default function GenerateLeadsPage() {
