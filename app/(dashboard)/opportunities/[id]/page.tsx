@@ -239,7 +239,7 @@ export default async function OpportunityDetailPage({ params }: { params: Params
                         <LeadStatusBadge status={lead.status} />
                         <TemperatureBadge temperature={lead.temperature} />
                       </div>
-                      {commission !== null && (
+                      {commission !== null && canViewFinancials && (
                         <p className="text-xs text-green-600 mt-1 font-medium">
                           Commission: {formatCurrency(commission)}
                         </p>
