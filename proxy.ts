@@ -14,7 +14,7 @@ export async function proxy(req: NextRequest) {
   }
 
   // Skip auth check for auth API routes, health, and static files
-  if (pathname.startsWith("/api/auth") || pathname.startsWith("/api/health") || pathname.startsWith("/_next") || pathname.includes(".")) {
+  if (pathname.startsWith("/api/auth") || pathname.startsWith("/api/health") || pathname.startsWith("/api/inngest") || pathname.startsWith("/_next") || pathname.includes(".")) {
     return NextResponse.next();
   }
 

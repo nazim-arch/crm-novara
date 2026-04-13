@@ -22,12 +22,10 @@ export const generateLeadsFunction = inngest.createFunction(
   {
     id: 'intentradar-generate-leads',
     name: 'IntentRadar: Generate Leads',
-    // Retry once on failure; don't hammer APIs on transient errors
     retries: 1,
-    // Allow up to 15 minutes — well beyond Vercel's 60s limit
     timeouts: { finish: '15m' },
+    triggers: [{ event: 'intentradar/generate.requested' }],
   },
-  { event: 'intentradar/generate.requested' },
   async ({ event, step }) => {
     const data = event.data as GenerateLeadsEventData;
     const {
