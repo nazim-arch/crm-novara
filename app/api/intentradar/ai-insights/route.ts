@@ -1,10 +1,16 @@
 // app/api/intentradar/ai-insights/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth';
 import { prisma, updateLeadAIInsights } from '@/lib/intentradar/db';
 import { generateAIInsights } from '@/lib/intentradar/ai-insights';
 
 // POST - regenerate AI insights for a specific lead
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== 'Admin') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const { leadId, providers = ['claude', 'gpt'] } = await req.json();
 

@@ -1,9 +1,15 @@
 // app/api/intentradar/settings/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/intentradar/db';
 
 // GET all settings
 export async function GET() {
+  const session = await auth();
+  if (!session?.user || session.user.role !== 'Admin') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const settings = await prisma.ir_settings.findMany({
       orderBy: { category: 'asc' },
@@ -25,6 +31,11 @@ export async function GET() {
 
 // POST - save settings
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== 'Admin') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const { settings } = await req.json();
 

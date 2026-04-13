@@ -1,5 +1,6 @@
 // app/api/intentradar/generate/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth';
 import { prisma, createCampaign, updateCampaignStatus, logSignal } from '@/lib/intentradar/db';
 import { scoreSignal } from '@/lib/intentradar/scoring';
 import { runAllScrapers } from '@/lib/intentradar/scrapers';
@@ -8,6 +9,11 @@ import { generateAIInsights } from '@/lib/intentradar/ai-insights';
 export const maxDuration = 120; // Allow up to 2 minutes for scraping
 
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== 'Admin') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const body = await req.json();
 
@@ -58,6 +64,8 @@ export async function POST(req: NextRequest) {
       budgetMax: parseFloat(budgetMax),
       propertyType,
       bhkConfig,
+      buyerPersonas: buyerPersonas || [],
+      urgency: urgency || 'exploring',
       keywords: keywords || [],
     };
 

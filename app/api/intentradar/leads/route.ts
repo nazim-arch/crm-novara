@@ -1,9 +1,15 @@
 // app/api/intentradar/leads/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/intentradar/db';
 
 // GET leads for a campaign
 export async function GET(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== 'Admin') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const campaignId = searchParams.get('campaignId');
@@ -38,6 +44,11 @@ export async function GET(req: NextRequest) {
 
 // PATCH - update lead status
 export async function PATCH(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== 'Admin') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const { leadId, status, notes } = await req.json();
     if (!leadId) return NextResponse.json({ error: 'leadId required' }, { status: 400 });
