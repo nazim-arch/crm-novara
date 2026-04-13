@@ -32,18 +32,41 @@ const URGENCY_OPTIONS = [
   { id: '6_months', label: '3-6 Months', color: '#f59e0b' },
   { id: 'exploring', label: 'Exploring (6+ months)', color: '#22c55e' },
 ];
-const SOURCES = [
-  { id: 'youtube', label: 'YouTube', icon: '🎬', desc: 'Comment monitoring on property channels' },
-  { id: 'reddit', label: 'Reddit', icon: '💬', desc: 'r/IndianRealEstate, city subreddits' },
-  { id: 'google_maps', label: 'Google Maps', icon: '📍', desc: 'Reviews on project locations' },
-  { id: 'instagram', label: 'Instagram', icon: '📸', desc: 'Public posts via SerpAPI (optional key)' },
-  { id: 'facebook', label: 'Facebook Groups', icon: '👥', desc: 'Public group posts via SerpAPI (optional key)' },
-  { id: 'linkedin', label: 'LinkedIn', icon: '💼', desc: 'Relocation & job-change posts via SerpAPI (optional key)' },
-  { id: 'twitter', label: 'Twitter/X', icon: '🐦', desc: 'Relocation & property discussions' },
-  { id: 'telegram', label: 'Telegram', icon: '✈️', desc: 'Public real estate groups' },
-  { id: '99acres', label: '99acres', icon: '🏢', desc: 'Buyer forums & want-ads' },
-  { id: 'magicbricks', label: 'MagicBricks', icon: '🧱', desc: 'Listings & reviews' },
+const SOURCE_GROUPS = [
+  {
+    label: 'Always Active',
+    sources: [
+      { id: 'youtube', label: 'YouTube', icon: '🎬', desc: 'Comments on property walkthrough channels' },
+      { id: 'reddit', label: 'Reddit', icon: '💬', desc: 'r/IndianRealEstate + city subreddits' },
+      { id: 'google_maps', label: 'Google Maps', icon: '📍', desc: 'Project & broker office reviews' },
+    ],
+  },
+  {
+    label: 'Social Media (requires SerpAPI key)',
+    sources: [
+      { id: 'instagram', label: 'Instagram', icon: '📸', desc: 'Builder & influencer posts' },
+      { id: 'facebook', label: 'Facebook Groups', icon: '👥', desc: 'NRI & local buyer groups' },
+      { id: 'linkedin', label: 'LinkedIn', icon: '💼', desc: 'Job relocations & NRI return signals' },
+    ],
+  },
+  {
+    label: 'Messaging (requires Telegram Bot Token)',
+    sources: [
+      { id: 'telegram', label: 'Telegram', icon: '✈️', desc: 'Public real estate groups bot monitors' },
+    ],
+  },
+  {
+    label: 'Forums & Q&A (requires SerpAPI key)',
+    sources: [
+      { id: 'quora', label: 'Quora', icon: '❓', desc: 'Property buying & NRI Q&A threads' },
+      { id: 'portal_forums', label: 'Portal Forums', icon: '🏢', desc: '99acres, NoBroker, Housing buyer sections' },
+      { id: 'financial_forums', label: 'Financial Forums', icon: '🏦', desc: 'BankBazaar, Paisabazaar home loan queries' },
+      { id: 'news', label: 'Property News', icon: '📰', desc: 'ET Realty, MoneyControl, Mint, TOI' },
+    ],
+  },
 ];
+
+const SOURCES = SOURCE_GROUPS.flatMap(g => g.sources);
 
 export default function GenerateLeadsPage() {
   const router = useRouter();
@@ -60,7 +83,7 @@ export default function GenerateLeadsPage() {
   const [bhkConfig, setBhkConfig] = useState('');
   const [personas, setPersonas] = useState<string[]>([]);
   const [urgency, setUrgency] = useState('exploring');
-  const [selectedSources, setSelectedSources] = useState<string[]>(['youtube', 'reddit', 'google_maps']);
+  const [selectedSources, setSelectedSources] = useState<string[]>(['youtube', 'reddit', 'google_maps', 'quora', 'portal_forums', 'financial_forums']);
   const [keywords, setKeywords] = useState('');
 
   const toggleMarket = (m: string) => {
@@ -226,17 +249,24 @@ export default function GenerateLeadsPage() {
 
       {/* ── SOURCES ── */}
       <Section title="Signal Sources" required subtitle="Select platforms to scan">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8 }}>
-          {SOURCES.map(s => (
-            <div key={s.id} onClick={() => toggleSource(s.id)} style={{
-              display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-              borderRadius: 10, border: `1px solid ${selectedSources.includes(s.id) ? '#4338ca' : '#e7e5e4'}`,
-              background: selectedSources.includes(s.id) ? '#eef2ff' : 'white', cursor: 'pointer',
-            }}>
-              <span style={{ fontSize: 18 }}>{s.icon}</span>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: selectedSources.includes(s.id) ? '#4338ca' : '#1c1917' }}>{s.label}</div>
-                <div style={{ fontSize: 10, color: '#a8a29e' }}>{s.desc}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {SOURCE_GROUPS.map(group => (
+            <div key={group.label}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#a8a29e', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{group.label}</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8 }}>
+                {group.sources.map(s => (
+                  <div key={s.id} onClick={() => toggleSource(s.id)} style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                    borderRadius: 10, border: `1px solid ${selectedSources.includes(s.id) ? '#4338ca' : '#e7e5e4'}`,
+                    background: selectedSources.includes(s.id) ? '#eef2ff' : 'white', cursor: 'pointer',
+                  }}>
+                    <span style={{ fontSize: 18 }}>{s.icon}</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: selectedSources.includes(s.id) ? '#4338ca' : '#1c1917' }}>{s.label}</div>
+                      <div style={{ fontSize: 10, color: '#a8a29e' }}>{s.desc}</div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ))}

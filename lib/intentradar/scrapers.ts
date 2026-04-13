@@ -388,6 +388,161 @@ export async function scrapeSerpLinkedIn(config: ScraperConfig): Promise<RawSign
   return signals;
 }
 
+// ─── SHARED SERP BATCH HELPER ───
+async function serpBatch(
+  queries: string[],
+  platform: string,
+  config: ScraperConfig,
+  apiKey: string
+): Promise<RawSignal[]> {
+  const all: RawSignal[] = [];
+  for (const query of queries) {
+    const results = await serpSearch(query, platform, config, apiKey);
+    all.push(...results);
+  }
+  return all;
+}
+
+// ─── TELEGRAM SCRAPER ───
+// Reads recent messages from public groups the bot has been added to.
+// User must: 1) create bot via @BotFather 2) add bot to target public groups.
+export async function scrapeTelegram(config: ScraperConfig): Promise<RawSignal[]> {
+  const botToken = await getApiKey('telegram_bot');
+  if (!botToken) {
+    console.log('Telegram Bot Token not configured — skipping');
+    return [];
+  }
+
+  const signals: RawSignal[] = [];
+  try {
+    const res = await fetch(
+      `https://api.telegram.org/bot${botToken}/getUpdates?limit=100&timeout=0`
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!data.ok) return [];
+
+    for (const update of data.result || []) {
+      const message = update.message || update.channel_post;
+      if (!message?.text) continue;
+
+      const content = message.text;
+      if (content.length < 20) continue;
+      if (!isRelevantComment(content, config)) continue;
+
+      const authorName = message.from
+        ? `${message.from.first_name || ''} ${message.from.last_name || ''}`.trim()
+        : undefined;
+
+      signals.push({
+        platform: 'telegram',
+        authorHandle: message.from?.username,
+        authorName: authorName || undefined,
+        content,
+        sourceUrl: message.chat?.username
+          ? `https://t.me/${message.chat.username}`
+          : undefined,
+        capturedAt: new Date((message.date || Date.now() / 1000) * 1000),
+        sourceType: 'message',
+        rawData: {
+          chatTitle: message.chat?.title,
+          chatType: message.chat?.type,
+          messageId: message.message_id,
+        },
+      });
+    }
+  } catch (e) {
+    console.error('Telegram scrape error:', e);
+  }
+
+  return signals;
+}
+
+// ─── QUORA SCRAPER (via SerpAPI) ───
+export async function scrapeSerpQuora(config: ScraperConfig): Promise<RawSignal[]> {
+  const apiKey = await getApiKey('serp');
+  if (!apiKey) {
+    console.log('SerpAPI key not configured — skipping Quora');
+    return [];
+  }
+
+  const queries = [
+    `site:quora.com "${config.city}" ${config.propertyType} buy`,
+    `site:quora.com "best area to buy" "${config.city}"`,
+    `site:quora.com NRI property "${config.city}"`,
+    `site:quora.com "${config.city}" "good time to buy" apartment`,
+    ...config.microMarkets.slice(0, 2).map(m =>
+      `site:quora.com "${m}" "${config.city}" ${config.propertyType}`
+    ),
+  ].filter(Boolean);
+
+  return serpBatch(queries, 'quora', config, apiKey);
+}
+
+// ─── PROPERTY NEWS SCRAPER (ET Realty / MoneyControl / Mint / TOI via SerpAPI) ───
+export async function scrapeSerpNews(config: ScraperConfig): Promise<RawSignal[]> {
+  const apiKey = await getApiKey('serp');
+  if (!apiKey) {
+    console.log('SerpAPI key not configured — skipping News');
+    return [];
+  }
+
+  const queries = [
+    `site:economictimes.indiatimes.com "${config.city}" property buyers`,
+    `site:moneycontrol.com real estate "${config.city}" apartment`,
+    `site:livemint.com property "${config.city}" buy`,
+    `site:timesofindia.indiatimes.com "${config.city}" property buyers`,
+    ...config.microMarkets.slice(0, 2).map(m =>
+      `"${m}" "${config.city}" property launch buyers`
+    ),
+  ].filter(Boolean);
+
+  return serpBatch(queries, 'news', config, apiKey);
+}
+
+// ─── FINANCIAL FORUMS SCRAPER (BankBazaar / Paisabazaar / r/IndiaInvestments via SerpAPI) ───
+export async function scrapeSerpFinancial(config: ScraperConfig): Promise<RawSignal[]> {
+  const apiKey = await getApiKey('serp');
+  if (!apiKey) {
+    console.log('SerpAPI key not configured — skipping Financial Forums');
+    return [];
+  }
+
+  const queries = [
+    `site:bankbazaar.com "home loan" "${config.city}"`,
+    `site:paisabazaar.com "home loan" "${config.city}"`,
+    `site:reddit.com/r/IndiaInvestments property "${config.city}"`,
+    `"home loan" NRI "${config.city}" ${config.propertyType} crore`,
+    `"EMI" "home loan" "${config.city}" ${config.budgetMin} crore`,
+  ].filter(Boolean);
+
+  return serpBatch(queries, 'financial_forums', config, apiKey);
+}
+
+// ─── PROPERTY PORTAL FORUMS SCRAPER (99acres / NoBroker / Housing buyer sections via SerpAPI) ───
+export async function scrapeSerpPortalForums(config: ScraperConfig): Promise<RawSignal[]> {
+  const apiKey = await getApiKey('serp');
+  if (!apiKey) {
+    console.log('SerpAPI key not configured — skipping Portal Forums');
+    return [];
+  }
+
+  const queries = [
+    `site:99acres.com "looking to buy" "${config.city}"`,
+    `site:99acres.com "${config.city}" ${config.propertyType} "budget" "looking"`,
+    `site:nobroker.in "want to buy" "${config.city}"`,
+    `site:nobroker.in "lease ending" "${config.city}"`,
+    `site:housing.com "looking for" "${config.city}" ${config.propertyType}`,
+    `site:magicbricks.com buyer "${config.city}" ${config.propertyType}`,
+    `site:indianrealestateforum.com "${config.city}"`,
+    ...config.microMarkets.slice(0, 2).map(m =>
+      `site:99acres.com "${m}" "${config.city}" "budget" buyer`
+    ),
+  ].filter(Boolean);
+
+  return serpBatch(queries, 'portal_forums', config, apiKey);
+}
+
 // ─── MASTER SCRAPER ───
 export async function runAllScrapers(config: ScraperConfig, sources: string[]): Promise<RawSignal[]> {
   const allSignals: RawSignal[] = [];
@@ -398,10 +553,16 @@ export async function runAllScrapers(config: ScraperConfig, sources: string[]): 
     instagram: scrapeSerpInstagram,
     facebook: scrapeSerpFacebook,
     linkedin: scrapeSerpLinkedIn,
-    '99acres': scrapePropertyPortals,
-    magicbricks: scrapePropertyPortals,
-    housing: scrapePropertyPortals,
-    nobroker: scrapePropertyPortals,
+    telegram: scrapeTelegram,
+    quora: scrapeSerpQuora,
+    news: scrapeSerpNews,
+    financial_forums: scrapeSerpFinancial,
+    portal_forums: scrapeSerpPortalForums,
+    // Legacy portal IDs now powered by SerpAPI instead of empty Playwright stub
+    '99acres': scrapeSerpPortalForums,
+    magicbricks: scrapeSerpPortalForums,
+    housing: scrapeSerpPortalForums,
+    nobroker: scrapeSerpPortalForums,
   };
 
   // Run scrapers in parallel (with concurrency limit)
