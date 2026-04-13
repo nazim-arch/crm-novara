@@ -10,7 +10,7 @@ const NAV_CONFIG = [
     label: "Dashboards",
     items: [
       { href: "/dashboard/crm", label: "CRM Overview", icon: LayoutDashboard, roles: ["Admin", "Manager", "Sales", "Viewer"] },
-      { href: "/dashboard/tasks", label: "Task Overview", icon: BarChart3, roles: ["Admin", "Manager", "Operations", "Viewer"] },
+      { href: "/dashboard/tasks", label: "Task Overview", icon: BarChart3, roles: ["Admin", "Manager", "Sales", "Operations", "Viewer"] },
     ],
   },
   {
