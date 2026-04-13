@@ -516,3 +516,168 @@ model SequenceCounter {
 
   @@map("sequence_counters")
 }
+
+// IntentRadar Module - Prisma Schema
+// Add these models to your existing schema.prisma file
+// All tables are prefixed with "ir_" to avoid conflicts with your CRM
+
+// ─── SETTINGS ───
+model ir_settings {
+  id         String   @id @default(cuid())
+  key        String   @unique
+  value      String   @db.Text
+  category   String   // 'api_keys' | 'scraping' | 'scoring' | 'ai'
+  encrypted  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// ─── SEARCH CAMPAIGNS ───
+model ir_campaign {
+  id             String   @id @default(cuid())
+  name           String
+  status         String   @default("draft") // draft | running | completed | failed
+  
+  // Input criteria
+  city           String
+  microMarkets   String[] // e.g., ["Indiranagar", "Koramangala", "HSR Layout"]
+  budgetMin      Float    // in Cr
+  budgetMax      Float
+  propertyType   String   // apartment | villa | plot | commercial
+  bhkConfig      String?  // 2BHK | 3BHK | 4BHK
+  buyerPersonas  String[] // end_user | nri | investor | upgrade_buyer | first_time
+  urgency        String   // immediate | 6_months | exploring
+  
+  // Sources to scan
+  sources        String[] // youtube | reddit | telegram | instagram | 99acres | magicbricks | etc
+  
+  // Custom keywords
+  keywords       String[]
+  
+  // Results
+  totalLeads     Int      @default(0)
+  hotLeads       Int      @default(0)
+  warmLeads      Int      @default(0)
+  coolLeads      Int      @default(0)
+  
+  // Timing
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  leads          ir_lead[]
+}
+
+// ─── LEADS ───
+model ir_lead {
+  id               String   @id @default(cuid())
+  campaignId       String
+  campaign         ir_campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  // Identity
+  profileHandle    String?
+  profileName      String?
+  profileUrl       String?
+  profilePlatform  String?  // youtube | reddit | instagram | linkedin | telegram | 99acres | etc
+  avatarUrl        String?
+  
+  // Contact (optional, enriched)
+  email            String?
+  phone            String?
+  linkedinUrl      String?
+  
+  // Source signal
+  sourcePlatform   String   // where the signal was captured
+  sourceUrl        String?  // link to the original post/comment/thread
+  sourceContent    String   @db.Text // the actual comment/post text
+  sourceType       String   // comment | post | review | listing | query | dm_request
+  capturedAt       DateTime // when the signal was posted/detected
+  
+  // Scoring
+  totalScore       Int      @default(0) // 0-100
+  tier             String   @default("watching") // hot | warm | cool | watching
+  
+  // Dimension scores (0-100 each, weighted to total)
+  scoreSpecificity       Int @default(0)
+  scoreBudgetClarity     Int @default(0)
+  scoreUrgency           Int @default(0)
+  scoreEngagementVelocity Int @default(0)
+  scoreDeveloperFollow   Int @default(0)
+  scoreContentCreator    Int @default(0)
+  scoreCrossPlatform     Int @default(0)
+  scoreFinancialReady    Int @default(0)
+  scoreLocationLock      Int @default(0)
+  scoreProfileMatch      Int @default(0)
+  
+  // Inferred attributes
+  inferredBuyerType    String?  // end_user | nri | investor | upgrade_buyer
+  inferredBudget       String?  // e.g., "2-3 Cr"
+  inferredLocation     String?  // e.g., "Indiranagar, Bangalore"
+  inferredTimeline     String?  // e.g., "6 months"
+  inferredIncome       String?  // e.g., "25-40 LPA"
+  isNRI                Boolean  @default(false)
+  nriCountry           String?
+  
+  // AI Insights
+  aiInsightClaude      String?  @db.Text
+  aiInsightGPT         String?  @db.Text
+  aiRecommendedAction  String?  @db.Text
+  aiResponseDraft      String?  @db.Text
+  aiWhyStrong          String?  @db.Text
+  
+  // Behavioral patterns detected
+  behavioralPatterns   String[] // life_event | peer_influence | vastu | comparison | proxy | complaint | fomo | depth
+  velocityPattern      String?  // accelerating | burst | steady | decelerating | dormant
+  
+  // Engagement tracking
+  engagementStatus     String   @default("new") // new | contacted | responded | site_visit | converted | lost
+  notes                String?  @db.Text
+  
+  // Cross-platform signals
+  crossPlatformSignals Json?    // [{platform, url, content, date}]
+  
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  
+  @@index([campaignId])
+  @@index([tier])
+  @@index([totalScore])
+  @@index([sourcePlatform])
+}
+
+// ─── SIGNAL LOG ───
+// Raw signals before processing - keeps audit trail
+model ir_signal_log {
+  id           String   @id @default(cuid())
+  campaignId   String
+  platform     String
+  authorHandle String?
+  authorName   String?
+  content      String   @db.Text
+  sourceUrl    String?
+  rawData      Json?
+  processed    Boolean  @default(false)
+  leadId       String?  // linked after processing
+  createdAt    DateTime @default(now())
+  
+  @@index([campaignId])
+  @@index([processed])
+}
+
+// ─── SOURCE CHANNELS ───
+// Configured channels/groups to monitor per platform
+model ir_source_channel {
+  id           String   @id @default(cuid())
+  platform     String   // youtube | reddit | telegram | instagram | facebook
+  channelId    String   // YouTube channel ID, subreddit name, Telegram group ID, etc.
+  channelName  String
+  channelUrl   String?
+  city         String?  // which city this channel covers
+  isActive     Boolean  @default(true)
+  lastScraped  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  @@unique([platform, channelId])
+}

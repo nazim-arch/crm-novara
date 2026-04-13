@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { BarChart3, Users, Building2, CheckSquare, CalendarClock, Settings, LayoutDashboard } from "lucide-react";
+import { BarChart3, Users, Building2, CheckSquare, CalendarClock, Settings, LayoutDashboard, Radar } from "lucide-react";
 
 const NAV_CONFIG = [
   {
@@ -25,6 +25,12 @@ const NAV_CONFIG = [
     label: "Tasks",
     items: [
       { href: "/tasks", label: "Tasks", icon: CheckSquare, roles: ["Admin", "Manager", "Sales", "Operations", "Viewer"] },
+    ],
+  },
+  {
+    label: "IntentRadar",
+    items: [
+      { href: "/intentradar", label: "IntentRadar", icon: Radar, roles: ["Admin"] },
     ],
   },
   {
