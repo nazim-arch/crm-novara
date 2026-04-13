@@ -18,7 +18,7 @@ export default async function TaskDashboardPage() {
   const todayStart = startOfDay(today);
   const todayEnd = endOfDay(today);
 
-  const isScoped = session.user.role === "Operations";
+  const isScoped = session.user.role === "Sales" || session.user.role === "Operations";
   const scopeFilter = isScoped ? { assigned_to_id: session.user.id } : {};
 
   const [
@@ -98,30 +98,32 @@ export default async function TaskDashboardPage() {
         revenueAtRisk={Number(revenueAtRisk._sum.revenue_amount ?? 0)}
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Active Tasks by Assignee</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {assigneeData.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No active tasks.</p>
-            ) : (
-              <AssigneeBarChart data={assigneeData} />
-            )}
-          </CardContent>
-        </Card>
+      <div className={`grid grid-cols-1 gap-6 ${!isScoped ? "lg:grid-cols-2" : ""}`}>
+        {!isScoped && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium">Active Tasks by Assignee</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {assigneeData.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No active tasks.</p>
+              ) : (
+                <AssigneeBarChart data={assigneeData} />
+              )}
+            </CardContent>
+          </Card>
+        )}
 
-        <Card>
+        <Card className={isScoped ? "max-w-md" : ""}>
           <CardHeader>
             <CardTitle className="text-sm font-medium">Quick Links</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-3">
-            <Link href="/tasks" className="p-3 border rounded-lg hover:bg-muted transition-colors text-sm">
-              <p className="font-medium">All Tasks</p>
+            <Link href={isScoped ? `/tasks?assigned_to=${session.user.id}` : "/tasks"} className="p-3 border rounded-lg hover:bg-muted transition-colors text-sm">
+              <p className="font-medium">{isScoped ? "My Tasks" : "All Tasks"}</p>
               <p className="text-muted-foreground text-xs mt-0.5">View &amp; filter</p>
             </Link>
-            <Link href="/tasks?view=kanban" className="p-3 border rounded-lg hover:bg-muted transition-colors text-sm">
+            <Link href={`/tasks?view=kanban${isScoped ? `&assigned_to=${session.user.id}` : ""}`} className="p-3 border rounded-lg hover:bg-muted transition-colors text-sm">
               <p className="font-medium">Kanban View</p>
               <p className="text-muted-foreground text-xs mt-0.5">Drag &amp; drop</p>
             </Link>
@@ -129,13 +131,15 @@ export default async function TaskDashboardPage() {
               <p className="font-medium">New Task</p>
               <p className="text-muted-foreground text-xs mt-0.5">Create a task</p>
             </Link>
-            <Link
-              href={`/tasks?assigned_to=${session.user.id}`}
-              className="p-3 border rounded-lg hover:bg-muted transition-colors text-sm"
-            >
-              <p className="font-medium">My Tasks</p>
-              <p className="text-muted-foreground text-xs mt-0.5">Assigned to me</p>
-            </Link>
+            {!isScoped && (
+              <Link
+                href={`/tasks?assigned_to=${session.user.id}`}
+                className="p-3 border rounded-lg hover:bg-muted transition-colors text-sm"
+              >
+                <p className="font-medium">My Tasks</p>
+                <p className="text-muted-foreground text-xs mt-0.5">Assigned to me</p>
+              </Link>
+            )}
           </CardContent>
         </Card>
       </div>
