@@ -23,8 +23,7 @@ export const generateLeadsFunction = inngest.createFunction(
     id: 'intentradar-generate-leads',
     name: 'IntentRadar: Generate Leads',
     retries: 1,
-    timeouts: { finish: '15m' },
-    triggers: [{ event: 'intentradar/generate.requested' }],
+    triggers: { event: 'intentradar/generate.requested' },
   },
   async ({ event, step }) => {
     const data = event.data as GenerateLeadsEventData;
@@ -37,7 +36,9 @@ export const generateLeadsFunction = inngest.createFunction(
 
     const scraperConfig = {
       city, microMarkets, budgetMin, budgetMax,
-      propertyType, bhkConfig, buyerPersonas, urgency, keywords,
+      propertyType,
+      bhkConfig: bhkConfig ?? undefined,
+      buyerPersonas, urgency, keywords,
     };
 
     // Step 1: Run all scrapers
