@@ -34,7 +34,10 @@ import {
   Flame,
   CalendarX,
   Search,
+  Trash2,
+  Loader2,
 } from "lucide-react";
+import { toast } from "sonner";
 
 export type FollowUpLead = {
   id: string;
@@ -52,6 +55,7 @@ interface FollowUpsClientProps {
   leads: FollowUpLead[];
   users: { id: string; name: string }[];
   isManagerOrAdmin: boolean;
+  isAdmin: boolean;
   currentUserId: string;
 }
 
@@ -89,13 +93,37 @@ function FuTypeIcon({ type }: { type: string | null }) {
 
 // ── Main component ───────────────────────────────────────────────
 export function FollowUpsClient({
-  leads,
+  leads: initialLeads,
   users,
   isManagerOrAdmin,
+  isAdmin,
   currentUserId,
 }: FollowUpsClientProps) {
+  const [leads, setLeads] = useState<FollowUpLead[]>(initialLeads);
   const [search, setSearch] = useState("");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
+  const [clearingId, setClearingId] = useState<string | null>(null);
+
+  async function handleClearFollowUp(leadId: string) {
+    setClearingId(leadId);
+    try {
+      const res = await fetch(`/api/leads/${leadId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ next_followup_date: null, followup_type: null }),
+      });
+      if (!res.ok) {
+        toast.error("Failed to clear follow-up");
+        return;
+      }
+      setLeads((prev) => prev.filter((l) => l.id !== leadId));
+      toast.success("Follow-up cleared");
+    } catch {
+      toast.error("Something went wrong");
+    } finally {
+      setClearingId(null);
+    }
+  }
 
   const today = useMemo(() => startOfDay(new Date()), []);
 
@@ -233,31 +261,31 @@ export function FollowUpsClient({
         </TabsList>
 
         <TabsContent value="overdue">
-          <LeadTable leads={buckets.overdue} emptyText="No overdue follow-ups" rowStyle="overdue" />
+          <LeadTable leads={buckets.overdue} emptyText="No overdue follow-ups" rowStyle="overdue" isAdmin={isAdmin} onClearFollowUp={handleClearFollowUp} clearingId={clearingId} />
         </TabsContent>
         <TabsContent value="today">
-          <LeadTable leads={buckets.today} emptyText="No follow-ups due today" rowStyle="today" />
+          <LeadTable leads={buckets.today} emptyText="No follow-ups due today" rowStyle="today" isAdmin={isAdmin} onClearFollowUp={handleClearFollowUp} clearingId={clearingId} />
         </TabsContent>
         <TabsContent value="next3">
-          <LeadTable leads={buckets.next3} emptyText="No follow-ups in the next 3 days" />
+          <LeadTable leads={buckets.next3} emptyText="No follow-ups in the next 3 days" isAdmin={isAdmin} onClearFollowUp={handleClearFollowUp} clearingId={clearingId} />
         </TabsContent>
         <TabsContent value="next7">
-          <LeadTable leads={buckets.next7} emptyText="No follow-ups in the next 7 days" />
+          <LeadTable leads={buckets.next7} emptyText="No follow-ups in the next 7 days" isAdmin={isAdmin} onClearFollowUp={handleClearFollowUp} clearingId={clearingId} />
         </TabsContent>
         <TabsContent value="next30">
-          <LeadTable leads={buckets.next30} emptyText="No follow-ups in the next 30 days" />
+          <LeadTable leads={buckets.next30} emptyText="No follow-ups in the next 30 days" isAdmin={isAdmin} onClearFollowUp={handleClearFollowUp} clearingId={clearingId} />
         </TabsContent>
         <TabsContent value="all">
-          <LeadTable leads={buckets.all} emptyText="No active leads" />
+          <LeadTable leads={buckets.all} emptyText="No active leads" isAdmin={isAdmin} onClearFollowUp={handleClearFollowUp} clearingId={clearingId} />
         </TabsContent>
         <TabsContent value="hot">
-          <LeadTable leads={buckets.hot} emptyText="No hot leads" />
+          <LeadTable leads={buckets.hot} emptyText="No hot leads" isAdmin={isAdmin} onClearFollowUp={handleClearFollowUp} clearingId={clearingId} />
         </TabsContent>
         <TabsContent value="nodate">
           <div className="mb-2 mt-2 p-3 rounded-lg bg-yellow-50 border border-yellow-200 text-sm text-yellow-800">
             These leads have no follow-up date scheduled. Set a follow-up to keep them from falling through the cracks.
           </div>
-          <LeadTable leads={buckets.noDate} emptyText="All active leads have a follow-up date set" />
+          <LeadTable leads={buckets.noDate} emptyText="All active leads have a follow-up date set" isAdmin={isAdmin} onClearFollowUp={handleClearFollowUp} clearingId={clearingId} />
         </TabsContent>
       </Tabs>
     </div>
@@ -269,11 +297,19 @@ function LeadTable({
   leads,
   emptyText,
   rowStyle,
+  isAdmin,
+  onClearFollowUp,
+  clearingId,
 }: {
   leads: FollowUpLead[];
   emptyText: string;
   rowStyle?: "overdue" | "today";
+  isAdmin: boolean;
+  onClearFollowUp: (leadId: string) => void;
+  clearingId: string | null;
 }) {
+  const colSpan = isAdmin ? 8 : 7;
+
   return (
     <div className="rounded-lg border bg-card overflow-hidden mt-2">
       <Table>
@@ -286,12 +322,13 @@ function LeadTable({
             <TableHead>Follow-up Date</TableHead>
             <TableHead>Type</TableHead>
             <TableHead>Assigned To</TableHead>
+            {isAdmin && <TableHead className="w-10" />}
           </TableRow>
         </TableHeader>
         <TableBody>
           {leads.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
+              <TableCell colSpan={colSpan} className="text-center py-10 text-muted-foreground">
                 {emptyText}
               </TableCell>
             </TableRow>
@@ -337,6 +374,20 @@ function LeadTable({
                     )}
                   </TableCell>
                   <TableCell className="text-sm">{lead.assigned_to.name}</TableCell>
+                  {isAdmin && (
+                    <TableCell>
+                      <button
+                        onClick={() => onClearFollowUp(lead.id)}
+                        disabled={clearingId === lead.id}
+                        className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                        title="Clear follow-up"
+                      >
+                        {clearingId === lead.id
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : <Trash2 className="h-3.5 w-3.5" />}
+                      </button>
+                    </TableCell>
+                  )}
                 </TableRow>
               );
             })

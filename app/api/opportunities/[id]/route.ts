@@ -146,3 +146,22 @@ export async function POST(request: Request, { params }: { params: Params }) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
+
+export async function DELETE(_request: Request, { params }: { params: Params }) {
+  try {
+    const session = await auth();
+    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!hasPermission(session.user.role, "opportunity:delete")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const { id } = await params;
+    await prisma.opportunity.update({
+      where: { id, deleted_at: null },
+      data: { deleted_at: new Date() },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("DELETE /api/opportunities/[id]:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}

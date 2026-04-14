@@ -10,6 +10,7 @@ import { ActivityTimeline } from "@/components/shared/ActivityTimeline";
 import { formatDate, formatCurrency, formatDateTime } from "@/lib/utils";
 import { StageChanger } from "@/components/leads/StageChanger";
 import { NoteForm } from "@/components/leads/NoteForm";
+import { DeleteConfirmButton } from "@/components/shared/DeleteConfirmButton";
 import { ArrowLeft, Edit, Phone, Mail, MapPin, Calendar, IndianRupee } from "lucide-react";
 import { hasPermission } from "@/lib/rbac";
 
@@ -54,6 +55,7 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
   if (!lead) notFound();
 
   const canEdit = session?.user && hasPermission(session.user.role, "lead:update");
+  const canDelete = session?.user && hasPermission(session.user.role, "lead:delete");
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -83,6 +85,14 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
             <Button size="sm" render={<Link href={`/tasks/new?lead_id=${id}`} />}>
               + Task
             </Button>
+          )}
+          {canDelete && (
+            <DeleteConfirmButton
+              label="Delete"
+              confirmText={`Delete "${lead.full_name}"? This cannot be undone.`}
+              apiPath={`/api/leads/${id}`}
+              redirectTo="/leads"
+            />
           )}
         </div>
       </div>

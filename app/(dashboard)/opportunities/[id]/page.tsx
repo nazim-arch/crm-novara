@@ -8,6 +8,7 @@ import { LeadStatusBadge, TemperatureBadge } from "@/components/shared/LeadStatu
 import { ArrowLeft, Edit } from "lucide-react";
 import { hasPermission } from "@/lib/rbac";
 import { ExpensesSection } from "@/components/opportunities/ExpensesSection";
+import { DeleteConfirmButton } from "@/components/shared/DeleteConfirmButton";
 
 
 type Params = Promise<{ id: string }>;
@@ -56,6 +57,7 @@ export default async function OpportunityDetailPage({ params }: { params: Params
   });
 
   const canEdit = session?.user && hasPermission(session.user.role, "opportunity:update");
+  const canDelete = session?.user && hasPermission(session.user.role, "opportunity:delete");
   const isAdmin = session?.user.role === "Admin";
   const canViewFinancials = session?.user ? hasPermission(session.user.role, "financial:view") : false;
   const canAddExpense = session?.user ? (isAdmin || session.user.role === "Sales") : false;
@@ -77,11 +79,21 @@ export default async function OpportunityDetailPage({ params }: { params: Params
             <p className="text-sm text-muted-foreground font-mono">{opp.opp_number}</p>
           </div>
         </div>
-        {canEdit && (
-          <Button variant="outline" size="sm" render={<Link href={`/opportunities/${id}/edit`} />}>
-            <Edit className="h-4 w-4 mr-1" /> Edit
-          </Button>
-        )}
+        <div className="flex gap-2">
+          {canEdit && (
+            <Button variant="outline" size="sm" render={<Link href={`/opportunities/${id}/edit`} />}>
+              <Edit className="h-4 w-4 mr-1" /> Edit
+            </Button>
+          )}
+          {canDelete && (
+            <DeleteConfirmButton
+              label="Delete"
+              confirmText={`Delete "${opp.name}"? This cannot be undone.`}
+              apiPath={`/api/opportunities/${id}`}
+              redirectTo="/opportunities"
+            />
+          )}
+        </div>
       </div>
 
       {/* Financial Summary */}

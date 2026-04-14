@@ -8,6 +8,7 @@ export default async function FollowUpsPage() {
   const role = session?.user.role ?? "";
   const isScoped = role === "Sales" || role === "Operations";
   const isManagerOrAdmin = role === "Admin" || role === "Manager";
+  const isAdmin = role === "Admin";
   const userFilter = isScoped ? { assigned_to_id: session?.user.id } : {};
 
   const [leads, users] = await Promise.all([
@@ -45,6 +46,7 @@ export default async function FollowUpsPage() {
       leads={leads}
       users={users}
       isManagerOrAdmin={isManagerOrAdmin}
+      isAdmin={isAdmin}
       currentUserId={session?.user.id ?? ""}
     />
   );

@@ -1,13 +1,13 @@
 export type Permission =
   | "lead:create" | "lead:read" | "lead:update" | "lead:delete"
-  | "opportunity:create" | "opportunity:update" | "opportunity:read"
+  | "opportunity:create" | "opportunity:update" | "opportunity:read" | "opportunity:delete"
   | "task:create" | "task:read" | "task:update" | "task:delete"
   | "user:manage" | "report:view" | "financial:view";
 
 const PERMS: Record<string, Permission[]> = {
   Admin: [
     "lead:create", "lead:read", "lead:update", "lead:delete",
-    "opportunity:create", "opportunity:update", "opportunity:read",
+    "opportunity:create", "opportunity:update", "opportunity:read", "opportunity:delete",
     "task:create", "task:read", "task:update", "task:delete",
     "user:manage", "report:view", "financial:view",
   ],
@@ -22,7 +22,7 @@ const PERMS: Record<string, Permission[]> = {
   // Legacy roles — keep for backward compat
   Manager: [
     "lead:create", "lead:read", "lead:update", "lead:delete",
-    "opportunity:create", "opportunity:update", "opportunity:read",
+    "opportunity:create", "opportunity:update", "opportunity:read", "opportunity:delete",
     "task:create", "task:read", "task:update", "task:delete",
     "report:view", "financial:view",
   ],

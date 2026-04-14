@@ -12,6 +12,7 @@ import { formatDate, formatDateTime, formatCurrency } from "@/lib/utils";
 import { hasPermission } from "@/lib/rbac";
 import { TaskStatusChanger } from "@/components/tasks/TaskStatusChanger";
 import { NoteForm } from "@/components/leads/NoteForm";
+import { DeleteConfirmButton } from "@/components/shared/DeleteConfirmButton";
 import {
   ArrowLeft,
   Edit,
@@ -81,6 +82,14 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
               <Edit className="h-4 w-4 mr-1" />
               Edit
             </Button>
+          )}
+          {canDelete && (
+            <DeleteConfirmButton
+              label="Delete"
+              confirmText={`Delete "${task.title}"? This cannot be undone.`}
+              apiPath={`/api/tasks/${id}`}
+              redirectTo="/tasks"
+            />
           )}
         </div>
       </div>
