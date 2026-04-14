@@ -8,7 +8,7 @@ import { passwordReset } from "@/lib/email-templates";
 
 type Params = Promise<{ id: string }>;
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://crm.novara.in";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://crm.dealstackhq.com";
 
 // Admin action: send a password reset link to a user
 export async function POST(_request: Request, { params }: { params: Params }) {

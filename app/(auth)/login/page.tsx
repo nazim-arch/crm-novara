@@ -71,7 +71,7 @@ export default function LoginPage() {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="you@novara.in"
+                  placeholder="you@dealstackhq.com"
                   autoComplete="email"
                   {...register("email")}
                 />

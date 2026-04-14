@@ -8,7 +8,7 @@ import crypto from "crypto";
 import { sendEmail } from "@/lib/email";
 import { welcomeUser } from "@/lib/email-templates";
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://crm.novara.in";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://crm.dealstackhq.com";
 
 export async function GET() {
   const session = await auth();

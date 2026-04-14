@@ -21,11 +21,11 @@ async function main() {
   // Create admin user
   const adminHash = await bcrypt.hash("Admin@123", 12);
   const admin = await prisma.user.upsert({
-    where: { email: "admin@novara.in" },
+    where: { email: "admin@dealstackhq.com" },
     update: {},
     create: {
       name: "Admin User",
-      email: "admin@novara.in",
+      email: "admin@dealstackhq.com",
       password_hash: adminHash,
       role: "Admin",
     },
@@ -34,11 +34,11 @@ async function main() {
   // Create a manager
   const managerHash = await bcrypt.hash("Manager@123", 12);
   await prisma.user.upsert({
-    where: { email: "manager@novara.in" },
+    where: { email: "manager@dealstackhq.com" },
     update: {},
     create: {
       name: "Sales Manager",
-      email: "manager@novara.in",
+      email: "manager@dealstackhq.com",
       password_hash: managerHash,
       role: "Manager",
     },
@@ -47,11 +47,11 @@ async function main() {
   // Create a sales user
   const salesHash = await bcrypt.hash("Sales@123", 12);
   const salesUser = await prisma.user.upsert({
-    where: { email: "sales@novara.in" },
+    where: { email: "sales@dealstackhq.com" },
     update: {},
     create: {
       name: "Sales Executive",
-      email: "sales@novara.in",
+      email: "sales@dealstackhq.com",
       password_hash: salesHash,
       role: "Sales",
     },
@@ -194,9 +194,9 @@ async function main() {
 
   console.log("\n✨ Seed complete!");
   console.log("\n📋 Login credentials:");
-  console.log("  Admin:   admin@novara.in   / Admin@123");
-  console.log("  Manager: manager@novara.in / Manager@123");
-  console.log("  Sales:   sales@novara.in   / Sales@123");
+  console.log("  Admin:   admin@dealstackhq.com   / Admin@123");
+  console.log("  Manager: manager@dealstackhq.com / Manager@123");
+  console.log("  Sales:   sales@dealstackhq.com   / Sales@123");
 }
 
 main()

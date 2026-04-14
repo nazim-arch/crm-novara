@@ -418,7 +418,7 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
               </div>
               <div className="space-y-1.5">
                 <Label>Email <span className="text-destructive">*</span></Label>
-                <Input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="user@novara.in" />
+                <Input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="user@dealstackhq.com" />
                 {formErrors.email && <p className="text-xs text-destructive">{formErrors.email}</p>}
               </div>
               <div className="space-y-1.5">

@@ -9,7 +9,7 @@ const schema = z.object({
   email: z.string().email(),
 });
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://crm.novara.in";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://crm.dealstackhq.com";
 
 export async function POST(request: Request) {
   try {
