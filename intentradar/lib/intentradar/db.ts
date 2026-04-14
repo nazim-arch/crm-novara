@@ -2,13 +2,8 @@
 // Database utilities for IntentRadar module
 // Uses your existing Prisma client - just imports it
 
-import { PrismaClient } from '@prisma/client';
-
-// Use your existing prisma instance
-// If you have a global prisma in lib/prisma.ts, import from there instead
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
-export const prisma = globalForPrisma.prisma || new PrismaClient();
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+import { prisma } from '@/lib/prisma';
+export { prisma };
 
 // ─── Settings helpers ───
 export async function getSetting(key: string): Promise<string | null> {

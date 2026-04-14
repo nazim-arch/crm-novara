@@ -58,6 +58,8 @@ export async function POST(req: NextRequest) {
       budgetMax: parseFloat(budgetMax),
       propertyType,
       bhkConfig,
+      buyerPersonas: buyerPersonas || [],
+      urgency: urgency || 'exploring',
       keywords: keywords || [],
     };
 
