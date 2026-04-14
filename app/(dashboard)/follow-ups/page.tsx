@@ -4,32 +4,38 @@ import { FollowUpsClient } from "@/components/follow-ups/FollowUpsClient";
 
 export default async function FollowUpsPage() {
   const session = await auth();
-
   const role = session?.user.role ?? "";
   const isScoped = role === "Sales" || role === "Operations";
   const isManagerOrAdmin = role === "Admin" || role === "Manager";
   const isAdmin = role === "Admin";
-  const userFilter = isScoped ? { assigned_to_id: session?.user.id } : {};
 
-  const [leads, users] = await Promise.all([
-    prisma.lead.findMany({
-      where: {
-        deleted_at: null,
-        ...userFilter,
-        status: { notIn: ["Won", "Lost", "Recycle"] },
-      },
-      select: {
-        id: true,
-        lead_number: true,
-        full_name: true,
-        phone: true,
-        status: true,
-        temperature: true,
-        next_followup_date: true,
-        followup_type: true,
+  const scopeFilter = isScoped
+    ? {
+        OR: [
+          { assigned_to_id: session?.user.id },
+          { created_by_id: session?.user.id },
+        ],
+      }
+    : {};
+
+  const [followUps, users] = await Promise.all([
+    prisma.followUp.findMany({
+      where: scopeFilter,
+      include: {
+        lead: {
+          select: {
+            id: true,
+            lead_number: true,
+            full_name: true,
+            status: true,
+            temperature: true,
+          },
+        },
+        opportunity: { select: { id: true, opp_number: true, name: true } },
         assigned_to: { select: { id: true, name: true } },
+        created_by: { select: { id: true, name: true } },
       },
-      orderBy: [{ next_followup_date: { sort: "asc", nulls: "last" } }],
+      orderBy: { scheduled_at: "asc" },
       take: 500,
     }),
     isManagerOrAdmin
@@ -43,7 +49,7 @@ export default async function FollowUpsPage() {
 
   return (
     <FollowUpsClient
-      leads={leads}
+      followUps={followUps}
       users={users}
       isManagerOrAdmin={isManagerOrAdmin}
       isAdmin={isAdmin}

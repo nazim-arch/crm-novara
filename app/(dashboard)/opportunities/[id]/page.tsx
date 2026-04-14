@@ -9,6 +9,7 @@ import { ArrowLeft, Edit } from "lucide-react";
 import { hasPermission } from "@/lib/rbac";
 import { ExpensesSection } from "@/components/opportunities/ExpensesSection";
 import { DeleteConfirmButton } from "@/components/shared/DeleteConfirmButton";
+import { FollowUpSection } from "@/components/follow-ups/FollowUpSection";
 
 
 type Params = Promise<{ id: string }>;
@@ -23,38 +24,50 @@ export default async function OpportunityDetailPage({ params }: { params: Params
   const session = await auth();
   const { id } = await params;
 
-  const opp = await prisma.opportunity.findUnique({
-    where: { id, deleted_at: null },
-    include: {
-      created_by: { select: { id: true, name: true } },
-      configurations: { orderBy: { created_at: "asc" } },
-      leads: {
-        include: {
-          lead: {
-            select: {
-              id: true,
-              lead_number: true,
-              full_name: true,
-              phone: true,
-              status: true,
-              temperature: true,
-              settlement_value: true,
-              deal_commission_percent: true,
+  const [opp, expenses, users] = await Promise.all([
+    prisma.opportunity.findUnique({
+      where: { id, deleted_at: null },
+      include: {
+        created_by: { select: { id: true, name: true } },
+        configurations: { orderBy: { created_at: "asc" } },
+        leads: {
+          include: {
+            lead: {
+              select: {
+                id: true,
+                lead_number: true,
+                full_name: true,
+                phone: true,
+                status: true,
+                temperature: true,
+                settlement_value: true,
+                deal_commission_percent: true,
+              },
             },
           },
+          orderBy: { tagged_at: "desc" },
         },
-        orderBy: { tagged_at: "desc" },
+        follow_ups: {
+          include: {
+            assigned_to: { select: { id: true, name: true } },
+            created_by: { select: { id: true, name: true } },
+          },
+          orderBy: { scheduled_at: "asc" },
+          take: 20,
+        },
       },
-    },
-  });
+    }),
+    prisma.opportunityExpense.findMany({
+      where: { opportunity_id: id },
+      include: { added_by: { select: { id: true, name: true } } },
+      orderBy: { expense_date: "desc" },
+    }),
+    session?.user && (session.user.role === "Admin" || session.user.role === "Manager")
+      ? prisma.user.findMany({ where: { is_active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } })
+      : Promise.resolve([]),
+  ]);
 
   if (!opp) notFound();
-
-  const expenses = await prisma.opportunityExpense.findMany({
-    where: { opportunity_id: id },
-    include: { added_by: { select: { id: true, name: true } } },
-    orderBy: { expense_date: "desc" },
-  });
 
   const canEdit = session?.user && hasPermission(session.user.role, "opportunity:update");
   const canDelete = session?.user && hasPermission(session.user.role, "opportunity:delete");
@@ -220,8 +233,27 @@ export default async function OpportunityDetailPage({ params }: { params: Params
           )}
         </div>
 
-        {/* Tagged Leads */}
-        <div>
+        {/* Right column */}
+        <div className="space-y-4">
+          {/* Follow-ups */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium">Follow-ups</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <FollowUpSection
+                entityType="opportunity"
+                entityId={opp.id}
+                initialFollowUps={opp.follow_ups}
+                users={users}
+                currentUserId={session?.user.id ?? ""}
+                canManage={!!canEdit}
+                isAdmin={isAdmin}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Tagged Leads */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium">

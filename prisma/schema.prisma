@@ -97,6 +97,13 @@ enum FollowUpType {
   Visit
   Meeting
   Activity
+  Internal
+}
+
+enum FollowUpPriority {
+  High
+  Medium
+  Low
 }
 
 enum EntityType {
@@ -144,7 +151,8 @@ model User {
   notes                Note[]
   attachments          Attachment[]
   notifications        Notification[]
-  followups_created    FollowUp[]
+  followups_created    FollowUp[]  @relation("FollowUpCreator")
+  followups_assigned   FollowUp[]  @relation("FollowUpAssignee")
   stage_changes        LeadStageHistory[]
   lead_opp_tags        LeadOpportunity[]
   expenses_added       OpportunityExpense[]
@@ -279,6 +287,7 @@ model Opportunity {
   leads          LeadOpportunity[]
   tasks          Task[]
   expenses       OpportunityExpense[]
+  follow_ups     FollowUp[]
 
   @@index([status])
   @@index([property_type])
@@ -523,24 +532,33 @@ model Notification {
 // ─────────────────────────────────────────────
 
 model FollowUp {
-  id            String       @id @default(cuid())
-  lead_id       String?
-  task_id       String?
-  type          FollowUpType
-  scheduled_at  DateTime
-  completed_at  DateTime?
-  notes         String?
-  outcome       String?
-  created_by_id String
-  created_at    DateTime     @default(now())
+  id             String           @id @default(cuid())
+  lead_id        String?
+  opportunity_id String?
+  task_id        String?
+  assigned_to_id String?
+  type           FollowUpType
+  priority       FollowUpPriority @default(Medium)
+  scheduled_at   DateTime
+  completed_at   DateTime?
+  notes          String?
+  outcome        String?
+  created_by_id  String
+  created_at     DateTime         @default(now())
+  updated_at     DateTime         @default(now()) @updatedAt
 
-  lead       Lead? @relation(fields: [lead_id],       references: [id])
-  task       Task? @relation(fields: [task_id],       references: [id])
-  created_by User  @relation(fields: [created_by_id], references: [id])
+  lead        Lead?        @relation(fields: [lead_id],        references: [id])
+  opportunity Opportunity? @relation(fields: [opportunity_id], references: [id])
+  task        Task?        @relation(fields: [task_id],        references: [id])
+  assigned_to User?        @relation("FollowUpAssignee", fields: [assigned_to_id], references: [id])
+  created_by  User         @relation("FollowUpCreator",  fields: [created_by_id],  references: [id])
 
   @@index([lead_id])
+  @@index([opportunity_id])
   @@index([task_id])
+  @@index([assigned_to_id])
   @@index([scheduled_at])
+  @@index([completed_at])
   @@map("follow_ups")
 }
 

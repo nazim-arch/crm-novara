@@ -13,6 +13,7 @@ import { NoteForm } from "@/components/leads/NoteForm";
 import { DeleteConfirmButton } from "@/components/shared/DeleteConfirmButton";
 import { ArrowLeft, Edit, Phone, Mail, MapPin, Calendar, IndianRupee } from "lucide-react";
 import { hasPermission } from "@/lib/rbac";
+import { FollowUpSection } from "@/components/follow-ups/FollowUpSection";
 
 type Params = Promise<{ id: string }>;
 
@@ -20,7 +21,7 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
   const session = await auth();
   const { id } = await params;
 
-  const [lead, notes] = await Promise.all([
+  const [lead, notes, users] = await Promise.all([
     prisma.lead.findUnique({
       where: { id, deleted_at: null },
       include: {
@@ -42,6 +43,14 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
           orderBy: { changed_at: "desc" },
           take: 5,
         },
+        followups: {
+          include: {
+            assigned_to: { select: { id: true, name: true } },
+            created_by: { select: { id: true, name: true } },
+          },
+          orderBy: { scheduled_at: "asc" },
+          take: 20,
+        },
       },
     }),
     prisma.note.findMany({
@@ -50,6 +59,9 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
       orderBy: { created_at: "desc" },
       take: 10,
     }),
+    session?.user && (session.user.role === "Admin" || session.user.role === "Manager")
+      ? prisma.user.findMany({ where: { is_active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } })
+      : Promise.resolve([]),
   ]);
 
   if (!lead) notFound();
@@ -323,6 +335,26 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
               </CardContent>
             </Card>
           )}
+
+          {/* Follow-ups */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium">Follow-ups</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <FollowUpSection
+                entityType="lead"
+                entityId={lead.id}
+                initialFollowUps={lead.followups}
+                users={users}
+                currentUserId={session?.user.id ?? ""}
+                canManage={!!canEdit}
+                isAdmin={session?.user.role === "Admin"}
+              />
+            </CardContent>
+          </Card>
 
           {/* Stage History */}
           <Card>

@@ -30,7 +30,7 @@ type OppItem = { id: string; opp_number: string; name: string };
 type ClientItem = { id: string; name: string };
 
 const LEAD_SOURCES = ["Website", "Facebook", "Instagram", "Google Ads", "Referral", "Walk-in", "Cold Call", "Exhibition", "WhatsApp", "Other"];
-const FOLLOW_UP_TYPES = ["Call", "Email", "WhatsApp", "Visit", "Meeting"];
+const FOLLOW_UP_TYPES = ["Call", "Email", "WhatsApp", "Visit", "Meeting", "Activity", "Internal"];
 const PROPERTY_TYPES = ["Residential", "Commercial", "Plot", "Villa", "Apartment", "Office"];
 const SECTORS = ["Novara", "Sage", "Podcast", "Trade"];
 const EXPENSE_CATEGORIES = ["Meta Ads", "Google Ads", "Ads", "Marketing", "Site Visits", "Travel / Petrol", "Shared Commission", "Operational Expense", "Miscellaneous"];
@@ -103,10 +103,13 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
   const [taskClientId, setTaskClientId] = useState("none");
 
   // Follow-up form
-  const [fuLinkType, setFuLinkType] = useState<"lead" | "task">("lead");
+  const [fuLinkType, setFuLinkType] = useState<"lead" | "opportunity" | "task">("lead");
   const [fuLeadId, setFuLeadId] = useState("none");
+  const [fuOppId, setFuOppId] = useState("none");
   const [fuTaskId, setFuTaskId] = useState("none");
   const [fuType, setFuType] = useState("Call");
+  const [fuPriority, setFuPriority] = useState("Medium");
+  const [fuAssignedTo, setFuAssignedTo] = useState(currentUserId);
   const [fuDate, setFuDate] = useState("");
   const [fuNotes, setFuNotes] = useState("");
 
@@ -181,7 +184,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
     setLeadName(""); setLeadPhone(""); setLeadSource(""); setLeadTemperature("Cold");
     setOppName(""); setOppProject(""); setOppPropertyType(""); setOppLocation(""); setOppCommission("");
     setTaskTitle(""); setTaskAssignedTo(currentUserId); setTaskDueDate(""); setTaskLeadId("none"); setTaskOppId("none"); setTaskSector(""); setTaskClientId("none");
-    setFuLinkType("lead"); setFuLeadId("none"); setFuTaskId("none"); setFuType("Call"); setFuDate(""); setFuNotes("");
+    setFuLinkType("lead"); setFuLeadId("none"); setFuOppId("none"); setFuTaskId("none"); setFuType("Call"); setFuPriority("Medium"); setFuAssignedTo(currentUserId); setFuDate(""); setFuNotes("");
     setExpOppId("none"); setExpCategory(""); setExpAmount(""); setExpDate(new Date().toISOString().split("T")[0]); setExpDescription("");
   }
 
@@ -294,10 +297,13 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
     try {
       const body: Record<string, unknown> = {
         type: fuType,
+        priority: fuPriority,
         scheduled_at: fuDate,
+        assigned_to_id: fuAssignedTo || undefined,
         notes: fuNotes || undefined,
       };
       if (fuLinkType === "lead" && fuLeadId !== "none") body.lead_id = fuLeadId;
+      if (fuLinkType === "opportunity" && fuOppId !== "none") body.opportunity_id = fuOppId;
       if (fuLinkType === "task" && fuTaskId !== "none") body.task_id = fuTaskId;
 
       const res = await fetch("/api/follow-ups", {
@@ -341,7 +347,9 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
   const taskLeadLabel = taskLeadId === "none" ? "No lead" : leads.find((l) => l.id === taskLeadId) ? `${leads.find((l) => l.id === taskLeadId)!.lead_number} – ${leads.find((l) => l.id === taskLeadId)!.full_name}` : "Select lead";
   const taskOppLabel = taskOppId === "none" ? "No opportunity" : opps.find((o) => o.id === taskOppId) ? `${opps.find((o) => o.id === taskOppId)!.opp_number} – ${opps.find((o) => o.id === taskOppId)!.name}` : "Select opportunity";
   const fuLeadLabel = fuLeadId === "none" ? "Select lead" : leads.find((l) => l.id === fuLeadId) ? `${leads.find((l) => l.id === fuLeadId)!.lead_number} – ${leads.find((l) => l.id === fuLeadId)!.full_name}` : "Select lead";
+  const fuOppLabel = fuOppId === "none" ? "Select opportunity" : opps.find((o) => o.id === fuOppId) ? `${opps.find((o) => o.id === fuOppId)!.opp_number} – ${opps.find((o) => o.id === fuOppId)!.name}` : "Select opportunity";
   const fuTaskLabel = fuTaskId === "none" ? "Select task" : tasks.find((t) => t.id === fuTaskId) ? `${tasks.find((t) => t.id === fuTaskId)!.task_number} – ${tasks.find((t) => t.id === fuTaskId)!.title}` : "Select task";
+  const fuAssigneeName = users.find((u) => u.id === fuAssignedTo)?.name ?? "Assign to…";
 
   return (
     <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) resetForms(); }}>
@@ -605,99 +613,102 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
 
           {/* ── FOLLOW-UP ── */}
           <TabsContent value="followup" className="space-y-3 mt-4">
-            <ModeToggle mode={fuMode} onChange={setFuMode} />
+            {/* Link type selector */}
+            <div className="flex rounded-md border overflow-hidden text-xs">
+              {(["lead", "opportunity", "task"] as const).map((lt) => (
+                <button
+                  key={lt}
+                  type="button"
+                  onClick={() => setFuLinkType(lt)}
+                  className={`flex-1 py-1.5 text-center capitalize transition-colors ${fuLinkType === lt ? "bg-primary text-primary-foreground" : "bg-transparent hover:bg-muted"}`}
+                >
+                  {lt === "opportunity" ? "Opp" : lt.charAt(0).toUpperCase() + lt.slice(1)}
+                </button>
+              ))}
+            </div>
 
-            {fuMode === "edit" ? (
-              <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">Select the lead or task the follow-up is linked to, then go to its detail page to edit or complete the follow-up.</p>
-                <div className="flex rounded-md border overflow-hidden text-sm">
-                  <button type="button" onClick={() => setFuLinkType("lead")} className={`flex-1 py-1.5 text-center transition-colors ${fuLinkType === "lead" ? "bg-primary text-primary-foreground" : "bg-transparent hover:bg-muted"}`}>Lead</button>
-                  <button type="button" onClick={() => setFuLinkType("task")} className={`flex-1 py-1.5 text-center transition-colors ${fuLinkType === "task" ? "bg-primary text-primary-foreground" : "bg-transparent hover:bg-muted"}`}>Task</button>
-                </div>
-                {fuLinkType === "lead" ? (
-                  <>
-                    <Select value={fuLeadId} onValueChange={(v) => v && setFuLeadId(v)}>
-                      <SelectTrigger className="w-full"><SelectValue>{fuLeadLabel}</SelectValue></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Select a lead</SelectItem>
-                        {leads.map((l) => (<SelectItem key={l.id} value={l.id}>{l.lead_number} – {l.full_name}</SelectItem>))}
-                      </SelectContent>
-                    </Select>
-                    <Button className="w-full" disabled={fuLeadId === "none"} onClick={() => navigateToEdit(`/leads/${fuLeadId}`)}>
-                      <Pencil className="mr-2 h-4 w-4" /> Go to Lead
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Select value={fuTaskId} onValueChange={(v) => v && setFuTaskId(v)}>
-                      <SelectTrigger className="w-full"><SelectValue>{fuTaskLabel}</SelectValue></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Select a task</SelectItem>
-                        {tasks.map((t) => (<SelectItem key={t.id} value={t.id}>{t.task_number} – {t.title}</SelectItem>))}
-                      </SelectContent>
-                    </Select>
-                    <Button className="w-full" disabled={fuTaskId === "none"} onClick={() => navigateToEdit(`/tasks/${fuTaskId}`)}>
-                      <Pencil className="mr-2 h-4 w-4" /> Go to Task
-                    </Button>
-                  </>
-                )}
+            {fuLinkType === "lead" && (
+              <div className="space-y-1.5">
+                <Label>Lead</Label>
+                <Select value={fuLeadId} onValueChange={(v) => v && setFuLeadId(v)}>
+                  <SelectTrigger className="w-full"><SelectValue>{fuLeadLabel}</SelectValue></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No lead</SelectItem>
+                    {leads.map((l) => (<SelectItem key={l.id} value={l.id}>{l.lead_number} – {l.full_name}</SelectItem>))}
+                  </SelectContent>
+                </Select>
               </div>
-            ) : (
-              <>
-                <div className="flex rounded-md border overflow-hidden text-sm">
-                  <button type="button" onClick={() => setFuLinkType("lead")} className={`flex-1 py-1.5 text-center transition-colors ${fuLinkType === "lead" ? "bg-primary text-primary-foreground" : "bg-transparent hover:bg-muted"}`}>Link to Lead</button>
-                  <button type="button" onClick={() => setFuLinkType("task")} className={`flex-1 py-1.5 text-center transition-colors ${fuLinkType === "task" ? "bg-primary text-primary-foreground" : "bg-transparent hover:bg-muted"}`}>Link to Task</button>
-                </div>
-
-                {fuLinkType === "lead" ? (
-                  <div className="space-y-1.5">
-                    <Label>Lead</Label>
-                    <Select value={fuLeadId} onValueChange={(v) => v && setFuLeadId(v)}>
-                      <SelectTrigger className="w-full"><SelectValue>{fuLeadLabel}</SelectValue></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Select a lead</SelectItem>
-                        {leads.map((l) => (<SelectItem key={l.id} value={l.id}>{l.lead_number} – {l.full_name}</SelectItem>))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    <Label>Task</Label>
-                    <Select value={fuTaskId} onValueChange={(v) => v && setFuTaskId(v)}>
-                      <SelectTrigger className="w-full"><SelectValue>{fuTaskLabel}</SelectValue></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Select a task</SelectItem>
-                        {tasks.map((t) => (<SelectItem key={t.id} value={t.id}>{t.task_number} – {t.title}</SelectItem>))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label>Type</Label>
-                    <Select value={fuType} onValueChange={(v) => v && setFuType(v)}>
-                      <SelectTrigger><SelectValue>{fuType}</SelectValue></SelectTrigger>
-                      <SelectContent>
-                        {FOLLOW_UP_TYPES.map((t) => (<SelectItem key={t} value={t}>{t}</SelectItem>))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Date &amp; Time *</Label>
-                    <Input value={fuDate} onChange={(e) => setFuDate(e.target.value)} type="datetime-local" />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Notes</Label>
-                  <Input value={fuNotes} onChange={(e) => setFuNotes(e.target.value)} placeholder="Optional notes" />
-                </div>
-                <Button className="w-full" onClick={submitFollowUp} disabled={loading}>
-                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Schedule Follow-up
-                </Button>
-              </>
             )}
+            {fuLinkType === "opportunity" && (
+              <div className="space-y-1.5">
+                <Label>Opportunity</Label>
+                <Select value={fuOppId} onValueChange={(v) => v && setFuOppId(v)}>
+                  <SelectTrigger className="w-full"><SelectValue>{fuOppLabel}</SelectValue></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No opportunity</SelectItem>
+                    {opps.map((o) => (<SelectItem key={o.id} value={o.id}>{o.opp_number} – {o.name}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {fuLinkType === "task" && (
+              <div className="space-y-1.5">
+                <Label>Task</Label>
+                <Select value={fuTaskId} onValueChange={(v) => v && setFuTaskId(v)}>
+                  <SelectTrigger className="w-full"><SelectValue>{fuTaskLabel}</SelectValue></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No task</SelectItem>
+                    {tasks.map((t) => (<SelectItem key={t.id} value={t.id}>{t.task_number} – {t.title}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Type</Label>
+                <Select value={fuType} onValueChange={(v) => v && setFuType(v)}>
+                  <SelectTrigger><SelectValue>{fuType}</SelectValue></SelectTrigger>
+                  <SelectContent>
+                    {FOLLOW_UP_TYPES.map((t) => (<SelectItem key={t} value={t}>{t}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Priority</Label>
+                <Select value={fuPriority} onValueChange={(v) => v && setFuPriority(v)}>
+                  <SelectTrigger><SelectValue>{fuPriority}</SelectValue></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="High">High</SelectItem>
+                    <SelectItem value="Medium">Medium</SelectItem>
+                    <SelectItem value="Low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Date &amp; Time *</Label>
+              <Input value={fuDate} onChange={(e) => setFuDate(e.target.value)} type="datetime-local" />
+            </div>
+            {users.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>Assign To</Label>
+                <Select value={fuAssignedTo} onValueChange={(v) => v && setFuAssignedTo(v)}>
+                  <SelectTrigger className="w-full"><SelectValue>{fuAssigneeName}</SelectValue></SelectTrigger>
+                  <SelectContent>
+                    {users.map((u) => (<SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Input value={fuNotes} onChange={(e) => setFuNotes(e.target.value)} placeholder="Optional notes" />
+            </div>
+            <Button className="w-full" onClick={submitFollowUp} disabled={loading}>
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Schedule Follow-up
+            </Button>
           </TabsContent>
 
           {/* ── EXPENSE ── */}

@@ -3,58 +3,47 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { LeadStatusBadge, TemperatureBadge } from "@/components/shared/LeadStatusBadge";
-import { formatDate } from "@/lib/utils";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { PriorityBadge } from "@/components/shared/LeadStatusBadge";
+import { formatDate, formatDateTime } from "@/lib/utils";
 import { startOfDay, endOfDay, addDays, differenceInCalendarDays } from "date-fns";
 import {
-  Phone,
-  Mail,
-  MessageCircle,
-  Home,
-  Users,
-  Zap,
-  AlertTriangle,
-  Clock,
-  Flame,
-  CalendarX,
-  Search,
-  Trash2,
-  Loader2,
-  Calendar,
-  User,
+  Phone, Mail, MessageCircle, Home, Users, Zap, Flame,
+  AlertTriangle, Clock, Search, Trash2, Loader2, Check, Plus,
+  Building2, User, Calendar, CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 
-export type FollowUpLead = {
+const FOLLOW_UP_TYPES = ["Call", "Email", "WhatsApp", "Visit", "Meeting", "Activity", "Internal"] as const;
+
+export type FollowUp = {
   id: string;
-  lead_number: string;
-  full_name: string;
-  phone: string;
-  status: string;
-  temperature: string;
-  next_followup_date: Date | null;
-  followup_type: string | null;
-  assigned_to: { id: string; name: string };
+  type: string;
+  priority: string;
+  scheduled_at: Date;
+  completed_at: Date | null;
+  notes: string | null;
+  outcome: string | null;
+  lead: { id: string; lead_number: string; full_name: string; status: string; temperature: string } | null;
+  opportunity: { id: string; opp_number: string; name: string } | null;
+  assigned_to: { id: string; name: string } | null;
+  created_by: { id: string; name: string };
 };
 
 interface FollowUpsClientProps {
-  leads: FollowUpLead[];
+  followUps: FollowUp[];
   users: { id: string; name: string }[];
   isManagerOrAdmin: boolean;
   isAdmin: boolean;
@@ -62,10 +51,9 @@ interface FollowUpsClientProps {
 }
 
 // ── Relative date display ────────────────────────────────────────
-function getRelative(date: Date | null): { label: string; cls: string } {
-  if (!date) return { label: "No date", cls: "text-muted-foreground" };
+function getRelative(date: Date): { label: string; cls: string } {
   const today = startOfDay(new Date());
-  const diff = differenceInCalendarDays(startOfDay(date), today);
+  const diff = differenceInCalendarDays(startOfDay(new Date(date)), today);
   if (diff < -1) return { label: `${Math.abs(diff)}d overdue`, cls: "text-destructive font-medium" };
   if (diff === -1) return { label: "Yesterday", cls: "text-destructive font-medium" };
   if (diff === 0) return { label: "Today", cls: "text-orange-600 font-medium" };
@@ -74,92 +62,265 @@ function getRelative(date: Date | null): { label: string; cls: string } {
 }
 
 // ── Follow-up type icon ──────────────────────────────────────────
-function FuTypeIcon({ type }: { type: string | null }) {
+function FuTypeIcon({ type }: { type: string }) {
   switch (type) {
-    case "Call":      return <Phone className="h-3.5 w-3.5 text-green-600 shrink-0" />;
-    case "Email":     return <Mail className="h-3.5 w-3.5 text-blue-600 shrink-0" />;
-    case "WhatsApp":  return <MessageCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />;
-    case "Visit":     return <Home className="h-3.5 w-3.5 text-orange-500 shrink-0" />;
-    case "Meeting":   return <Users className="h-3.5 w-3.5 text-purple-600 shrink-0" />;
-    case "Activity":  return <Zap className="h-3.5 w-3.5 text-yellow-500 shrink-0" />;
-    default:          return null;
+    case "Call":     return <Phone className="h-3.5 w-3.5 text-green-600 shrink-0" />;
+    case "Email":    return <Mail className="h-3.5 w-3.5 text-blue-600 shrink-0" />;
+    case "WhatsApp": return <MessageCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />;
+    case "Visit":    return <Home className="h-3.5 w-3.5 text-orange-500 shrink-0" />;
+    case "Meeting":  return <Users className="h-3.5 w-3.5 text-purple-600 shrink-0" />;
+    case "Activity": return <Zap className="h-3.5 w-3.5 text-yellow-500 shrink-0" />;
+    case "Internal": return <Flame className="h-3.5 w-3.5 text-red-400 shrink-0" />;
+    default:         return null;
   }
+}
+
+// ── Entity link ──────────────────────────────────────────────────
+function EntityLabel({ fu }: { fu: FollowUp }) {
+  if (fu.lead) {
+    return (
+      <Link href={`/leads/${fu.lead.id}`} className="font-medium text-sm hover:underline leading-tight line-clamp-1">
+        {fu.lead.full_name}
+        <span className="text-[11px] text-muted-foreground font-mono ml-1">{fu.lead.lead_number}</span>
+      </Link>
+    );
+  }
+  if (fu.opportunity) {
+    return (
+      <Link href={`/opportunities/${fu.opportunity.id}`} className="font-medium text-sm hover:underline leading-tight line-clamp-1">
+        <span className="flex items-center gap-1">
+          <Building2 className="h-3 w-3 shrink-0 text-indigo-500" />
+          {fu.opportunity.name}
+          <span className="text-[11px] text-muted-foreground font-mono">{fu.opportunity.opp_number}</span>
+        </span>
+      </Link>
+    );
+  }
+  return <span className="text-sm text-muted-foreground">Standalone</span>;
+}
+
+// ── Add Next Dialog ──────────────────────────────────────────────
+function AddNextDialog({
+  fu,
+  users,
+  currentUserId,
+  onCreated,
+  onClose,
+}: {
+  fu: FollowUp;
+  users: { id: string; name: string }[];
+  currentUserId: string;
+  onCreated: (next: FollowUp) => void;
+  onClose: () => void;
+}) {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const defaultDate = tomorrow.toISOString().slice(0, 16);
+
+  const [type, setType] = useState(fu.type);
+  const [priority, setPriority] = useState(fu.priority);
+  const [scheduledAt, setScheduledAt] = useState(defaultDate);
+  const [notes, setNotes] = useState("");
+  const [assignedTo, setAssignedTo] = useState(fu.assigned_to?.id ?? currentUserId);
+  const [loading, setLoading] = useState(false);
+
+  const assigneeName = users.find((u) => u.id === assignedTo)?.name ?? "Select assignee";
+
+  async function handleSubmit() {
+    if (!scheduledAt) { toast.error("Date is required"); return; }
+    setLoading(true);
+    try {
+      const body: Record<string, unknown> = {
+        type, priority, scheduled_at: scheduledAt,
+        assigned_to_id: assignedTo || undefined,
+        notes: notes || undefined,
+      };
+      if (fu.lead_id) body.lead_id = fu.lead_id;
+      if (fu.opportunity_id) body.opportunity_id = fu.opportunity_id;
+
+      const res = await fetch("/api/follow-ups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const result = await res.json();
+      if (!res.ok) { toast.error(result.error ?? "Failed"); return; }
+      toast.success("Next follow-up scheduled");
+      onCreated(result.data);
+      onClose();
+    } catch {
+      toast.error("Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3 pt-1">
+      <p className="text-sm text-muted-foreground">
+        Schedule next follow-up for{" "}
+        <span className="font-medium text-foreground">
+          {fu.lead?.full_name ?? fu.opportunity?.name ?? "this record"}
+        </span>
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Type</Label>
+          <Select value={type} onValueChange={(v) => v && setType(v)}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue>{type}</SelectValue></SelectTrigger>
+            <SelectContent>
+              {FOLLOW_UP_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Priority</Label>
+          <Select value={priority} onValueChange={(v) => v && setPriority(v)}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue>{priority}</SelectValue></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="High">High</SelectItem>
+              <SelectItem value="Medium">Medium</SelectItem>
+              <SelectItem value="Low">Low</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">Date &amp; Time *</Label>
+        <Input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className="h-8 text-xs" />
+      </div>
+      {users.length > 0 && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Assign To</Label>
+          <Select value={assignedTo} onValueChange={(v) => v && setAssignedTo(v)}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue>{assigneeName}</SelectValue></SelectTrigger>
+            <SelectContent>
+              {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      <div className="space-y-1.5">
+        <Label className="text-xs">Notes</Label>
+        <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes…" className="text-xs resize-none h-16" />
+      </div>
+      <div className="flex gap-2 pt-1">
+        <Button variant="outline" size="sm" onClick={onClose} className="flex-1">Cancel</Button>
+        <Button size="sm" onClick={handleSubmit} disabled={loading} className="flex-1">
+          {loading && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+          Schedule
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 // ── Main component ───────────────────────────────────────────────
 export function FollowUpsClient({
-  leads: initialLeads,
+  followUps: initialFollowUps,
   users,
   isManagerOrAdmin,
   isAdmin,
   currentUserId,
 }: FollowUpsClientProps) {
-  const [leads, setLeads] = useState<FollowUpLead[]>(initialLeads);
+  const [followUps, setFollowUps] = useState<FollowUp[]>(initialFollowUps);
   const [search, setSearch] = useState("");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
-  const [clearingId, setClearingId] = useState<string | null>(null);
-
-  async function handleClearFollowUp(leadId: string) {
-    setClearingId(leadId);
-    try {
-      const res = await fetch(`/api/leads/${leadId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ next_followup_date: null, followup_type: null }),
-      });
-      if (!res.ok) { toast.error("Failed to clear follow-up"); return; }
-      setLeads((prev) => prev.filter((l) => l.id !== leadId));
-      toast.success("Follow-up cleared");
-    } catch {
-      toast.error("Something went wrong");
-    } finally {
-      setClearingId(null);
-    }
-  }
+  const [completingId, setCompletingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [addNextFor, setAddNextFor] = useState<FollowUp | null>(null);
 
   const today = useMemo(() => startOfDay(new Date()), []);
+  const todayEnd = useMemo(() => endOfDay(new Date()), []);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    return leads.filter((l) => {
-      if (assigneeFilter !== "all" && l.assigned_to.id !== assigneeFilter) return false;
-      if (q && !l.full_name.toLowerCase().includes(q) && !l.phone.includes(q)) return false;
+    return followUps.filter((fu) => {
+      if (assigneeFilter !== "all" && fu.assigned_to?.id !== assigneeFilter) return false;
+      if (q) {
+        const haystack = [
+          fu.lead?.full_name ?? "",
+          fu.lead?.lead_number ?? "",
+          fu.opportunity?.name ?? "",
+          fu.opportunity?.opp_number ?? "",
+          fu.notes ?? "",
+          fu.type,
+        ].join(" ").toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
       return true;
     });
-  }, [leads, search, assigneeFilter]);
+  }, [followUps, search, assigneeFilter]);
 
   const buckets = useMemo(() => {
-    const overdue: FollowUpLead[] = [];
-    const todayLeads: FollowUpLead[] = [];
-    const next3: FollowUpLead[] = [];
-    const next7: FollowUpLead[] = [];
-    const next30: FollowUpLead[] = [];
-    const hot: FollowUpLead[] = [];
-    const noDate: FollowUpLead[] = [];
+    const pending = filtered.filter((fu) => !fu.completed_at);
+    const completed = filtered.filter((fu) => !!fu.completed_at);
 
-    const todayEnd = endOfDay(today);
-    const end3 = endOfDay(addDays(today, 3));
-    const end7 = endOfDay(addDays(today, 7));
-    const end30 = endOfDay(addDays(today, 30));
+    const overdue = pending.filter((fu) => new Date(fu.scheduled_at) < today);
+    const todayItems = pending.filter((fu) => {
+      const d = new Date(fu.scheduled_at);
+      return d >= today && d <= todayEnd;
+    });
+    const next3 = pending.filter((fu) => {
+      const d = new Date(fu.scheduled_at);
+      return d > todayEnd && d <= endOfDay(addDays(today, 3));
+    });
+    const next7 = pending.filter((fu) => {
+      const d = new Date(fu.scheduled_at);
+      return d > todayEnd && d <= endOfDay(addDays(today, 7));
+    });
+    return { overdue, today: todayItems, next3, next7, pending, completed };
+  }, [filtered, today, todayEnd]);
 
-    for (const lead of filtered) {
-      if (lead.temperature === "Hot") hot.push(lead);
-      if (!lead.next_followup_date) { noDate.push(lead); continue; }
-      const d = new Date(lead.next_followup_date);
-      if (d < today) {
-        overdue.push(lead);
-      } else {
-        if (d <= todayEnd) todayLeads.push(lead);
-        if (d <= end3) next3.push(lead);
-        if (d <= end7) next7.push(lead);
-        if (d <= end30) next30.push(lead);
-      }
+  async function handleMarkComplete(fu: FollowUp, andAddNext = false) {
+    setCompletingId(fu.id);
+    try {
+      const res = await fetch(`/api/follow-ups/${fu.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed_at: new Date().toISOString() }),
+      });
+      if (!res.ok) { toast.error("Failed to mark complete"); return; }
+      setFollowUps((prev) =>
+        prev.map((f) => f.id === fu.id ? { ...f, completed_at: new Date() } : f)
+      );
+      toast.success("Marked complete");
+      if (andAddNext) setAddNextFor(fu);
+    } catch {
+      toast.error("Something went wrong");
+    } finally {
+      setCompletingId(null);
     }
+  }
 
-    return { overdue, today: todayLeads, next3, next7, next30, all: filtered, hot, noDate };
-  }, [filtered, today]);
+  async function handleDelete(id: string) {
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/follow-ups/${id}`, { method: "DELETE" });
+      if (!res.ok) { toast.error("Failed to delete"); return; }
+      setFollowUps((prev) => prev.filter((f) => f.id !== id));
+      toast.success("Deleted");
+    } catch {
+      toast.error("Something went wrong");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
-  const sharedProps = { isAdmin, onClearFollowUp: handleClearFollowUp, clearingId };
+  function handleNextCreated(next: FollowUp) {
+    setFollowUps((prev) => [...prev, next].sort(
+      (a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
+    ));
+  }
+
+  const sharedProps = {
+    isAdmin,
+    completingId,
+    deletingId,
+    onMarkComplete: handleMarkComplete,
+    onDelete: handleDelete,
+    onAddNext: (fu: FollowUp) => setAddNextFor(fu),
+  };
 
   return (
     <div className="p-4 sm:p-6 space-y-4">
@@ -170,7 +331,7 @@ export function FollowUpsClient({
           {buckets.overdue.length > 0 && (
             <span className="text-destructive font-medium">{buckets.overdue.length} overdue · </span>
           )}
-          {buckets.today.length} today · {buckets.next7.length} next 7d · {filtered.length} total
+          {buckets.today.length} today · {buckets.next7.length} next 7d · {buckets.pending.length} total pending
         </p>
       </div>
 
@@ -179,26 +340,24 @@ export function FollowUpsClient({
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
-            placeholder="Search name or phone…"
+            placeholder="Search lead, opp, type, notes…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-8 h-9 text-sm w-full"
           />
         </div>
-        {isManagerOrAdmin && (
+        {isManagerOrAdmin && users.length > 0 && (
           <Select value={assigneeFilter} onValueChange={(v) => v && setAssigneeFilter(v)}>
             <SelectTrigger className="h-9 sm:w-44 text-sm">
               <SelectValue>
                 {assigneeFilter === "all"
                   ? "All assignees"
-                  : assigneeFilter === currentUserId
-                  ? "My leads"
                   : users.find((u) => u.id === assigneeFilter)?.name ?? "All assignees"}
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All assignees</SelectItem>
-              <SelectItem value={currentUserId}>My leads</SelectItem>
+              <SelectItem value={currentUserId}>Mine</SelectItem>
               {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
             </SelectContent>
           </Select>
@@ -232,77 +391,84 @@ export function FollowUpsClient({
             <span className="sm:hidden">7d</span>
             <span className="text-[10px] opacity-70 ml-0.5">({buckets.next7.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="next30" className="text-xs sm:text-sm">
-            <span className="hidden sm:inline">Next 30 Days</span>
-            <span className="sm:hidden">30d</span>
-            <span className="text-[10px] opacity-70 ml-0.5">({buckets.next30.length})</span>
+          <TabsTrigger value="pending" className="text-xs sm:text-sm">
+            <span className="hidden sm:inline">All Pending</span>
+            <span className="sm:hidden">All</span>
+            <span className="text-[10px] opacity-70 ml-0.5">({buckets.pending.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="all" className="text-xs sm:text-sm">
-            All
-            <span className="text-[10px] opacity-70 ml-0.5">({buckets.all.length})</span>
-          </TabsTrigger>
-          <TabsTrigger value="hot" className="gap-1 text-xs sm:text-sm">
-            <Flame className="h-3.5 w-3.5 text-orange-500 shrink-0" />
-            <span>Hot</span>
-            <span className="text-[10px] opacity-70">({buckets.hot.length})</span>
-          </TabsTrigger>
-          <TabsTrigger value="nodate" className="gap-1 text-xs sm:text-sm">
-            <CalendarX className="h-3.5 w-3.5 shrink-0" />
-            <span className="hidden sm:inline">No Date Set</span>
-            <span className="sm:hidden">No date</span>
-            <span className="text-[10px] opacity-70 ml-0.5">({buckets.noDate.length})</span>
+          <TabsTrigger value="completed" className="gap-1 text-xs sm:text-sm">
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+            <span>Done</span>
+            <span className="text-[10px] opacity-70 ml-0.5">({buckets.completed.length})</span>
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overdue">
-          <LeadList leads={buckets.overdue} emptyText="No overdue follow-ups" urgency="overdue" {...sharedProps} />
+          <FollowUpList items={buckets.overdue} emptyText="No overdue follow-ups" urgency="overdue" {...sharedProps} />
         </TabsContent>
         <TabsContent value="today">
-          <LeadList leads={buckets.today} emptyText="No follow-ups due today" urgency="today" {...sharedProps} />
+          <FollowUpList items={buckets.today} emptyText="No follow-ups due today" urgency="today" {...sharedProps} />
         </TabsContent>
         <TabsContent value="next3">
-          <LeadList leads={buckets.next3} emptyText="No follow-ups in the next 3 days" {...sharedProps} />
+          <FollowUpList items={buckets.next3} emptyText="No follow-ups in the next 3 days" {...sharedProps} />
         </TabsContent>
         <TabsContent value="next7">
-          <LeadList leads={buckets.next7} emptyText="No follow-ups in the next 7 days" {...sharedProps} />
+          <FollowUpList items={buckets.next7} emptyText="No follow-ups in the next 7 days" {...sharedProps} />
         </TabsContent>
-        <TabsContent value="next30">
-          <LeadList leads={buckets.next30} emptyText="No follow-ups in the next 30 days" {...sharedProps} />
+        <TabsContent value="pending">
+          <FollowUpList items={buckets.pending} emptyText="No pending follow-ups" {...sharedProps} />
         </TabsContent>
-        <TabsContent value="all">
-          <LeadList leads={buckets.all} emptyText="No active leads" {...sharedProps} />
-        </TabsContent>
-        <TabsContent value="hot">
-          <LeadList leads={buckets.hot} emptyText="No hot leads" {...sharedProps} />
-        </TabsContent>
-        <TabsContent value="nodate">
-          <div className="mt-2 mb-1 p-3 rounded-lg bg-yellow-50 border border-yellow-200 text-sm text-yellow-800">
-            These leads have no follow-up date scheduled. Set a follow-up to keep them from falling through the cracks.
-          </div>
-          <LeadList leads={buckets.noDate} emptyText="All active leads have a follow-up date set" {...sharedProps} />
+        <TabsContent value="completed">
+          <FollowUpList items={buckets.completed} emptyText="No completed follow-ups" isCompleted {...sharedProps} />
         </TabsContent>
       </Tabs>
+
+      {/* Add Next Follow-up Dialog */}
+      <Dialog open={!!addNextFor} onOpenChange={(o) => { if (!o) setAddNextFor(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Schedule Next Follow-up</DialogTitle>
+          </DialogHeader>
+          {addNextFor && (
+            <AddNextDialog
+              fu={addNextFor}
+              users={users}
+              currentUserId={currentUserId}
+              onCreated={handleNextCreated}
+              onClose={() => setAddNextFor(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-// ── Shared list: cards on mobile, table on sm+ ───────────────────
-function LeadList({
-  leads,
+// ── List: cards on mobile, table on sm+ ─────────────────────────
+function FollowUpList({
+  items,
   emptyText,
   urgency,
+  isCompleted,
   isAdmin,
-  onClearFollowUp,
-  clearingId,
+  completingId,
+  deletingId,
+  onMarkComplete,
+  onDelete,
+  onAddNext,
 }: {
-  leads: FollowUpLead[];
+  items: FollowUp[];
   emptyText: string;
   urgency?: "overdue" | "today";
+  isCompleted?: boolean;
   isAdmin: boolean;
-  onClearFollowUp: (id: string) => void;
-  clearingId: string | null;
+  completingId: string | null;
+  deletingId: string | null;
+  onMarkComplete: (fu: FollowUp, andAddNext?: boolean) => void;
+  onDelete: (id: string) => void;
+  onAddNext: (fu: FollowUp) => void;
 }) {
-  if (leads.length === 0) {
+  if (items.length === 0) {
     return (
       <div className="mt-2 rounded-lg border bg-card py-10 text-center text-sm text-muted-foreground">
         {emptyText}
@@ -312,67 +478,106 @@ function LeadList({
 
   return (
     <>
-      {/* ── Mobile card list ── */}
+      {/* ── Mobile cards ── */}
       <div className="sm:hidden mt-2 space-y-2">
-        {leads.map((lead) => {
-          const relative = getRelative(lead.next_followup_date);
+        {items.map((fu) => {
+          const scheduled = new Date(fu.scheduled_at);
+          const relative = !isCompleted ? getRelative(scheduled) : null;
+          const isOverdue = !isCompleted && scheduled < startOfDay(new Date());
           let cardCls = "rounded-lg border bg-card p-3 space-y-2";
-          if (urgency === "overdue" || (!lead.next_followup_date ? false : new Date(lead.next_followup_date) < startOfDay(new Date()))) {
+          if (isOverdue || urgency === "overdue") {
             cardCls = "rounded-lg border bg-red-50/60 border-red-200 dark:bg-red-950/10 p-3 space-y-2";
           } else if (urgency === "today") {
-            cardCls = "rounded-lg border bg-orange-50/60 border-orange-200 dark:bg-orange-950/10 p-3 space-y-2";
+            cardCls = "rounded-lg border bg-orange-50/40 border-orange-200 dark:bg-orange-950/10 p-3 space-y-2";
           }
 
           return (
-            <div key={lead.id} className={cardCls}>
-              {/* Row 1: name + badges + trash */}
+            <div key={fu.id} className={cardCls}>
+              {/* Row 1: entity + priority */}
               <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <Link href={`/leads/${lead.id}`} className="font-medium text-sm hover:underline leading-tight">
-                    {lead.full_name}
-                  </Link>
-                  <p className="text-[11px] text-muted-foreground font-mono">{lead.lead_number}</p>
+                <div className="min-w-0 flex-1">
+                  <EntityLabel fu={fu} />
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <LeadStatusBadge status={lead.status} />
-                  <TemperatureBadge temperature={lead.temperature} />
+                <div className="shrink-0">
+                  <PriorityBadge priority={fu.priority} />
+                </div>
+              </div>
+
+              {/* Row 2: type + date */}
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <FuTypeIcon type={fu.type} />
+                  {fu.type}
+                </span>
+                <span className="text-muted-foreground/40">·</span>
+                <Calendar className="h-3 w-3 shrink-0" />
+                <span>{isCompleted ? formatDateTime(fu.completed_at!) : formatDate(scheduled)}</span>
+                {relative && <span className={relative.cls}>{relative.label}</span>}
+              </div>
+
+              {/* Row 3: assignee + notes */}
+              <div className="flex items-start justify-between gap-2 text-xs text-muted-foreground">
+                {fu.assigned_to && (
+                  <span className="flex items-center gap-1">
+                    <User className="h-3 w-3" />
+                    {fu.assigned_to.name}
+                  </span>
+                )}
+                {fu.notes && (
+                  <p className="text-xs text-muted-foreground line-clamp-1 flex-1 text-right">{fu.notes}</p>
+                )}
+              </div>
+
+              {/* Row 4: actions */}
+              {!isCompleted && (
+                <div className="flex gap-1.5 pt-1 border-t">
+                  <button
+                    onClick={() => onMarkComplete(fu)}
+                    disabled={completingId === fu.id}
+                    className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition-colors disabled:opacity-50"
+                  >
+                    {completingId === fu.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                    Done
+                  </button>
+                  <button
+                    onClick={() => onMarkComplete(fu, true)}
+                    disabled={completingId === fu.id}
+                    className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors disabled:opacity-50"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Done + Next
+                  </button>
+                  {!isCompleted && (
+                    <button
+                      onClick={() => onAddNext(fu)}
+                      className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-muted text-muted-foreground hover:bg-muted/80 border transition-colors"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Add Next
+                    </button>
+                  )}
                   {isAdmin && (
                     <button
-                      onClick={() => onClearFollowUp(lead.id)}
-                      disabled={clearingId === lead.id}
-                      className="ml-1 p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
-                      title="Clear follow-up"
+                      onClick={() => onDelete(fu.id)}
+                      disabled={deletingId === fu.id}
+                      className="ml-auto p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
                     >
-                      {clearingId === lead.id
-                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        : <Trash2 className="h-3.5 w-3.5" />}
+                      {deletingId === fu.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                     </button>
                   )}
                 </div>
-              </div>
-
-              {/* Row 2: phone + assignee */}
-              <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                <a href={`tel:${lead.phone}`} className="flex items-center gap-1 font-mono">
-                  <Phone className="h-3 w-3" />{lead.phone}
-                </a>
-                <span className="flex items-center gap-1">
-                  <User className="h-3 w-3" />{lead.assigned_to.name}
-                </span>
-              </div>
-
-              {/* Row 3: follow-up date + type */}
-              <div className="flex items-center gap-2 text-xs">
-                <Calendar className="h-3 w-3 text-muted-foreground shrink-0" />
-                <span className="text-muted-foreground">{formatDate(lead.next_followup_date)}</span>
-                <span className={relative.cls}>{relative.label}</span>
-                {lead.followup_type && (
-                  <span className="flex items-center gap-1 text-muted-foreground ml-auto">
-                    <FuTypeIcon type={lead.followup_type} />
-                    {lead.followup_type}
-                  </span>
-                )}
-              </div>
+              )}
+              {isCompleted && isAdmin && (
+                <div className="flex gap-1.5 pt-1 border-t">
+                  <button
+                    onClick={() => onDelete(fu.id)}
+                    disabled={deletingId === fu.id}
+                    className="ml-auto p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                  >
+                    {deletingId === fu.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
@@ -383,66 +588,99 @@ function LeadList({
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
-              <TableHead>Lead</TableHead>
-              <TableHead>Phone</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Temp</TableHead>
-              <TableHead>Follow-up Date</TableHead>
+              <TableHead>Entity</TableHead>
               <TableHead>Type</TableHead>
+              <TableHead>Priority</TableHead>
+              <TableHead>{isCompleted ? "Completed" : "Scheduled"}</TableHead>
               <TableHead>Assigned To</TableHead>
-              {isAdmin && <TableHead className="w-10" />}
+              <TableHead>Notes</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {leads.map((lead) => {
-              const relative = getRelative(lead.next_followup_date);
+            {items.map((fu) => {
+              const scheduled = new Date(fu.scheduled_at);
+              const relative = !isCompleted ? getRelative(scheduled) : null;
+              const isOverdue = !isCompleted && scheduled < startOfDay(new Date());
               let rowCls = "hover:bg-muted/30";
-              if (urgency === "overdue" || (!lead.next_followup_date ? false : new Date(lead.next_followup_date) < startOfDay(new Date()))) {
-                rowCls = "bg-red-50/40 hover:bg-red-50/70 dark:bg-red-950/10";
-              } else if (urgency === "today") {
-                rowCls = "bg-orange-50/40 hover:bg-orange-50/70 dark:bg-orange-950/10";
-              }
+              if (isOverdue || urgency === "overdue") rowCls = "bg-red-50/40 hover:bg-red-50/70 dark:bg-red-950/10";
+              else if (urgency === "today") rowCls = "bg-orange-50/40 hover:bg-orange-50/70 dark:bg-orange-950/10";
 
               return (
-                <TableRow key={lead.id} className={rowCls}>
+                <TableRow key={fu.id} className={rowCls}>
                   <TableCell>
-                    <Link href={`/leads/${lead.id}`} className="font-medium hover:underline">
-                      {lead.full_name}
-                    </Link>
-                    <p className="text-xs text-muted-foreground font-mono">{lead.lead_number}</p>
-                  </TableCell>
-                  <TableCell className="text-sm font-mono">{lead.phone}</TableCell>
-                  <TableCell><LeadStatusBadge status={lead.status} /></TableCell>
-                  <TableCell><TemperatureBadge temperature={lead.temperature} /></TableCell>
-                  <TableCell>
-                    <p className="text-sm">{formatDate(lead.next_followup_date)}</p>
-                    <p className={`text-xs mt-0.5 ${relative.cls}`}>{relative.label}</p>
+                    <EntityLabel fu={fu} />
                   </TableCell>
                   <TableCell>
-                    {lead.followup_type ? (
-                      <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                        <FuTypeIcon type={lead.followup_type} />
-                        {lead.followup_type}
+                    <span className="flex items-center gap-1.5 text-sm">
+                      <FuTypeIcon type={fu.type} />
+                      {fu.type}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <PriorityBadge priority={fu.priority} />
+                  </TableCell>
+                  <TableCell>
+                    <p className="text-sm">{isCompleted ? formatDateTime(fu.completed_at!) : formatDate(scheduled)}</p>
+                    {relative && <p className={`text-xs mt-0.5 ${relative.cls}`}>{relative.label}</p>}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {fu.assigned_to ? (
+                      <span className="flex items-center gap-1">
+                        <User className="h-3 w-3 text-muted-foreground" />
+                        {fu.assigned_to.name}
                       </span>
                     ) : (
-                      <span className="text-sm text-muted-foreground">—</span>
+                      <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-sm">{lead.assigned_to.name}</TableCell>
-                  {isAdmin && (
-                    <TableCell>
-                      <button
-                        onClick={() => onClearFollowUp(lead.id)}
-                        disabled={clearingId === lead.id}
-                        className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
-                        title="Clear follow-up"
-                      >
-                        {clearingId === lead.id
-                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          : <Trash2 className="h-3.5 w-3.5" />}
-                      </button>
-                    </TableCell>
-                  )}
+                  <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
+                    {fu.notes ?? "—"}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1 justify-end">
+                      {!isCompleted && (
+                        <>
+                          <button
+                            onClick={() => onMarkComplete(fu)}
+                            disabled={completingId === fu.id}
+                            title="Mark complete"
+                            className="p-1 rounded text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50"
+                          >
+                            {completingId === fu.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                          </button>
+                          <button
+                            onClick={() => onMarkComplete(fu, true)}
+                            disabled={completingId === fu.id}
+                            title="Mark complete and schedule next"
+                            className="p-1 rounded text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50 text-xs font-medium"
+                          >
+                            <span className="flex items-center gap-0.5">
+                              <Check className="h-3.5 w-3.5" />
+                              <Plus className="h-3 w-3" />
+                            </span>
+                          </button>
+                          <button
+                            onClick={() => onAddNext(fu)}
+                            title="Add next follow-up"
+                            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </button>
+                        </>
+                      )}
+                      {isAdmin && (
+                        <button
+                          onClick={() => onDelete(fu.id)}
+                          disabled={deletingId === fu.id}
+                          title="Delete"
+                          className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                        >
+                          {deletingId === fu.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                        </button>
+                      )}
+                    </div>
+                  </TableCell>
                 </TableRow>
               );
             })}
