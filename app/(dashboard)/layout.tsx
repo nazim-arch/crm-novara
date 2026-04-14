@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { Sidebar } from "@/components/shared/Sidebar";
+import { Sidebar, MobileSidebarTrigger } from "@/components/shared/Sidebar";
 import { NotificationBell } from "@/components/shared/NotificationBell";
 import { QuickAddModal } from "@/components/shared/QuickAddModal";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -24,7 +24,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <Sidebar role={user.role} />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="h-14 border-b bg-card flex items-center justify-between px-4 shrink-0">
-          <div />
+          <MobileSidebarTrigger role={user.role} />
           <div className="flex items-center gap-2">
             <NotificationBell />
             <DropdownMenu>
