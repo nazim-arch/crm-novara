@@ -1,6 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { startOfDay, endOfDay, subDays } from "date-fns";
+import {
+  notifyFollowUpDueToday,
+  notifyFollowUpOverdue,
+  notifyTaskOverdue,
+  notifyHotLeadStale,
+} from "@/lib/email-notifications";
 
 export async function GET(request: Request) {
   const auth = request.headers.get("authorization");
@@ -34,6 +40,12 @@ export async function GET(request: Request) {
         entity_id: lead.id,
       },
     });
+    notifyFollowUpDueToday({
+      assignedToId: lead.assigned_to_id,
+      leadId: lead.id,
+      leadName: lead.full_name,
+      leadNumber: lead.lead_number,
+    });
     results.followUpsDue++;
   }
 
@@ -58,6 +70,12 @@ export async function GET(request: Request) {
         entity_id: lead.id,
       },
     });
+    notifyFollowUpOverdue({
+      assignedToId: lead.assigned_to_id,
+      leadId: lead.id,
+      leadName: lead.full_name,
+      leadNumber: lead.lead_number,
+    });
     results.followUpsOverdue++;
   }
 
@@ -68,7 +86,7 @@ export async function GET(request: Request) {
       due_date: { lt: todayStart },
       status: { notIn: ["Done", "Cancelled"] },
     },
-    select: { id: true, title: true, task_number: true, assigned_to_id: true },
+    select: { id: true, title: true, task_number: true, assigned_to_id: true, due_date: true, lead: { select: { full_name: true } } },
     take: 50,
   });
 
@@ -81,6 +99,14 @@ export async function GET(request: Request) {
         entity_type: "Task",
         entity_id: task.id,
       },
+    });
+    notifyTaskOverdue({
+      assignedToId: task.assigned_to_id,
+      taskId: task.id,
+      taskTitle: task.title,
+      taskNumber: task.task_number,
+      dueDate: task.due_date!,
+      leadName: task.lead?.full_name ?? null,
     });
     results.tasksOverdue++;
   }
@@ -109,6 +135,12 @@ export async function GET(request: Request) {
         entity_type: "Lead",
         entity_id: lead.id,
       },
+    });
+    notifyHotLeadStale({
+      assignedToId: lead.assigned_to_id,
+      leadId: lead.id,
+      leadName: lead.full_name,
+      leadNumber: lead.lead_number,
     });
     results.hotLeadsStale++;
   }

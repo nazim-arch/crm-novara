@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { updateLeadSchema } from "@/lib/validations/lead";
 import { hasPermission, leadScopeFilter } from "@/lib/rbac";
+import { notifyLeadReassigned } from "@/lib/email-notifications";
 
 type Params = Promise<{ id: string }>;
 
@@ -72,6 +73,12 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
     if (notes !== undefined) cleanData.alternate_requirement = notes === "" ? null : notes;
     if (financing_required !== undefined) cleanData.financing_required = financing_required;
 
+    // Detect reassignment before update
+    const existingLead = await prisma.lead.findUnique({
+      where: { id, deleted_at: null },
+      select: { assigned_to_id: true, full_name: true, lead_number: true },
+    });
+
     const lead = await prisma.lead.update({
       where: { id, deleted_at: null },
       data: { ...cleanData, updated_at: new Date() },
@@ -83,6 +90,18 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
         actor_id: session.user.id, metadata: { fields: Object.keys(cleanData) },
       },
     });
+
+    // Email new assignee if reassigned
+    const newAssigneeId = cleanData.assigned_to_id as string | undefined;
+    if (newAssigneeId && existingLead && newAssigneeId !== existingLead.assigned_to_id && newAssigneeId !== session.user.id) {
+      notifyLeadReassigned({
+        newAssigneeId,
+        leadId: id,
+        leadName: existingLead.full_name,
+        leadNumber: existingLead.lead_number,
+        reassignedByName: session.user.name ?? session.user.email ?? "Someone",
+      });
+    }
 
     return NextResponse.json({ data: lead });
   } catch (error) {

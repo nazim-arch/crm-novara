@@ -134,22 +134,35 @@ model User {
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
 
-  leads_owned       Lead[]               @relation("LeadOwner")
-  leads_assigned    Lead[]               @relation("LeadAssignee")
-  leads_created     Lead[]               @relation("LeadCreator")
-  tasks_assigned    Task[]               @relation("TaskAssignee")
-  tasks_created     Task[]               @relation("TaskCreator")
-  opps_created      Opportunity[]        @relation("OppCreator")
-  activities        Activity[]
-  notes             Note[]
-  attachments       Attachment[]
-  notifications     Notification[]
-  followups_created FollowUp[]
-  stage_changes     LeadStageHistory[]
-  lead_opp_tags     LeadOpportunity[]
-  expenses_added    OpportunityExpense[]
+  leads_owned          Lead[]               @relation("LeadOwner")
+  leads_assigned       Lead[]               @relation("LeadAssignee")
+  leads_created        Lead[]               @relation("LeadCreator")
+  tasks_assigned       Task[]               @relation("TaskAssignee")
+  tasks_created        Task[]               @relation("TaskCreator")
+  opps_created         Opportunity[]        @relation("OppCreator")
+  activities           Activity[]
+  notes                Note[]
+  attachments          Attachment[]
+  notifications        Notification[]
+  followups_created    FollowUp[]
+  stage_changes        LeadStageHistory[]
+  lead_opp_tags        LeadOpportunity[]
+  expenses_added       OpportunityExpense[]
+  password_reset_tokens PasswordResetToken[]
 
   @@map("users")
+}
+
+model PasswordResetToken {
+  id         String   @id @default(cuid())
+  token      String   @unique
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  expires_at DateTime
+  created_at DateTime @default(now())
+
+  @@index([user_id])
+  @@map("password_reset_tokens")
 }
 
 // ─────────────────────────────────────────────
@@ -644,6 +657,7 @@ model ir_lead {
   @@index([tier])
   @@index([totalScore])
   @@index([sourcePlatform])
+  @@unique([profileHandle, sourcePlatform, campaignId])
 }
 
 // ─── SIGNAL LOG ───

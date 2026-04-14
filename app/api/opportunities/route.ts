@@ -5,6 +5,7 @@ import { generateId } from "@/lib/id-generator";
 import { createOpportunitySchema } from "@/lib/validations/opportunity";
 import { hasPermission, leadScopeFilter } from "@/lib/rbac";
 import type { Prisma } from "@/lib/generated/prisma/client";
+import { notifyOpportunityCreated } from "@/lib/email-notifications";
 
 export async function GET(request: Request) {
   try {
@@ -89,6 +90,16 @@ export async function POST(request: Request) {
         },
       },
       include: { configurations: true },
+    });
+
+    notifyOpportunityCreated({
+      createdById: session.user.id,
+      oppId: opportunity.id,
+      oppName: opportunity.name,
+      oppNumber: opportunity.opp_number,
+      project: opportunity.project,
+      createdByName: session.user.name ?? session.user.email ?? "Someone",
+      possibleRevenue: Number(opportunity.possible_revenue ?? 0),
     });
 
     return NextResponse.json({ data: opportunity }, { status: 201 });

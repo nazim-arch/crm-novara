@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { updateTaskSchema } from "@/lib/validations/task";
 import { hasPermission, taskScopeFilter } from "@/lib/rbac";
+import { notifyTaskReassigned } from "@/lib/email-notifications";
 
 type Params = Promise<{ id: string }>;
 
@@ -79,6 +80,18 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
         metadata: { fields: Object.keys(parsed.data), ...(parsed.data.status && { status: parsed.data.status }) },
       },
     });
+
+    // Email new assignee if reassigned to someone other than the actor
+    if (parsed.data.assigned_to_id && parsed.data.assigned_to_id !== existing.assigned_to_id && parsed.data.assigned_to_id !== session.user.id) {
+      notifyTaskReassigned({
+        newAssigneeId: parsed.data.assigned_to_id,
+        taskId: id,
+        taskTitle: existing.title,
+        taskNumber: existing.task_number,
+        dueDate: (parsed.data as Record<string, unknown>).due_date as Date | null ?? existing.due_date,
+        reassignedByName: session.user.name ?? session.user.email ?? "Someone",
+      });
+    }
 
     return NextResponse.json({ data: task });
   } catch (error) {

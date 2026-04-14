@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { notifyFollowUpScheduled } from "@/lib/email-notifications";
 
 const createFollowUpSchema = z.object({
   lead_id: z.string().min(1).optional(),
@@ -104,6 +105,17 @@ export async function POST(request: Request) {
           data: { next_followup_date: scheduledDate, followup_type: type },
         });
       }
+      notifyFollowUpScheduled({
+        assignedToId: lead.assigned_to_id,
+        leadId: lead.id,
+        leadName: lead.full_name,
+        leadNumber: lead.lead_number,
+        type,
+        scheduledAt: new Date(scheduled_at),
+        scheduledByName: session.user.name ?? session.user.email ?? "Someone",
+        scheduledById: session.user.id,
+        notes,
+      });
     }
   }
 

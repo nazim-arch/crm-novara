@@ -72,7 +72,7 @@ export const generateLeadsFunction = inngest.createFunction(
 
     const campaignContext = { city, microMarkets, budgetMin, budgetMax, propertyType, bhkConfig: bhkConfig ?? undefined };
 
-    // Step 4: AI insights + persist leads
+    // Step 4: AI insights + persist leads (with cross-run deduplication)
     await step.run('save-leads-with-insights', async () => {
       for (const lead of scoredLeads) {
         let aiInsights = {
@@ -98,45 +98,79 @@ export const generateLeadsFunction = inngest.createFunction(
             : 'Basic interest signal detected';
         }
 
-        await prisma.ir_lead.create({
-          data: {
-            campaignId,
-            profileHandle: lead.profileHandle,
-            profileName: lead.profileName,
-            profileUrl: lead.profileUrl,
-            profilePlatform: lead.profilePlatform,
-            sourcePlatform: lead.sourcePlatform,
-            sourceUrl: lead.sourceUrl,
-            sourceContent: lead.sourceContent,
-            sourceType: lead.sourceType,
-            capturedAt: lead.capturedAt,
-            totalScore: lead.totalScore,
-            tier: lead.tier,
-            scoreSpecificity: lead.scoreSpecificity,
-            scoreBudgetClarity: lead.scoreBudgetClarity,
-            scoreUrgency: lead.scoreUrgency,
-            scoreEngagementVelocity: lead.scoreEngagementVelocity,
-            scoreDeveloperFollow: lead.scoreDeveloperFollow,
-            scoreContentCreator: lead.scoreContentCreator,
-            scoreCrossPlatform: lead.scoreCrossPlatform,
-            scoreFinancialReady: lead.scoreFinancialReady,
-            scoreLocationLock: lead.scoreLocationLock,
-            scoreProfileMatch: lead.scoreProfileMatch,
-            inferredBuyerType: lead.inferredBuyerType,
-            inferredBudget: lead.inferredBudget,
-            inferredLocation: lead.inferredLocation,
-            inferredTimeline: lead.inferredTimeline,
-            isNRI: lead.isNRI,
-            nriCountry: lead.nriCountry,
-            aiInsightClaude: aiInsights.claudeInsight,
-            aiInsightGPT: aiInsights.gptInsight,
-            aiRecommendedAction: aiInsights.recommendedAction,
-            aiResponseDraft: aiInsights.responseDraft,
-            aiWhyStrong: aiInsights.whyStrong,
-            behavioralPatterns: lead.behavioralPatterns,
-            velocityPattern: lead.velocityPattern,
-          },
-        });
+        const scoreFields = {
+          totalScore: lead.totalScore,
+          tier: lead.tier,
+          scoreSpecificity: lead.scoreSpecificity,
+          scoreBudgetClarity: lead.scoreBudgetClarity,
+          scoreUrgency: lead.scoreUrgency,
+          scoreEngagementVelocity: lead.scoreEngagementVelocity,
+          scoreDeveloperFollow: lead.scoreDeveloperFollow,
+          scoreContentCreator: lead.scoreContentCreator,
+          scoreCrossPlatform: lead.scoreCrossPlatform,
+          scoreFinancialReady: lead.scoreFinancialReady,
+          scoreLocationLock: lead.scoreLocationLock,
+          scoreProfileMatch: lead.scoreProfileMatch,
+          inferredBuyerType: lead.inferredBuyerType,
+          inferredBudget: lead.inferredBudget,
+          inferredLocation: lead.inferredLocation,
+          inferredTimeline: lead.inferredTimeline,
+          isNRI: lead.isNRI,
+          nriCountry: lead.nriCountry,
+          aiInsightClaude: aiInsights.claudeInsight,
+          aiInsightGPT: aiInsights.gptInsight,
+          aiRecommendedAction: aiInsights.recommendedAction,
+          aiResponseDraft: aiInsights.responseDraft,
+          aiWhyStrong: aiInsights.whyStrong,
+          behavioralPatterns: lead.behavioralPatterns,
+          velocityPattern: lead.velocityPattern,
+        };
+
+        const createData = {
+          campaignId,
+          profileHandle: lead.profileHandle,
+          profileName: lead.profileName,
+          profileUrl: lead.profileUrl,
+          profilePlatform: lead.profilePlatform,
+          sourcePlatform: lead.sourcePlatform,
+          sourceUrl: lead.sourceUrl,
+          sourceContent: lead.sourceContent,
+          sourceType: lead.sourceType,
+          capturedAt: lead.capturedAt,
+          ...scoreFields,
+        };
+
+        if (lead.profileHandle) {
+          // Known profile: upsert on the compound unique key (DB-enforced)
+          await prisma.ir_lead.upsert({
+            where: {
+              profileHandle_sourcePlatform_campaignId: {
+                profileHandle: lead.profileHandle,
+                sourcePlatform: lead.sourcePlatform,
+                campaignId,
+              },
+            },
+            update: scoreFields,
+            create: createData,
+          });
+        } else {
+          // Anonymous signal: match on content prefix to avoid duplicates
+          const contentPrefix = lead.sourceContent.slice(0, 100);
+          const existing = await prisma.ir_lead.findFirst({
+            where: {
+              campaignId,
+              sourcePlatform: lead.sourcePlatform,
+              sourceContent: { startsWith: contentPrefix },
+            },
+            select: { id: true },
+          });
+
+          if (existing) {
+            await prisma.ir_lead.update({ where: { id: existing.id }, data: scoreFields });
+          } else {
+            await prisma.ir_lead.create({ data: createData });
+          }
+        }
       }
     });
 

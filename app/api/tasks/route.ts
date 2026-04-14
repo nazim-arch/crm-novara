@@ -6,6 +6,7 @@ import { createTaskSchema } from "@/lib/validations/task";
 import { hasPermission, taskScopeFilter } from "@/lib/rbac";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { TaskStatus } from "@/lib/generated/prisma/client";
+import { notifyTaskAssigned } from "@/lib/email-notifications";
 
 export async function GET(request: Request) {
   try {
@@ -97,6 +98,20 @@ export async function POST(request: Request) {
           message: `New task assigned to you: ${task.title} (${task.task_number})`,
           entity_type: "Task", entity_id: task.id,
         },
+      });
+      // Fetch lead name for context if linked
+      const leadName = task.lead_id
+        ? (await prisma.lead.findUnique({ where: { id: task.lead_id }, select: { full_name: true } }))?.full_name
+        : null;
+      notifyTaskAssigned({
+        assignedToId: task.assigned_to_id,
+        taskId: task.id,
+        taskTitle: task.title,
+        taskNumber: task.task_number,
+        priority: task.priority,
+        dueDate: task.due_date,
+        assignedByName: session.user.name ?? session.user.email ?? "Someone",
+        leadName,
       });
     }
 

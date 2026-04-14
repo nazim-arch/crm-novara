@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { updateOpportunitySchema } from "@/lib/validations/opportunity";
 import { hasPermission, leadScopeFilter } from "@/lib/rbac";
 import { z } from "zod";
+import { notifyLeadTaggedToOpportunity } from "@/lib/email-notifications";
 
 type Params = Promise<{ id: string }>;
 
@@ -124,6 +125,20 @@ export async function POST(request: Request, { params }: { params: Params }) {
         actor_id: session.user.id, metadata: { opportunity_id: id },
       },
     });
+
+    const opp = await prisma.opportunity.findUnique({
+      where: { id },
+      select: { name: true, opp_number: true },
+    });
+    if (opp) {
+      notifyLeadTaggedToOpportunity({
+        leadId: parsed.data.lead_id,
+        oppId: id,
+        oppName: opp.name,
+        oppNumber: opp.opp_number,
+        taggedByName: session.user.name ?? session.user.email ?? "Someone",
+      });
+    }
 
     return NextResponse.json({ data: tag }, { status: 201 });
   } catch (error) {

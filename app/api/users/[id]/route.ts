@@ -80,7 +80,27 @@ export async function DELETE(_req: Request, { params }: { params: Params }) {
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    await prisma.user.delete({ where: { id } });
+    const actorId = session.user.id;
+
+    await prisma.$transaction([
+      // Pure user-owned records — delete them
+      prisma.notification.deleteMany({ where: { user_id: id } }),
+      prisma.activity.deleteMany({ where: { actor_id: id } }),
+      prisma.note.deleteMany({ where: { created_by_id: id } }),
+      prisma.attachment.deleteMany({ where: { uploaded_by_id: id } }),
+      prisma.leadStageHistory.deleteMany({ where: { changed_by_id: id } }),
+      prisma.leadOpportunity.deleteMany({ where: { tagged_by_id: id } }),
+      prisma.followUp.deleteMany({ where: { created_by_id: id } }),
+      prisma.opportunityExpense.deleteMany({ where: { added_by_id: id } }),
+      // Leads/tasks where user is creator or owner — hand off to the admin doing the delete
+      prisma.lead.updateMany({ where: { created_by_id: id }, data: { created_by_id: actorId } }),
+      prisma.lead.updateMany({ where: { lead_owner_id: id }, data: { lead_owner_id: actorId } }),
+      prisma.task.updateMany({ where: { created_by_id: id }, data: { created_by_id: actorId } }),
+      prisma.opportunity.updateMany({ where: { created_by_id: id }, data: { created_by_id: actorId } }),
+      // Finally delete the user (password_reset_tokens cascade automatically)
+      prisma.user.delete({ where: { id } }),
+    ]);
+
     return NextResponse.json({ data: { success: true } });
   } catch (error) {
     console.error("DELETE /api/users/[id]:", error);

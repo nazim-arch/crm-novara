@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { changeStageSchema } from "@/lib/validations/lead";
 import { hasPermission } from "@/lib/rbac";
+import { notifyLeadStageChanged, notifyLeadWon, notifyLeadLost } from "@/lib/email-notifications";
 
 type Params = Promise<{ id: string }>;
 
@@ -128,6 +129,15 @@ export async function POST(request: Request, { params }: { params: Params }) {
           skipDuplicates: true,
         });
       }
+      notifyLeadWon({
+        assignedToId: lead.assigned_to_id,
+        leadId: id,
+        leadName: lead.full_name,
+        leadNumber: lead.lead_number,
+        settlementValue: Number(settlement_value),
+        commissionPercent: Number(deal_commission_percent),
+        closedByName: session.user.name ?? session.user.email ?? "Someone",
+      });
     }
 
     // ── Lost: notify all Admin users ──
@@ -148,6 +158,28 @@ export async function POST(request: Request, { params }: { params: Params }) {
           skipDuplicates: true,
         });
       }
+      notifyLeadLost({
+        assignedToId: lead.assigned_to_id,
+        leadId: id,
+        leadName: lead.full_name,
+        leadNumber: lead.lead_number,
+        lostReason: lost_reason,
+        markedByName: session.user.name ?? session.user.email ?? "Someone",
+      });
+    }
+
+    // ── All other stage changes ──
+    if (to_stage !== "Won" && to_stage !== "Lost") {
+      notifyLeadStageChanged({
+        assignedToId: lead.assigned_to_id,
+        leadId: id,
+        leadName: lead.full_name,
+        leadNumber: lead.lead_number,
+        fromStage: lead.status,
+        toStage: to_stage,
+        changedByName: session.user.name ?? session.user.email ?? "Someone",
+        notes,
+      });
     }
 
     return NextResponse.json({ data: updatedLead });

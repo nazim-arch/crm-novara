@@ -13,7 +13,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, UserCheck, UserX, AlertTriangle, Loader2, Pencil, Trash2 } from "lucide-react";
+import { Plus, UserCheck, UserX, AlertTriangle, Loader2, Pencil, Trash2, Send } from "lucide-react";
 
 type User = {
   id: string;
@@ -52,7 +52,7 @@ function roleLabel(role: string) {
   return ALL_ROLES.find(r => r.value === role)?.label ?? role;
 }
 
-const EMPTY_FORM = { short_name: "", name: "", email: "", password: "", role: "Sales", phone: "" };
+const EMPTY_FORM = { short_name: "", name: "", email: "", role: "Sales", phone: "" };
 
 interface UserManagementClientProps {
   users: User[];
@@ -69,8 +69,9 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
 
   // Edit
   const [editUser, setEditUser] = useState<User | null>(null);
-  const [editForm, setEditForm] = useState({ short_name: "", name: "", email: "", phone: "", role: "", new_password: "" });
+  const [editForm, setEditForm] = useState({ short_name: "", name: "", email: "", phone: "", role: "" });
   const [editSaving, setEditSaving] = useState(false);
+  const [sendingResetLink, setSendingResetLink] = useState(false);
 
   // Delete
   const [deleteUser, setDeleteUser] = useState<User | null>(null);
@@ -90,9 +91,23 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
     if (!form.short_name.trim()) errors.short_name = "Short name is required";
     if (!form.name.trim() || form.name.trim().length < 2) errors.name = "Full name must be at least 2 characters";
     if (!form.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errors.email = "Valid email is required";
-    if (!form.password || form.password.length < 8) errors.password = "Password must be at least 8 characters";
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
+  };
+
+  // ── Send reset link (from edit modal) ────────────────────────────────────────
+  const handleSendResetLink = async () => {
+    if (!editUser) return;
+    setSendingResetLink(true);
+    try {
+      const res = await fetch(`/api/users/${editUser.id}/reset-password`, { method: "POST" });
+      if (!res.ok) { toast.error("Failed to send reset link"); return; }
+      toast.success(`Password reset link sent to ${editUser.email}`);
+    } catch {
+      toast.error("Something went wrong");
+    } finally {
+      setSendingResetLink(false);
+    }
   };
 
   const handleCreate = async () => {
@@ -121,7 +136,7 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
   // ── Edit ─────────────────────────────────────────────────────────────────────
   const openEdit = (user: User) => {
     setEditUser(user);
-    setEditForm({ short_name: user.short_name, name: user.name, email: user.email, phone: user.phone ?? "", role: user.role, new_password: "" });
+    setEditForm({ short_name: user.short_name, name: user.name, email: user.email, phone: user.phone ?? "", role: user.role });
   };
 
   const handleSaveEdit = async () => {
@@ -134,17 +149,6 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
         phone: editForm.phone,
         role: editForm.role,
       };
-      // Email change — send as separate field (needs special handling if needed)
-      // For now, update everything via PATCH
-      if (editForm.new_password && editForm.new_password.length >= 8) {
-        // Admin reset: use a dedicated admin-reset endpoint or reuse PATCH with admin override
-        const pwRes = await fetch(`/api/users/${editUser.id}/reset-password`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ new_password: editForm.new_password }),
-        });
-        if (!pwRes.ok) { toast.error("Failed to reset password"); setEditSaving(false); return; }
-      }
       const res = await fetch(`/api/users/${editUser.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -336,9 +340,15 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
               <Label>Phone</Label>
               <Input value={editForm.phone} onChange={(e) => setEditForm(f => ({ ...f, phone: e.target.value }))} placeholder="+91..." />
             </div>
-            <div className="space-y-1.5">
-              <Label>Reset Password <span className="text-xs text-muted-foreground">(leave blank to keep current)</span></Label>
-              <Input type="password" value={editForm.new_password} onChange={(e) => setEditForm(f => ({ ...f, new_password: e.target.value }))} placeholder="Min 8 characters" />
+            <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
+              <div>
+                <p className="text-sm font-medium">Password</p>
+                <p className="text-xs text-muted-foreground">Send the user a reset link via email</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleSendResetLink} disabled={sendingResetLink} className="gap-1.5 shrink-0">
+                {sendingResetLink ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                Send reset link
+              </Button>
             </div>
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setEditUser(null)}>Cancel</Button>
@@ -412,16 +422,14 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
                 {formErrors.email && <p className="text-xs text-destructive">{formErrors.email}</p>}
               </div>
               <div className="space-y-1.5">
-                <Label>Password <span className="text-destructive">*</span></Label>
-                <Input type="password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} placeholder="Min 8 characters" />
-                {formErrors.password && <p className="text-xs text-destructive">{formErrors.password}</p>}
-              </div>
-              <div className="space-y-1.5">
                 <Label>Phone</Label>
                 <Input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+91..." />
               </div>
+              <p className="text-xs text-muted-foreground">
+                A welcome email with a set-password link will be sent to the user automatically.
+              </p>
               <Button onClick={handleCreate} disabled={creating} className="w-full">
-                {creating ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creating...</> : "Create User"}
+                {creating ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creating...</> : "Create & Send Invite"}
               </Button>
             </div>
           </DialogContent>

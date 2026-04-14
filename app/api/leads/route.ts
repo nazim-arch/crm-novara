@@ -5,6 +5,7 @@ import { generateId } from "@/lib/id-generator";
 import { createLeadSchema } from "@/lib/validations/lead";
 import { hasPermission, leadScopeFilter } from "@/lib/rbac";
 import type { Prisma } from "@/lib/generated/prisma/client";
+import { notifyLeadAssigned, notifyLeadCreatedAdmins } from "@/lib/email-notifications";
 
 export async function GET(request: Request) {
   try {
@@ -121,6 +122,11 @@ export async function POST(request: Request) {
       data: { lead_id: lead.id, to_stage: "New", changed_by_id: session.user.id, notes: "Lead created" },
     });
 
+    // Fetch assignee name for notifications
+    const assignee = lead.assigned_to_id
+      ? await prisma.user.findUnique({ where: { id: lead.assigned_to_id }, select: { name: true } })
+      : null;
+
     if (lead.assigned_to_id !== session.user.id) {
       await prisma.notification.create({
         data: {
@@ -128,6 +134,15 @@ export async function POST(request: Request) {
           message: `New lead assigned to you: ${lead.full_name} (${lead.lead_number})`,
           entity_type: "Lead", entity_id: lead.id,
         },
+      });
+      notifyLeadAssigned({
+        assignedToId: lead.assigned_to_id,
+        leadId: lead.id,
+        leadName: lead.full_name,
+        leadNumber: lead.lead_number,
+        phone: lead.phone,
+        source: lead.lead_source,
+        createdByName: session.user.name ?? session.user.email ?? "Someone",
       });
     }
 
@@ -145,6 +160,15 @@ export async function POST(request: Request) {
         skipDuplicates: true,
       });
     }
+    notifyLeadCreatedAdmins({
+      excludeId: session.user.id,
+      leadId: lead.id,
+      leadName: lead.full_name,
+      leadNumber: lead.lead_number,
+      source: lead.lead_source,
+      createdByName: session.user.name ?? session.user.email ?? "Someone",
+      assignedToName: assignee?.name ?? "Unknown",
+    });
 
     return NextResponse.json({ data: lead }, { status: 201 });
   } catch (error) {
