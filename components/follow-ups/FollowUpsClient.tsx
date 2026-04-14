@@ -36,6 +36,8 @@ import {
   Search,
   Trash2,
   Loader2,
+  Calendar,
+  User,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -68,26 +70,19 @@ function getRelative(date: Date | null): { label: string; cls: string } {
   if (diff === -1) return { label: "Yesterday", cls: "text-destructive font-medium" };
   if (diff === 0) return { label: "Today", cls: "text-orange-600 font-medium" };
   if (diff === 1) return { label: "Tomorrow", cls: "text-yellow-600 font-medium" };
-  return { label: `in ${diff} days`, cls: "text-muted-foreground" };
+  return { label: `in ${diff}d`, cls: "text-muted-foreground" };
 }
 
 // ── Follow-up type icon ──────────────────────────────────────────
 function FuTypeIcon({ type }: { type: string | null }) {
   switch (type) {
-    case "Call":
-      return <Phone className="h-3.5 w-3.5 text-green-600 shrink-0" />;
-    case "Email":
-      return <Mail className="h-3.5 w-3.5 text-blue-600 shrink-0" />;
-    case "WhatsApp":
-      return <MessageCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />;
-    case "Visit":
-      return <Home className="h-3.5 w-3.5 text-orange-500 shrink-0" />;
-    case "Meeting":
-      return <Users className="h-3.5 w-3.5 text-purple-600 shrink-0" />;
-    case "Activity":
-      return <Zap className="h-3.5 w-3.5 text-yellow-500 shrink-0" />;
-    default:
-      return null;
+    case "Call":      return <Phone className="h-3.5 w-3.5 text-green-600 shrink-0" />;
+    case "Email":     return <Mail className="h-3.5 w-3.5 text-blue-600 shrink-0" />;
+    case "WhatsApp":  return <MessageCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />;
+    case "Visit":     return <Home className="h-3.5 w-3.5 text-orange-500 shrink-0" />;
+    case "Meeting":   return <Users className="h-3.5 w-3.5 text-purple-600 shrink-0" />;
+    case "Activity":  return <Zap className="h-3.5 w-3.5 text-yellow-500 shrink-0" />;
+    default:          return null;
   }
 }
 
@@ -112,10 +107,7 @@ export function FollowUpsClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ next_followup_date: null, followup_type: null }),
       });
-      if (!res.ok) {
-        toast.error("Failed to clear follow-up");
-        return;
-      }
+      if (!res.ok) { toast.error("Failed to clear follow-up"); return; }
       setLeads((prev) => prev.filter((l) => l.id !== leadId));
       toast.success("Follow-up cleared");
     } catch {
@@ -127,7 +119,6 @@ export function FollowUpsClient({
 
   const today = useMemo(() => startOfDay(new Date()), []);
 
-  // Apply search + assignee filter
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
     return leads.filter((l) => {
@@ -137,7 +128,6 @@ export function FollowUpsClient({
     });
   }, [leads, search, assigneeFilter]);
 
-  // Split into tab buckets (cumulative — next 7 days includes next 3 days, etc.)
   const buckets = useMemo(() => {
     const overdue: FollowUpLead[] = [];
     const todayLeads: FollowUpLead[] = [];
@@ -154,18 +144,11 @@ export function FollowUpsClient({
 
     for (const lead of filtered) {
       if (lead.temperature === "Hot") hot.push(lead);
-
-      if (!lead.next_followup_date) {
-        noDate.push(lead);
-        continue;
-      }
-
+      if (!lead.next_followup_date) { noDate.push(lead); continue; }
       const d = new Date(lead.next_followup_date);
-
       if (d < today) {
         overdue.push(lead);
       } else {
-        // Cumulative: each window includes all leads from today onward up to that day
         if (d <= todayEnd) todayLeads.push(lead);
         if (d <= end3) next3.push(lead);
         if (d <= end7) next7.push(lead);
@@ -176,171 +159,247 @@ export function FollowUpsClient({
     return { overdue, today: todayLeads, next3, next7, next30, all: filtered, hot, noDate };
   }, [filtered, today]);
 
-  return (
-    <div className="p-6 space-y-4">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold">Follow-ups</h1>
-          <p className="text-sm text-muted-foreground">
-            {buckets.overdue.length > 0 && (
-              <span className="text-destructive font-medium">
-                {buckets.overdue.length} overdue ·{" "}
-              </span>
-            )}
-            {buckets.today.length} today · {buckets.next7.length} next 7 days · {filtered.length} total active
-          </p>
-        </div>
+  const sharedProps = { isAdmin, onClearFollowUp: handleClearFollowUp, clearingId };
 
-        {/* Filters */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Search name or phone…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-8 h-8 w-52 text-sm"
-            />
-          </div>
-          {isManagerOrAdmin && (
-            <Select value={assigneeFilter} onValueChange={(v) => v && setAssigneeFilter(v)}>
-              <SelectTrigger className="h-8 w-44 text-sm">
-                <SelectValue placeholder="All assignees" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All assignees</SelectItem>
-                <SelectItem value={currentUserId}>My leads</SelectItem>
-                {users.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>
-                    {u.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+  return (
+    <div className="p-4 sm:p-6 space-y-4">
+      {/* Header */}
+      <div>
+        <h1 className="text-xl font-semibold">Follow-ups</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          {buckets.overdue.length > 0 && (
+            <span className="text-destructive font-medium">{buckets.overdue.length} overdue · </span>
           )}
+          {buckets.today.length} today · {buckets.next7.length} next 7d · {filtered.length} total
+        </p>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            placeholder="Search name or phone…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8 h-9 text-sm w-full"
+          />
         </div>
+        {isManagerOrAdmin && (
+          <Select value={assigneeFilter} onValueChange={(v) => v && setAssigneeFilter(v)}>
+            <SelectTrigger className="h-9 sm:w-44 text-sm">
+              <SelectValue>
+                {assigneeFilter === "all"
+                  ? "All assignees"
+                  : assigneeFilter === currentUserId
+                  ? "My leads"
+                  : users.find((u) => u.id === assigneeFilter)?.name ?? "All assignees"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All assignees</SelectItem>
+              <SelectItem value={currentUserId}>My leads</SelectItem>
+              {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {/* Tabs */}
       <Tabs defaultValue="overdue">
-        <TabsList className="flex-wrap h-auto gap-1">
-          <TabsTrigger value="overdue" className="gap-1.5">
-            <AlertTriangle className="h-3.5 w-3.5" />
-            Overdue
+        <TabsList className="flex flex-wrap h-auto gap-1 justify-start">
+          <TabsTrigger value="overdue" className="gap-1 text-xs sm:text-sm">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            <span>Overdue</span>
             {buckets.overdue.length > 0 && (
-              <span className="ml-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold px-1.5 py-0">
+              <span className="ml-0.5 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold px-1.5 leading-5">
                 {buckets.overdue.length}
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="today" className="gap-1.5">
-            <Clock className="h-3.5 w-3.5" />
-            Today ({buckets.today.length})
+          <TabsTrigger value="today" className="gap-1 text-xs sm:text-sm">
+            <Clock className="h-3.5 w-3.5 shrink-0" />
+            <span>Today</span>
+            <span className="text-[10px] opacity-70">({buckets.today.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="next3">
-            Next 3 Days ({buckets.next3.length})
+          <TabsTrigger value="next3" className="text-xs sm:text-sm">
+            <span className="hidden sm:inline">Next 3 Days</span>
+            <span className="sm:hidden">3d</span>
+            <span className="text-[10px] opacity-70 ml-0.5">({buckets.next3.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="next7">
-            Next 7 Days ({buckets.next7.length})
+          <TabsTrigger value="next7" className="text-xs sm:text-sm">
+            <span className="hidden sm:inline">Next 7 Days</span>
+            <span className="sm:hidden">7d</span>
+            <span className="text-[10px] opacity-70 ml-0.5">({buckets.next7.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="next30">
-            Next 30 Days ({buckets.next30.length})
+          <TabsTrigger value="next30" className="text-xs sm:text-sm">
+            <span className="hidden sm:inline">Next 30 Days</span>
+            <span className="sm:hidden">30d</span>
+            <span className="text-[10px] opacity-70 ml-0.5">({buckets.next30.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="all">
-            All Active ({buckets.all.length})
+          <TabsTrigger value="all" className="text-xs sm:text-sm">
+            All
+            <span className="text-[10px] opacity-70 ml-0.5">({buckets.all.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="hot" className="gap-1.5">
-            <Flame className="h-3.5 w-3.5 text-orange-500" />
-            Hot Leads ({buckets.hot.length})
+          <TabsTrigger value="hot" className="gap-1 text-xs sm:text-sm">
+            <Flame className="h-3.5 w-3.5 text-orange-500 shrink-0" />
+            <span>Hot</span>
+            <span className="text-[10px] opacity-70">({buckets.hot.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="nodate" className="gap-1.5">
-            <CalendarX className="h-3.5 w-3.5" />
-            No Date Set ({buckets.noDate.length})
+          <TabsTrigger value="nodate" className="gap-1 text-xs sm:text-sm">
+            <CalendarX className="h-3.5 w-3.5 shrink-0" />
+            <span className="hidden sm:inline">No Date Set</span>
+            <span className="sm:hidden">No date</span>
+            <span className="text-[10px] opacity-70 ml-0.5">({buckets.noDate.length})</span>
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overdue">
-          <LeadTable leads={buckets.overdue} emptyText="No overdue follow-ups" rowStyle="overdue" isAdmin={isAdmin} onClearFollowUp={handleClearFollowUp} clearingId={clearingId} />
+          <LeadList leads={buckets.overdue} emptyText="No overdue follow-ups" urgency="overdue" {...sharedProps} />
         </TabsContent>
         <TabsContent value="today">
-          <LeadTable leads={buckets.today} emptyText="No follow-ups due today" rowStyle="today" isAdmin={isAdmin} onClearFollowUp={handleClearFollowUp} clearingId={clearingId} />
+          <LeadList leads={buckets.today} emptyText="No follow-ups due today" urgency="today" {...sharedProps} />
         </TabsContent>
         <TabsContent value="next3">
-          <LeadTable leads={buckets.next3} emptyText="No follow-ups in the next 3 days" isAdmin={isAdmin} onClearFollowUp={handleClearFollowUp} clearingId={clearingId} />
+          <LeadList leads={buckets.next3} emptyText="No follow-ups in the next 3 days" {...sharedProps} />
         </TabsContent>
         <TabsContent value="next7">
-          <LeadTable leads={buckets.next7} emptyText="No follow-ups in the next 7 days" isAdmin={isAdmin} onClearFollowUp={handleClearFollowUp} clearingId={clearingId} />
+          <LeadList leads={buckets.next7} emptyText="No follow-ups in the next 7 days" {...sharedProps} />
         </TabsContent>
         <TabsContent value="next30">
-          <LeadTable leads={buckets.next30} emptyText="No follow-ups in the next 30 days" isAdmin={isAdmin} onClearFollowUp={handleClearFollowUp} clearingId={clearingId} />
+          <LeadList leads={buckets.next30} emptyText="No follow-ups in the next 30 days" {...sharedProps} />
         </TabsContent>
         <TabsContent value="all">
-          <LeadTable leads={buckets.all} emptyText="No active leads" isAdmin={isAdmin} onClearFollowUp={handleClearFollowUp} clearingId={clearingId} />
+          <LeadList leads={buckets.all} emptyText="No active leads" {...sharedProps} />
         </TabsContent>
         <TabsContent value="hot">
-          <LeadTable leads={buckets.hot} emptyText="No hot leads" isAdmin={isAdmin} onClearFollowUp={handleClearFollowUp} clearingId={clearingId} />
+          <LeadList leads={buckets.hot} emptyText="No hot leads" {...sharedProps} />
         </TabsContent>
         <TabsContent value="nodate">
-          <div className="mb-2 mt-2 p-3 rounded-lg bg-yellow-50 border border-yellow-200 text-sm text-yellow-800">
+          <div className="mt-2 mb-1 p-3 rounded-lg bg-yellow-50 border border-yellow-200 text-sm text-yellow-800">
             These leads have no follow-up date scheduled. Set a follow-up to keep them from falling through the cracks.
           </div>
-          <LeadTable leads={buckets.noDate} emptyText="All active leads have a follow-up date set" isAdmin={isAdmin} onClearFollowUp={handleClearFollowUp} clearingId={clearingId} />
+          <LeadList leads={buckets.noDate} emptyText="All active leads have a follow-up date set" {...sharedProps} />
         </TabsContent>
       </Tabs>
     </div>
   );
 }
 
-// ── Lead table ───────────────────────────────────────────────────
-function LeadTable({
+// ── Shared list: cards on mobile, table on sm+ ───────────────────
+function LeadList({
   leads,
   emptyText,
-  rowStyle,
+  urgency,
   isAdmin,
   onClearFollowUp,
   clearingId,
 }: {
   leads: FollowUpLead[];
   emptyText: string;
-  rowStyle?: "overdue" | "today";
+  urgency?: "overdue" | "today";
   isAdmin: boolean;
-  onClearFollowUp: (leadId: string) => void;
+  onClearFollowUp: (id: string) => void;
   clearingId: string | null;
 }) {
-  const colSpan = isAdmin ? 8 : 7;
+  if (leads.length === 0) {
+    return (
+      <div className="mt-2 rounded-lg border bg-card py-10 text-center text-sm text-muted-foreground">
+        {emptyText}
+      </div>
+    );
+  }
 
   return (
-    <div className="rounded-lg border bg-card overflow-hidden mt-2">
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-muted/50">
-            <TableHead>Lead</TableHead>
-            <TableHead>Phone</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Temp</TableHead>
-            <TableHead>Follow-up Date</TableHead>
-            <TableHead>Type</TableHead>
-            <TableHead>Assigned To</TableHead>
-            {isAdmin && <TableHead className="w-10" />}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {leads.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={colSpan} className="text-center py-10 text-muted-foreground">
-                {emptyText}
-              </TableCell>
-            </TableRow>
-          ) : (
-            leads.map((lead) => {
-              const relative = getRelative(lead.next_followup_date);
+    <>
+      {/* ── Mobile card list ── */}
+      <div className="sm:hidden mt-2 space-y-2">
+        {leads.map((lead) => {
+          const relative = getRelative(lead.next_followup_date);
+          let cardCls = "rounded-lg border bg-card p-3 space-y-2";
+          if (urgency === "overdue" || (!lead.next_followup_date ? false : new Date(lead.next_followup_date) < startOfDay(new Date()))) {
+            cardCls = "rounded-lg border bg-red-50/60 border-red-200 dark:bg-red-950/10 p-3 space-y-2";
+          } else if (urgency === "today") {
+            cardCls = "rounded-lg border bg-orange-50/60 border-orange-200 dark:bg-orange-950/10 p-3 space-y-2";
+          }
 
-              // Row tint based on urgency
+          return (
+            <div key={lead.id} className={cardCls}>
+              {/* Row 1: name + badges + trash */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <Link href={`/leads/${lead.id}`} className="font-medium text-sm hover:underline leading-tight">
+                    {lead.full_name}
+                  </Link>
+                  <p className="text-[11px] text-muted-foreground font-mono">{lead.lead_number}</p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <LeadStatusBadge status={lead.status} />
+                  <TemperatureBadge temperature={lead.temperature} />
+                  {isAdmin && (
+                    <button
+                      onClick={() => onClearFollowUp(lead.id)}
+                      disabled={clearingId === lead.id}
+                      className="ml-1 p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                      title="Clear follow-up"
+                    >
+                      {clearingId === lead.id
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Trash2 className="h-3.5 w-3.5" />}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Row 2: phone + assignee */}
+              <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                <a href={`tel:${lead.phone}`} className="flex items-center gap-1 font-mono">
+                  <Phone className="h-3 w-3" />{lead.phone}
+                </a>
+                <span className="flex items-center gap-1">
+                  <User className="h-3 w-3" />{lead.assigned_to.name}
+                </span>
+              </div>
+
+              {/* Row 3: follow-up date + type */}
+              <div className="flex items-center gap-2 text-xs">
+                <Calendar className="h-3 w-3 text-muted-foreground shrink-0" />
+                <span className="text-muted-foreground">{formatDate(lead.next_followup_date)}</span>
+                <span className={relative.cls}>{relative.label}</span>
+                {lead.followup_type && (
+                  <span className="flex items-center gap-1 text-muted-foreground ml-auto">
+                    <FuTypeIcon type={lead.followup_type} />
+                    {lead.followup_type}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Desktop table ── */}
+      <div className="hidden sm:block mt-2 rounded-lg border bg-card overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50">
+              <TableHead>Lead</TableHead>
+              <TableHead>Phone</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Temp</TableHead>
+              <TableHead>Follow-up Date</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Assigned To</TableHead>
+              {isAdmin && <TableHead className="w-10" />}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {leads.map((lead) => {
+              const relative = getRelative(lead.next_followup_date);
               let rowCls = "hover:bg-muted/30";
-              if (rowStyle === "overdue" || (!lead.next_followup_date ? false : new Date(lead.next_followup_date) < startOfDay(new Date()))) {
+              if (urgency === "overdue" || (!lead.next_followup_date ? false : new Date(lead.next_followup_date) < startOfDay(new Date()))) {
                 rowCls = "bg-red-50/40 hover:bg-red-50/70 dark:bg-red-950/10";
-              } else if (rowStyle === "today") {
+              } else if (urgency === "today") {
                 rowCls = "bg-orange-50/40 hover:bg-orange-50/70 dark:bg-orange-950/10";
               }
 
@@ -353,12 +412,8 @@ function LeadTable({
                     <p className="text-xs text-muted-foreground font-mono">{lead.lead_number}</p>
                   </TableCell>
                   <TableCell className="text-sm font-mono">{lead.phone}</TableCell>
-                  <TableCell>
-                    <LeadStatusBadge status={lead.status} />
-                  </TableCell>
-                  <TableCell>
-                    <TemperatureBadge temperature={lead.temperature} />
-                  </TableCell>
+                  <TableCell><LeadStatusBadge status={lead.status} /></TableCell>
+                  <TableCell><TemperatureBadge temperature={lead.temperature} /></TableCell>
                   <TableCell>
                     <p className="text-sm">{formatDate(lead.next_followup_date)}</p>
                     <p className={`text-xs mt-0.5 ${relative.cls}`}>{relative.label}</p>
@@ -390,10 +445,10 @@ function LeadTable({
                   )}
                 </TableRow>
               );
-            })
-          )}
-        </TableBody>
-      </Table>
-    </div>
+            })}
+          </TableBody>
+        </Table>
+      </div>
+    </>
   );
 }
