@@ -97,20 +97,24 @@ export function TaskTable({ tasks, users, clients }: TaskTableProps) {
   return (
     <div className="space-y-4">
       {/* Header filters */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="relative">
+      <div className="flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
             placeholder="Search title or number…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 h-8 w-52 text-sm"
+            className="pl-8 h-9 w-full text-sm"
           />
         </div>
         {users.length > 0 && (
           <Select value={assigneeFilter} onValueChange={(v) => v && setAssigneeFilter(v)}>
-            <SelectTrigger className="h-8 w-44 text-sm">
-              <SelectValue placeholder="All assignees" />
+            <SelectTrigger className="h-9 sm:w-44 text-sm">
+              <SelectValue>
+                {assigneeFilter === "all"
+                  ? "All assignees"
+                  : users.find((u) => u.id === assigneeFilter)?.name ?? "All assignees"}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All assignees</SelectItem>
@@ -122,8 +126,14 @@ export function TaskTable({ tasks, users, clients }: TaskTableProps) {
         )}
         {clients.length > 0 && (
           <Select value={clientFilter} onValueChange={(v) => v && setClientFilter(v)}>
-            <SelectTrigger className="h-8 w-40 text-sm">
-              <SelectValue placeholder="All clients" />
+            <SelectTrigger className="h-9 sm:w-40 text-sm">
+              <SelectValue>
+                {clientFilter === "all"
+                  ? "All clients"
+                  : clientFilter === "none"
+                  ? "No client"
+                  : clients.find((c) => c.id === clientFilter)?.name ?? "All clients"}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All clients</SelectItem>
@@ -138,24 +148,40 @@ export function TaskTable({ tasks, users, clients }: TaskTableProps) {
 
       {/* Bucket tabs */}
       <Tabs defaultValue="overdue">
-        <TabsList className="flex-wrap h-auto gap-1">
-          <TabsTrigger value="overdue" className="gap-1.5">
-            <AlertTriangle className="h-3.5 w-3.5" />
-            Overdue
+        <TabsList className="flex flex-wrap h-auto gap-1 justify-start">
+          <TabsTrigger value="overdue" className="gap-1 text-xs sm:text-sm">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            <span>Overdue</span>
             {buckets.overdue.length > 0 && (
-              <span className="ml-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold px-1.5 py-0">
+              <span className="ml-0.5 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold px-1.5 leading-5">
                 {buckets.overdue.length}
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="today" className="gap-1.5">
-            <Clock className="h-3.5 w-3.5" />
-            Today ({buckets.today.length})
+          <TabsTrigger value="today" className="gap-1 text-xs sm:text-sm">
+            <Clock className="h-3.5 w-3.5 shrink-0" />
+            <span>Today</span>
+            <span className="text-[10px] opacity-70">({buckets.today.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="next3">Next 3 Days ({buckets.next3.length})</TabsTrigger>
-          <TabsTrigger value="next7">Next 7 Days ({buckets.next7.length})</TabsTrigger>
-          <TabsTrigger value="allActive">All Active ({buckets.allActive.length})</TabsTrigger>
-          <TabsTrigger value="done">Done ({buckets.done.length})</TabsTrigger>
+          <TabsTrigger value="next3" className="text-xs sm:text-sm">
+            <span className="hidden sm:inline">Next 3 Days</span>
+            <span className="sm:hidden">3d</span>
+            <span className="text-[10px] opacity-70 ml-0.5">({buckets.next3.length})</span>
+          </TabsTrigger>
+          <TabsTrigger value="next7" className="text-xs sm:text-sm">
+            <span className="hidden sm:inline">Next 7 Days</span>
+            <span className="sm:hidden">7d</span>
+            <span className="text-[10px] opacity-70 ml-0.5">({buckets.next7.length})</span>
+          </TabsTrigger>
+          <TabsTrigger value="allActive" className="text-xs sm:text-sm">
+            <span className="hidden sm:inline">All Active</span>
+            <span className="sm:hidden">All</span>
+            <span className="text-[10px] opacity-70 ml-0.5">({buckets.allActive.length})</span>
+          </TabsTrigger>
+          <TabsTrigger value="done" className="text-xs sm:text-sm">
+            Done
+            <span className="text-[10px] opacity-70 ml-0.5">({buckets.done.length})</span>
+          </TabsTrigger>
         </TabsList>
 
         {(["overdue", "today", "next3", "next7", "allActive", "done"] as const).map((key) => (
