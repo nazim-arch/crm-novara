@@ -24,7 +24,7 @@ const leadBaseSchema = z.object({
   }),
   next_followup_date: z.coerce.date().optional(),
   followup_type: z
-    .enum(["Call", "Email", "WhatsApp", "Visit", "Meeting", "Activity"])
+    .enum(["Call", "Email", "WhatsApp", "Visit", "Meeting", "Activity", "Internal"])
     .optional(),
   reason_for_interest: z.string().optional().or(z.literal("")),
   notes: z.string().optional().or(z.literal("")),

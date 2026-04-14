@@ -361,12 +361,14 @@ export function FollowUpSection({
       {/* Add follow-up button */}
       {canManage && (
         <Dialog open={showAddDialog || !!addNextFor} onOpenChange={(o) => { setShowAddDialog(o); if (!o) setAddNextFor(null); }}>
-          <DialogTrigger asChild>
+          <DialogTrigger
+            className="w-full mt-1"
+            onClick={() => setShowAddDialog(true)}
+          >
             <Button
               variant="outline"
               size="sm"
-              className="w-full mt-1 text-xs h-8"
-              onClick={() => setShowAddDialog(true)}
+              className="w-full text-xs h-8"
             >
               <Plus className="h-3.5 w-3.5 mr-1" />
               Schedule Follow-up

@@ -36,6 +36,8 @@ export type FollowUp = {
   completed_at: Date | null;
   notes: string | null;
   outcome: string | null;
+  lead_id: string | null;
+  opportunity_id: string | null;
   lead: { id: string; lead_number: string; full_name: string; status: string; temperature: string } | null;
   opportunity: { id: string; opp_number: string; name: string } | null;
   assigned_to: { id: string; name: string } | null;
