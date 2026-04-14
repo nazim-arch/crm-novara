@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TaskStatsCards } from "@/components/dashboard/TaskStatsCards";
 import { AssigneeBarChart } from "@/components/dashboard/AssigneeBarChart";
+import { ClientBarChart } from "@/components/dashboard/ClientBarChart";
 import { startOfDay, endOfDay } from "date-fns";
 import Link from "next/link";
 
@@ -28,6 +29,7 @@ export default async function TaskDashboardPage() {
     myTasks,
     byAssignee,
     revenueAtRisk,
+    byClient,
   ] = await Promise.all([
     prisma.task.count({ where: { deleted_at: null, ...scopeFilter, status: { notIn: ["Done", "Cancelled"] } } }),
     prisma.task.count({
@@ -69,18 +71,32 @@ export default async function TaskDashboardPage() {
       },
       _sum: { revenue_amount: true },
     }),
+    prisma.task.groupBy({
+      by: ["client_id"],
+      where: { deleted_at: null, ...scopeFilter, status: { notIn: ["Done", "Cancelled"] }, client_id: { not: null } },
+      _count: { id: true },
+    }),
   ]);
 
   const assigneeIds = byAssignee.map((a) => a.assigned_to_id);
-  const users = await prisma.user.findMany({
-    where: { id: { in: assigneeIds } },
-    select: { id: true, name: true },
-  });
+  const clientIds = byClient.map((c) => c.client_id).filter(Boolean) as string[];
+
+  const [users, clientRecords] = await Promise.all([
+    prisma.user.findMany({ where: { id: { in: assigneeIds } }, select: { id: true, name: true } }),
+    prisma.client.findMany({ where: { id: { in: clientIds } }, select: { id: true, name: true } }),
+  ]);
+
   const userMap = Object.fromEntries(users.map((u) => [u.id, u.name]));
+  const clientMap = Object.fromEntries(clientRecords.map((c) => [c.id, c.name]));
 
   const assigneeData = byAssignee.map((a) => ({
     name: userMap[a.assigned_to_id] ?? "Unknown",
     count: a._count.id,
+  }));
+
+  const clientData = byClient.map((c) => ({
+    name: clientMap[c.client_id!] ?? "Unknown",
+    count: c._count.id,
   }));
 
   return (
@@ -110,6 +126,16 @@ export default async function TaskDashboardPage() {
               ) : (
                 <AssigneeBarChart data={assigneeData} />
               )}
+            </CardContent>
+          </Card>
+        )}
+        {clientData.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium">Active Tasks by Client</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ClientBarChart data={clientData} />
             </CardContent>
           </Card>
         )}

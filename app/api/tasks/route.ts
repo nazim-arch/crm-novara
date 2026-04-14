@@ -55,6 +55,7 @@ export async function GET(request: Request) {
           created_by: { select: { id: true, name: true } },
           lead: { select: { id: true, lead_number: true, full_name: true } },
           opportunity: { select: { id: true, opp_number: true, name: true } },
+          client: { select: { id: true, name: true } },
         },
         orderBy: { due_date: "asc" },
         skip: (page - 1) * limit,
@@ -81,12 +82,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten() }, { status: 400 });
     }
 
-    const { sector, notes, description, ...rest } = parsed.data;
+    const { sector, notes, description, client_id, ...rest } = parsed.data;
     const task_number = await generateId("TASK");
     const task = await prisma.task.create({
       data: {
         task_number, ...rest,
         sector: sector || null, notes: notes || null, description: description || null,
+        client_id: client_id || null,
         created_by_id: session.user.id,
       },
     });

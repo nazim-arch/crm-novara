@@ -348,6 +348,28 @@ model LeadOpportunity {
 }
 
 // ─────────────────────────────────────────────
+// CLIENT
+// ─────────────────────────────────────────────
+
+model Client {
+  id              String   @id @default(cuid())
+  name            String
+  industry        String?
+  contact_person  String?
+  contact_email   String?
+  contact_phone   String?
+  notes           String?
+  is_active       Boolean  @default(true)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  tasks Task[]
+
+  @@index([is_active])
+  @@map("clients")
+}
+
+// ─────────────────────────────────────────────
 // TASK
 // ─────────────────────────────────────────────
 
@@ -373,11 +395,13 @@ model Task {
   created_by_id  String
   lead_id        String?
   opportunity_id String?
+  client_id      String?
 
   assigned_to User         @relation("TaskAssignee", fields: [assigned_to_id], references: [id])
   created_by  User         @relation("TaskCreator",  fields: [created_by_id],  references: [id])
   lead        Lead?        @relation(fields: [lead_id],        references: [id])
   opportunity Opportunity? @relation(fields: [opportunity_id], references: [id])
+  client      Client?      @relation(fields: [client_id],      references: [id])
   followups   FollowUp[]
 
   created_at DateTime @default(now())
@@ -388,6 +412,7 @@ model Task {
   @@index([due_date])
   @@index([lead_id])
   @@index([opportunity_id])
+  @@index([client_id])
   @@index([deleted_at])
   @@map("tasks")
 }

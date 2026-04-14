@@ -5,8 +5,9 @@ import Link from "next/link";
 import {
   Users, Flame, Activity, Trophy, CalendarClock, AlertTriangle,
   TrendingUp, DollarSign, Wallet, PiggyBank, Target,
-  CheckSquare, Clock, CheckCircle2, XCircle,
+  CheckSquare, Clock, CheckCircle2, XCircle, Briefcase,
 } from "lucide-react";
+import { ClientBarChart } from "@/components/dashboard/ClientBarChart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -90,6 +91,7 @@ interface RecentActivity {
 }
 
 interface TaskStats { todo: number; inProgress: number; done: number; overdue: number }
+interface ClientTaskRow { name: string; count: number }
 
 interface Props {
   canViewFinancials: boolean;
@@ -103,6 +105,7 @@ interface Props {
   topOpportunities: TopOpportunity[];
   recentActivities: RecentActivity[];
   taskStats: TaskStats;
+  taskClientDistribution: ClientTaskRow[];
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -228,6 +231,7 @@ export function CrmDashboardClient({
   topOpportunities,
   recentActivities,
   taskStats,
+  taskClientDistribution,
 }: Props) {
   const [activePieIndex, setActivePieIndex] = useState<number | undefined>(undefined);
 
@@ -687,7 +691,27 @@ export function CrmDashboardClient({
         </section>
       )}
 
-      {/* ── Section 5 & 6: Activity Feed + Task Stats ─────────────────── */}
+      {/* ── Section 5: Tasks by Client ───────────────────────────────── */}
+      {taskClientDistribution.length > 0 && (
+        <section>
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+            Client Workload
+          </h2>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Briefcase className="h-4 w-4" />
+                Tasks by Client
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ClientBarChart data={taskClientDistribution} />
+            </CardContent>
+          </Card>
+        </section>
+      )}
+
+      {/* ── Section 6 & 7: Activity Feed + Task Stats ─────────────────── */}
       <section>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 

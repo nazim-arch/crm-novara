@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   BarChart3, Users, Building2, CheckSquare, CalendarClock,
-  Settings, LayoutDashboard, Radar, Menu,
+  Settings, LayoutDashboard, Radar, Menu, Briefcase,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -43,6 +43,7 @@ const NAV_CONFIG = [
     label: "Settings",
     items: [
       { href: "/settings/users", label: "Users", icon: Settings, roles: ["Admin"] },
+      { href: "/settings/clients", label: "Clients", icon: Briefcase, roles: ["Admin"] },
     ],
   },
 ];
@@ -122,10 +123,8 @@ export function MobileSidebarTrigger({ role }: { role: string }) {
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        <Button variant="ghost" size="icon" className="md:hidden">
-          <Menu className="h-5 w-5" />
-        </Button>
+      <SheetTrigger className="md:hidden inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
+        <Menu className="h-5 w-5" />
       </SheetTrigger>
       <SheetContent side="left" className="w-64 p-0 flex flex-col">
         <div className="h-14 flex items-center px-4 border-b">

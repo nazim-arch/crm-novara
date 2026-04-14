@@ -35,6 +35,7 @@ export async function GET(_request: Request, { params }: { params: Params }) {
         created_by: { select: { id: true, name: true } },
         lead: { select: { id: true, lead_number: true, full_name: true, phone: true, status: true } },
         opportunity: { select: { id: true, opp_number: true, name: true } },
+        client: { select: { id: true, name: true } },
       },
     });
 

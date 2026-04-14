@@ -22,18 +22,24 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
     ...(scope ?? {}),
   };
 
-  const [tasks, users] = await Promise.all([
+  const [tasks, users, clients] = await Promise.all([
     prisma.task.findMany({
       where,
       include: {
         assigned_to: { select: { id: true, name: true } },
         lead: { select: { id: true, lead_number: true, full_name: true } },
         opportunity: { select: { id: true, opp_number: true, name: true } },
+        client: { select: { id: true, name: true } },
       },
       orderBy: { due_date: "asc" },
       take: 500,
     }),
     prisma.user.findMany({
+      where: { is_active: true },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.client.findMany({
       where: { is_active: true },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
@@ -77,7 +83,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
       {view === "kanban" ? (
         <KanbanBoard tasks={tasks} />
       ) : (
-        <TaskTable tasks={tasks} users={isScoped ? [] : users} currentParams={{}} />
+        <TaskTable tasks={tasks} users={isScoped ? [] : users} clients={clients} currentParams={{}} />
       )}
     </div>
   );

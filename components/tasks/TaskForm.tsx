@@ -24,11 +24,13 @@ import { Loader2 } from "lucide-react";
 type User = { id: string; name: string };
 type Lead = { id: string; lead_number: string; full_name: string };
 type Opportunity = { id: string; opp_number: string; name: string };
+type Client = { id: string; name: string };
 
 interface TaskFormProps {
   users: User[];
   leads: Lead[];
   opportunities: Opportunity[];
+  clients: Client[];
   currentUserId: string;
   defaultValues?: Partial<CreateTaskInput>;
   taskId?: string;
@@ -40,6 +42,7 @@ export function TaskForm({
   users,
   leads,
   opportunities,
+  clients,
   currentUserId,
   defaultValues,
   taskId,
@@ -235,6 +238,24 @@ export function TaskForm({
                   <SelectItem key={o.id} value={o.id}>
                     {o.opp_number} – {o.name}
                   </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Client (optional)</Label>
+            <Select
+              defaultValue={defaultValues?.client_id ?? "none"}
+              onValueChange={(v) => setValue("client_id", v === "none" || !v ? undefined : v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select client" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No client</SelectItem>
+                {clients.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

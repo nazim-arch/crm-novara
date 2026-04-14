@@ -14,7 +14,7 @@ export default async function EditTaskPage({ params }: { params: Params }) {
 
   const { id } = await params;
 
-  const [task, users, leads, opportunities] = await Promise.all([
+  const [task, users, leads, opportunities, clients] = await Promise.all([
     prisma.task.findUnique({
       where: { id, deleted_at: null },
     }),
@@ -34,6 +34,11 @@ export default async function EditTaskPage({ params }: { params: Params }) {
       select: { id: true, opp_number: true, name: true },
       orderBy: { name: "asc" },
     }),
+    prisma.client.findMany({
+      where: { is_active: true },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   if (!task) notFound();
@@ -48,6 +53,7 @@ export default async function EditTaskPage({ params }: { params: Params }) {
         users={users}
         leads={leads}
         opportunities={opportunities}
+        clients={clients}
         currentUserId={session.user.id}
         taskId={task.id}
         defaultLeadId={task.lead_id ?? undefined}
@@ -67,6 +73,7 @@ export default async function EditTaskPage({ params }: { params: Params }) {
           assigned_to_id: task.assigned_to_id,
           lead_id: task.lead_id ?? undefined,
           opportunity_id: task.opportunity_id ?? undefined,
+          client_id: task.client_id ?? undefined,
         }}
       />
     </div>

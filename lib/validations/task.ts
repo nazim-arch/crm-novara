@@ -10,6 +10,7 @@ const taskBaseSchema = z.object({
   sector: z.string().optional().or(z.literal("")),
   lead_id: z.string().optional(),
   opportunity_id: z.string().optional(),
+  client_id: z.string().optional(),
   revenue_tagged: z.boolean().default(false),
   revenue_amount: z.coerce.number().positive().optional(),
   notes: z.string().optional().or(z.literal("")),

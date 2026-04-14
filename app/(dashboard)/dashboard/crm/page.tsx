@@ -47,6 +47,7 @@ export default async function CrmDashboardPage() {
     recentActivities,
     taskByStatus,
     overdueTasksCount,
+    taskByClient,
   ] = await Promise.all([
     prisma.lead.count({ where: leadWhere() }),
     prisma.lead.count({ where: leadWhere({ temperature: "Hot", status: { notIn: ["Won", "Lost", "Recycle"] } }) }),
@@ -128,7 +129,26 @@ export default async function CrmDashboardPage() {
         ...(role === "Sales" || role === "Operations" ? { assigned_to_id: userId } : {}),
       },
     }),
+    prisma.task.groupBy({
+      by: ["client_id"],
+      where: {
+        deleted_at: null,
+        client_id: { not: null },
+        ...(role === "Sales" || role === "Operations" ? { assigned_to_id: userId } : {}),
+      },
+      _count: { id: true },
+    }),
   ]);
+
+  // Resolve client names for task-by-client chart
+  const clientIds = (taskByClient as Array<{ client_id: string | null }>).map((c) => c.client_id).filter(Boolean) as string[];
+  const clientRecords = clientIds.length > 0
+    ? await prisma.client.findMany({ where: { id: { in: clientIds } }, select: { id: true, name: true } })
+    : [];
+  const clientNameMap = Object.fromEntries(clientRecords.map((c) => [c.id, c.name]));
+  const taskClientDistribution = (taskByClient as Array<{ client_id: string | null; _count: { id: number } }>)
+    .filter((c) => c.client_id)
+    .map((c) => ({ name: clientNameMap[c.client_id!] ?? "Unknown", count: c._count.id }));
 
   const expenseMap = new Map(
     (expensesByOpp as Array<{ opportunity_id: string; _sum: { amount: unknown } }>)
@@ -190,6 +210,7 @@ export default async function CrmDashboardPage() {
       })}
       recentActivities={recentActivities.map((a) => ({ id: a.id, action: a.action, entity_type: a.entity_type, entity_id: a.entity_id, actor_name: a.actor.name, created_at: a.created_at.toISOString() }))}
       taskStats={{ todo: taskMap["Todo"] ?? 0, inProgress: taskMap["InProgress"] ?? 0, done: taskMap["Done"] ?? 0, overdue: overdueTasksCount }}
+      taskClientDistribution={taskClientDistribution}
     />
   );
 }

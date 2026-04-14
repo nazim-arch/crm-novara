@@ -14,7 +14,7 @@ export default async function NewTaskPage({ searchParams }: { searchParams: Sear
 
   const sp = await searchParams;
 
-  const [users, leads, opportunities] = await Promise.all([
+  const [users, leads, opportunities, clients] = await Promise.all([
     prisma.user.findMany({
       where: { is_active: true },
       select: { id: true, name: true },
@@ -31,6 +31,11 @@ export default async function NewTaskPage({ searchParams }: { searchParams: Sear
       select: { id: true, opp_number: true, name: true },
       orderBy: { name: "asc" },
     }),
+    prisma.client.findMany({
+      where: { is_active: true },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   return (
@@ -43,6 +48,7 @@ export default async function NewTaskPage({ searchParams }: { searchParams: Sear
         users={users}
         leads={leads}
         opportunities={opportunities}
+        clients={clients}
         currentUserId={session.user.id}
         defaultLeadId={sp.lead_id}
         defaultOpportunityId={sp.opportunity_id}

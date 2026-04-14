@@ -27,6 +27,7 @@ type User = { id: string; name: string };
 type Lead = { id: string; lead_number: string; full_name: string };
 type TaskItem = { id: string; task_number: string; title: string };
 type OppItem = { id: string; opp_number: string; name: string };
+type ClientItem = { id: string; name: string };
 
 const LEAD_SOURCES = ["Website", "Facebook", "Instagram", "Google Ads", "Referral", "Walk-in", "Cold Call", "Exhibition", "WhatsApp", "Other"];
 const FOLLOW_UP_TYPES = ["Call", "Email", "WhatsApp", "Visit", "Meeting"];
@@ -65,6 +66,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [opps, setOpps] = useState<OppItem[]>([]);
+  const [clients, setClients] = useState<ClientItem[]>([]);
   const [dataLoaded, setDataLoaded] = useState(false);
 
   // Mode per tab
@@ -98,6 +100,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
   const [taskLeadId, setTaskLeadId] = useState("none");
   const [taskOppId, setTaskOppId] = useState("none");
   const [taskSector, setTaskSector] = useState("");
+  const [taskClientId, setTaskClientId] = useState("none");
 
   // Follow-up form
   const [fuLinkType, setFuLinkType] = useState<"lead" | "task">("lead");
@@ -117,11 +120,12 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
   const loadData = useCallback(async () => {
     if (dataLoaded) return;
     try {
-      const [usersRes, leadsRes, tasksRes, oppsRes] = await Promise.all([
+      const [usersRes, leadsRes, tasksRes, oppsRes, clientsRes] = await Promise.all([
         fetch("/api/users/assignable"),
         fetch("/api/leads?page=1&limit=200"),
         fetch("/api/tasks?page=1&limit=200&status=Todo,InProgress"),
         fetch("/api/opportunities?status=Active&limit=200"),
+        fetch("/api/clients"),
       ]);
       if (usersRes.ok) {
         const d = await usersRes.json();
@@ -157,6 +161,10 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
           }))
         );
       }
+      if (clientsRes.ok) {
+        const d = await clientsRes.json();
+        setClients(d.data ?? []);
+      }
     } catch {
       // silent — forms still work, just no dropdown data
     }
@@ -172,7 +180,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
     setEditLeadId("none"); setEditOppId("none"); setEditTaskId("none");
     setLeadName(""); setLeadPhone(""); setLeadSource(""); setLeadTemperature("Cold");
     setOppName(""); setOppProject(""); setOppPropertyType(""); setOppLocation(""); setOppCommission("");
-    setTaskTitle(""); setTaskAssignedTo(currentUserId); setTaskDueDate(""); setTaskLeadId("none"); setTaskOppId("none"); setTaskSector("");
+    setTaskTitle(""); setTaskAssignedTo(currentUserId); setTaskDueDate(""); setTaskLeadId("none"); setTaskOppId("none"); setTaskSector(""); setTaskClientId("none");
     setFuLinkType("lead"); setFuLeadId("none"); setFuTaskId("none"); setFuType("Call"); setFuDate(""); setFuNotes("");
     setExpOppId("none"); setExpCategory(""); setExpAmount(""); setExpDate(new Date().toISOString().split("T")[0]); setExpDescription("");
   }
@@ -260,6 +268,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
       if (taskLeadId !== "none") body.lead_id = taskLeadId;
       if (taskOppId !== "none") body.opportunity_id = taskOppId;
       if (taskSector) body.sector = taskSector;
+      if (taskClientId !== "none") body.client_id = taskClientId;
       const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -572,6 +581,20 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
                     </SelectContent>
                   </Select>
                 </div>
+                {clients.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label>Client</Label>
+                    <Select value={taskClientId} onValueChange={(v) => v && setTaskClientId(v)}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue>{taskClientId === "none" ? "No client" : clients.find((c) => c.id === taskClientId)?.name ?? "Select client"}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="w-full">
+                        <SelectItem value="none">No client</SelectItem>
+                        {clients.map((c) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <Button className="w-full" onClick={submitTask} disabled={loading}>
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Create Task
