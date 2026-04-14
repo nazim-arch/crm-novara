@@ -53,6 +53,9 @@ export function TaskForm({
   const [loading, setLoading] = useState(false);
   const [revenueTagged, setRevenueTagged] = useState(defaultValues?.revenue_tagged ?? false);
   const [assignedToId, setAssignedToId] = useState(defaultValues?.assigned_to_id ?? currentUserId);
+  const [selectedLeadId, setSelectedLeadId] = useState(defaultLeadId ?? defaultValues?.lead_id ?? "none");
+  const [selectedOppId, setSelectedOppId] = useState(defaultOpportunityId ?? defaultValues?.opportunity_id ?? "none");
+  const [selectedClientId, setSelectedClientId] = useState(defaultValues?.client_id ?? "none");
   const isEditing = !!taskId;
 
   const SECTORS = ["Novara", "Sage", "Podcast", "Trade"];
@@ -206,11 +209,20 @@ export function TaskForm({
           <div className="space-y-1.5">
             <Label>Link to Lead (optional)</Label>
             <Select
-              defaultValue={defaultLeadId ?? "none"}
-              onValueChange={(v) => setValue("lead_id", v === "none" || !v ? undefined : v)}
+              value={selectedLeadId}
+              onValueChange={(v) => {
+                setSelectedLeadId(v ?? "none");
+                setValue("lead_id", v === "none" || !v ? undefined : v);
+              }}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select lead" />
+                <SelectValue>
+                  {selectedLeadId === "none"
+                    ? "No lead"
+                    : leads.find((l) => l.id === selectedLeadId)
+                      ? `${leads.find((l) => l.id === selectedLeadId)!.lead_number} – ${leads.find((l) => l.id === selectedLeadId)!.full_name}`
+                      : "Select lead"}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">No lead</SelectItem>
@@ -226,11 +238,20 @@ export function TaskForm({
           <div className="space-y-1.5">
             <Label>Link to Opportunity (optional)</Label>
             <Select
-              defaultValue={defaultOpportunityId ?? "none"}
-              onValueChange={(v) => setValue("opportunity_id", v === "none" || !v ? undefined : v)}
+              value={selectedOppId}
+              onValueChange={(v) => {
+                setSelectedOppId(v ?? "none");
+                setValue("opportunity_id", v === "none" || !v ? undefined : v);
+              }}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select opportunity" />
+                <SelectValue>
+                  {selectedOppId === "none"
+                    ? "No opportunity"
+                    : opportunities.find((o) => o.id === selectedOppId)
+                      ? `${opportunities.find((o) => o.id === selectedOppId)!.opp_number} – ${opportunities.find((o) => o.id === selectedOppId)!.name}`
+                      : "Select opportunity"}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">No opportunity</SelectItem>
@@ -246,11 +267,18 @@ export function TaskForm({
           <div className="space-y-1.5">
             <Label>Client (optional)</Label>
             <Select
-              defaultValue={defaultValues?.client_id ?? "none"}
-              onValueChange={(v) => setValue("client_id", v === "none" || !v ? undefined : v)}
+              value={selectedClientId}
+              onValueChange={(v) => {
+                setSelectedClientId(v ?? "none");
+                setValue("client_id", v === "none" || !v ? undefined : v);
+              }}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select client" />
+                <SelectValue>
+                  {selectedClientId === "none"
+                    ? "No client"
+                    : clients.find((c) => c.id === selectedClientId)?.name ?? "Select client"}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">No client</SelectItem>

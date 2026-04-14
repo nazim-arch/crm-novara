@@ -21,6 +21,7 @@ import {
   IndianRupee,
   RefreshCw,
   AlarmClock,
+  Briefcase,
 } from "lucide-react";
 
 type Params = Promise<{ id: string }>;
@@ -37,6 +38,7 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
         created_by: { select: { id: true, name: true } },
         lead: { select: { id: true, lead_number: true, full_name: true, status: true } },
         opportunity: { select: { id: true, opp_number: true, name: true, status: true } },
+        client: { select: { id: true, name: true } },
       },
     }),
     prisma.note.findMany({
@@ -224,6 +226,15 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
               <CardTitle className="text-sm font-medium">Details</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
+              {task.client && (
+                <div className="flex items-center gap-2">
+                  <Briefcase className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Client</p>
+                    <p>{task.client.name}</p>
+                  </div>
+                </div>
+              )}
               {task.sector && (
                 <div>
                   <p className="text-xs text-muted-foreground">Sector</p>
