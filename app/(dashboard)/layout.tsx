@@ -25,7 +25,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="h-14 border-b bg-card flex items-center justify-between px-4 shrink-0">
           <MobileSidebarTrigger role={user.role} />
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 ml-auto">
             <NotificationBell />
             <DropdownMenu>
               <DropdownMenuTrigger>
