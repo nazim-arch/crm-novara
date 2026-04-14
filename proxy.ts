@@ -48,8 +48,14 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  // Protect all non-login routes
-  if (pathname !== "/login" && !isAuthenticated) {
+  // Public auth routes — no login required
+  const publicRoutes = ["/login", "/forgot-password", "/reset-password"];
+  if (publicRoutes.includes(pathname) || publicRoutes.some(r => pathname.startsWith(r))) {
+    return NextResponse.next();
+  }
+
+  // Protect all other routes
+  if (!isAuthenticated) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
