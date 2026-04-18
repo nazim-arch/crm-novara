@@ -17,7 +17,7 @@ const updateSchema = z.object({
   editing_hours: z.number().min(0).nullable().optional(),
   editing_value: z.number().min(0).nullable().optional(),
   gst_percent: z.number().min(0).max(100).optional(),
-  status: z.enum(["Confirmed", "Cancelled", "Completed"]).optional(),
+  status: z.enum(["Confirmed", "Tentative", "Cancelled", "Completed"]).optional(),
   booking_type: z.enum(["One-time", "Recurring"]).optional(),
   seater_type: z.enum(["1-Seater", "2-Seater", "3-Seater", "4-Seater"]).nullable().optional(),
 });

@@ -35,7 +35,7 @@ const schema = z.object({
   editing_hours: z.number().min(0).optional(),
   editing_value: z.number().min(0).optional(),
   gst_percent: z.number().min(0).max(100),
-  status: z.enum(["Confirmed", "Cancelled", "Completed"]),
+  status: z.enum(["Confirmed", "Tentative", "Cancelled", "Completed"]),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -462,6 +462,7 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Confirmed">Confirmed</SelectItem>
+                  <SelectItem value="Tentative">Tentative</SelectItem>
                   <SelectItem value="Completed">Completed</SelectItem>
                   <SelectItem value="Cancelled">Cancelled</SelectItem>
                 </SelectContent>
