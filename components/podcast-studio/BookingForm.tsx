@@ -108,11 +108,31 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
   // Recurring state
   const [recurringDays, setRecurringDays] = useState<number[]>([]);
   const [recurringUntil, setRecurringUntil] = useState("");
-  const [recurringFreq, setRecurringFreq] = useState<"weekly" | "biweekly">("weekly");
+  const [recurringFreq, setRecurringFreq] = useState<"weekly" | "biweekly" | "monthly" | "custom">("weekly");
   const [recurringProgress, setRecurringProgress] = useState<{ done: number; total: number; created: number; conflicts: number } | null>(null);
+  const [customDates, setCustomDates] = useState<string[]>([]);
+  const [customDateInput, setCustomDateInput] = useState("");
 
-  function generateRecurringDates(startDate: string, selectedDays: number[], until: string, freq: "weekly" | "biweekly"): string[] {
-    if (!startDate || selectedDays.length === 0 || !until) return [];
+  function generateRecurringDates(
+    startDate: string,
+    selectedDays: number[],
+    until: string,
+    freq: "weekly" | "biweekly" | "monthly" | "custom",
+    custom: string[] = [],
+  ): string[] {
+    if (freq === "custom") return [...custom].sort();
+    if (!startDate || !until) return [];
+    if (freq === "monthly") {
+      const dates: string[] = [];
+      const end = new Date(until + "T00:00:00");
+      const d = new Date(startDate + "T00:00:00");
+      while (d <= end) {
+        dates.push(d.toISOString().split("T")[0]);
+        d.setMonth(d.getMonth() + 1);
+      }
+      return dates;
+    }
+    if (selectedDays.length === 0) return [];
     const dates = new Set<string>();
     const step = freq === "biweekly" ? 14 : 7;
     const end = new Date(until + "T00:00:00");
@@ -215,7 +235,7 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
 
     // Recurring: create one booking per generated date
     if (data.booking_type === "Recurring" && !isEdit) {
-      const dates = generateRecurringDates(data.booking_date, recurringDays, recurringUntil, recurringFreq);
+      const dates = generateRecurringDates(data.booking_date, recurringDays, recurringUntil, recurringFreq, customDates);
       if (dates.length === 0) {
         setSubmitError("No dates generated. Select at least one day and an end date.");
         return;
@@ -380,8 +400,10 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
             {/* Recurring Config */}
             {watchBookingType === "Recurring" && !isEdit && (() => {
               const DAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
-              const recurringDates = generateRecurringDates(watchDate, recurringDays, recurringUntil, recurringFreq);
+              const recurringDates = generateRecurringDates(watchDate, recurringDays, recurringUntil, recurringFreq, customDates);
               const PREVIEW_MAX = 6;
+              const showDays = recurringFreq === "weekly" || recurringFreq === "biweekly";
+              const showUntil = recurringFreq !== "custom";
               return (
                 <div className="sm:col-span-2 rounded-lg border border-violet-200 bg-violet-50/50 p-4 space-y-4">
                   <div className="flex items-center gap-2 text-sm font-medium text-violet-700">
@@ -391,49 +413,100 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
                     {/* Frequency */}
                     <div className="space-y-1.5">
                       <Label className="text-xs">Frequency</Label>
-                      <Select value={recurringFreq} onValueChange={v => setRecurringFreq(v as "weekly" | "biweekly")}>
+                      <Select value={recurringFreq} onValueChange={v => setRecurringFreq(v as typeof recurringFreq)}>
                         <SelectTrigger className="h-8 text-sm bg-white"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="weekly">Every week</SelectItem>
                           <SelectItem value="biweekly">Every 2 weeks</SelectItem>
+                          <SelectItem value="monthly">Every month</SelectItem>
+                          <SelectItem value="custom">Custom dates</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     {/* Until */}
-                    <div className="space-y-1.5 sm:col-span-2">
-                      <Label className="text-xs">Repeat until</Label>
-                      <Input
-                        type="date"
-                        className="h-8 text-sm bg-white"
-                        value={recurringUntil}
-                        min={watchDate || undefined}
-                        onChange={e => setRecurringUntil(e.target.value)}
-                      />
-                    </div>
+                    {showUntil && (
+                      <div className="space-y-1.5 sm:col-span-2">
+                        <Label className="text-xs">Repeat until</Label>
+                        <Input
+                          type="date"
+                          className="h-8 text-sm bg-white"
+                          value={recurringUntil}
+                          min={watchDate || undefined}
+                          onChange={e => setRecurringUntil(e.target.value)}
+                        />
+                      </div>
+                    )}
                   </div>
-                  {/* Days of week */}
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Days of week</Label>
-                    <div className="flex gap-1.5">
-                      {DAY_LABELS.map((label, idx) => (
+
+                  {/* Days of week — weekly / bi-weekly only */}
+                  {showDays && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Days of week</Label>
+                      <div className="flex gap-1.5">
+                        {DAY_LABELS.map((label, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setRecurringDays(prev =>
+                              prev.includes(idx) ? prev.filter(d => d !== idx) : [...prev, idx]
+                            )}
+                            className={cn(
+                              "w-8 h-8 rounded-full text-xs font-semibold transition-colors",
+                              recurringDays.includes(idx)
+                                ? "bg-violet-600 text-white"
+                                : "bg-white border text-muted-foreground hover:border-violet-400"
+                            )}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Custom date picker */}
+                  {recurringFreq === "custom" && (
+                    <div className="space-y-2">
+                      <Label className="text-xs">Add specific dates</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          type="date"
+                          className="h-8 text-sm bg-white"
+                          value={customDateInput}
+                          min={watchDate || undefined}
+                          onChange={e => setCustomDateInput(e.target.value)}
+                        />
                         <button
-                          key={idx}
                           type="button"
-                          onClick={() => setRecurringDays(prev =>
-                            prev.includes(idx) ? prev.filter(d => d !== idx) : [...prev, idx]
-                          )}
-                          className={cn(
-                            "w-8 h-8 rounded-full text-xs font-semibold transition-colors",
-                            recurringDays.includes(idx)
-                              ? "bg-violet-600 text-white"
-                              : "bg-white border text-muted-foreground hover:border-violet-400"
-                          )}
+                          disabled={!customDateInput || customDates.includes(customDateInput)}
+                          onClick={() => {
+                            if (customDateInput && !customDates.includes(customDateInput)) {
+                              setCustomDates(prev => [...prev, customDateInput]);
+                              setCustomDateInput("");
+                            }
+                          }}
+                          className="px-3 h-8 rounded-md border text-xs font-medium bg-white hover:bg-violet-50 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                         >
-                          {label}
+                          Add
                         </button>
-                      ))}
+                      </div>
+                      {customDates.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {[...customDates].sort().map(d => (
+                            <span key={d} className="flex items-center gap-1 bg-white border border-violet-200 rounded px-2 py-0.5 text-[11px]">
+                              {new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                              <button
+                                type="button"
+                                onClick={() => setCustomDates(prev => prev.filter(x => x !== d))}
+                                className="text-muted-foreground hover:text-destructive leading-none"
+                              >×</button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  )}
+
                   {/* Preview */}
                   {recurringDates.length > 0 ? (
                     <div className="text-xs text-violet-800 space-y-1">
@@ -450,8 +523,15 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
                       </div>
                     </div>
                   ) : (
-                    <p className="text-xs text-muted-foreground">Select at least one day and an end date to preview slots.</p>
+                    <p className="text-xs text-muted-foreground">
+                      {recurringFreq === "custom"
+                        ? "Add at least one date above."
+                        : recurringFreq === "monthly"
+                        ? "Set an end date to preview slots."
+                        : "Select at least one day and an end date to preview slots."}
+                    </p>
                   )}
+
                   {/* Progress during submit */}
                   {recurringProgress && (
                     <div className="flex items-center gap-2 text-xs text-violet-700 bg-white border border-violet-200 rounded-md px-3 py-2">
@@ -613,7 +693,7 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
             <Clock className="h-4 w-4 text-violet-600" /> Booking Summary
           </h3>
           {watchBookingType === "Recurring" && !isEdit && (() => {
-            const count = generateRecurringDates(watchDate, recurringDays, recurringUntil, recurringFreq).length;
+            const count = generateRecurringDates(watchDate, recurringDays, recurringUntil, recurringFreq, customDates).length;
             return count > 0 ? (
               <div className="mb-3 flex items-center gap-2 rounded-lg bg-violet-100 px-3 py-2 text-sm text-violet-800">
                 <RefreshCw className="h-3.5 w-3.5 shrink-0" />
