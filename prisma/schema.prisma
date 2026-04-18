@@ -589,6 +589,8 @@ model PodcastStudioBooking {
   start_time       String               // "HH:MM" e.g. "14:00"
   end_time         String               // "HH:MM" auto-calculated
   duration_minutes Int
+  booking_type     String               @default("One-time") // "One-time" | "Recurring"
+  seater_type      String?              // "1-Seater" | "2-Seater" | "3-Seater" | "4-Seater"
   client_name      String
   phone            String?
   notes            String?
@@ -608,6 +610,17 @@ model PodcastStudioBooking {
   @@index([status])
   @@index([client_name])
   @@map("podcast_studio_bookings")
+}
+
+// Per-seater pricing rates — configurable by Admin
+model PodcastStudioRate {
+  id                      String   @id @default(cuid())
+  seater_type             String   @unique // "1-Seater" | "2-Seater" | "3-Seater" | "4-Seater"
+  recording_rate_per_hour Decimal  @default(0) @db.Decimal(10, 2)
+  editing_rate_per_hour   Decimal  @default(0) @db.Decimal(10, 2)
+  updated_at              DateTime @updatedAt
+
+  @@map("podcast_studio_rates")
 }
 
 // IntentRadar Module - Prisma Schema

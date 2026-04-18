@@ -12,16 +12,21 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { Loader2, AlertCircle, CheckCircle2, Clock, DollarSign, Calendar, User } from "lucide-react";
+import { Loader2, AlertCircle, CheckCircle2, Clock, DollarSign, Calendar, User, Wand2 } from "lucide-react";
 import {
   STUDIO_SLOTS, DURATION_OPTIONS, formatTimeDisplay, formatDuration,
   addMinutesToTime, timeToMinutes, STUDIO_CLOSE,
 } from "@/lib/podcast-studio";
 
+const BOOKING_TYPES = ["One-time", "Recurring"] as const;
+const SEATER_TYPES = ["1-Seater", "2-Seater", "3-Seater", "4-Seater"] as const;
+
 const schema = z.object({
   booking_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Required"),
   start_time: z.string().min(1, "Required"),
   duration_minutes: z.number().int().min(30).refine(v => v % 30 === 0, "Must be a 30-min multiple"),
+  booking_type: z.enum(BOOKING_TYPES),
+  seater_type: z.enum(SEATER_TYPES).optional(),
   client_name: z.string().min(1, "Required"),
   phone: z.string().max(20).optional(),
   notes: z.string().max(2000).optional(),
@@ -35,12 +40,16 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
+type Rate = { seater_type: string; recording_rate_per_hour: number; editing_rate_per_hour: number };
+
 type ExistingBooking = {
   id: string;
   booking_date: string;
   start_time: string;
   end_time: string;
   duration_minutes: number;
+  booking_type: string;
+  seater_type?: string | null;
   client_name: string;
   phone?: string | null;
   notes?: string | null;
@@ -71,6 +80,8 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
       booking_date: editBooking.booking_date,
       start_time: editBooking.start_time,
       duration_minutes: editBooking.duration_minutes,
+      booking_type: (BOOKING_TYPES.includes(editBooking.booking_type as typeof BOOKING_TYPES[number]) ? editBooking.booking_type : "One-time") as typeof BOOKING_TYPES[number],
+      seater_type: (editBooking.seater_type && SEATER_TYPES.includes(editBooking.seater_type as typeof SEATER_TYPES[number]) ? editBooking.seater_type : undefined) as typeof SEATER_TYPES[number] | undefined,
       client_name: editBooking.client_name,
       phone: editBooking.phone ?? "",
       notes: editBooking.notes ?? "",
@@ -84,20 +95,34 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
       booking_date: defaultDate ?? "",
       start_time: defaultTime ?? "",
       duration_minutes: 60,
+      booking_type: "One-time" as const,
       gst_percent: 18,
       status: "Confirmed" as const,
     },
   });
 
+  const [rates, setRates] = useState<Rate[]>([]);
   const [submitError, setSubmitError] = useState("");
   const [availabilityMsg, setAvailabilityMsg] = useState<{ type: "ok" | "conflict" | "loading"; msg: string } | null>(null);
+
+  // Load rates once
+  useEffect(() => {
+    fetch("/api/podcast-studio/rates")
+      .then(r => r.json())
+      .then(j => { if (j.data) setRates(j.data); })
+      .catch(() => {});
+  }, []);
 
   const watchDate = watch("booking_date");
   const watchTime = watch("start_time");
   const watchDuration = watch("duration_minutes");
+  const watchRecHours = watch("recording_hours") ?? 0;
+  const watchEditHours = watch("editing_hours") ?? 0;
   const watchRecValue = watch("recording_value") ?? 0;
   const watchEditValue = watch("editing_value") ?? 0;
   const watchGst = watch("gst_percent") ?? 18;
+  const watchSeater = watch("seater_type");
+  const watchBookingType = watch("booking_type");
 
   const base = Number(watchRecValue) + Number(watchEditValue);
   const gstAmt = (base * Number(watchGst)) / 100;
@@ -105,6 +130,16 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
   const endTime = watchTime && watchDuration ? addMinutesToTime(watchTime, Number(watchDuration)) : null;
   const endExceedsClose = endTime ? timeToMinutes(endTime) > timeToMinutes(STUDIO_CLOSE) : false;
 
+  // Active rate for selected seater
+  const activeRate = rates.find(r => r.seater_type === watchSeater);
+  const suggestedRecValue = activeRate && Number(watchRecHours) > 0
+    ? activeRate.recording_rate_per_hour * Number(watchRecHours)
+    : null;
+  const suggestedEditValue = activeRate && Number(watchEditHours) > 0
+    ? activeRate.editing_rate_per_hour * Number(watchEditHours)
+    : null;
+
+  // Availability check
   useEffect(() => {
     if (!watchDate || !watchTime || !watchDuration) { setAvailabilityMsg(null); return; }
     if (!STUDIO_SLOTS.includes(watchTime)) { setAvailabilityMsg(null); return; }
@@ -112,20 +147,15 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
       setAvailabilityMsg({ type: "conflict", msg: `Ends at ${endTime} — exceeds 8:30 PM studio close` });
       return;
     }
-
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       setAvailabilityMsg({ type: "loading", msg: "Checking availability…" });
       try {
-        const res = await fetch(
-          `/api/podcast-studio/slots?start_date=${watchDate}&end_date=${watchDate}`,
-          { signal: controller.signal }
-        );
+        const res = await fetch(`/api/podcast-studio/slots?start_date=${watchDate}&end_date=${watchDate}`, { signal: controller.signal });
         if (!res.ok) return;
         const json = await res.json();
         const day = json.data?.[watchDate];
         if (!day || !endTime) return;
-
         const newStart = timeToMinutes(watchTime);
         const newEnd = timeToMinutes(endTime);
         type DayBooking = { id: string; start_time: string; end_time: string; status: string; client_name: string };
@@ -134,12 +164,10 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
           if (isEdit && b.id === editBooking?.id) return false;
           return newStart < timeToMinutes(b.end_time) && newEnd > timeToMinutes(b.start_time);
         });
-
-        if (conflict) {
-          setAvailabilityMsg({ type: "conflict", msg: `Conflicts with ${conflict.client_name} (${conflict.start_time}–${conflict.end_time})` });
-        } else {
-          setAvailabilityMsg({ type: "ok", msg: "Slot is available" });
-        }
+        setAvailabilityMsg(conflict
+          ? { type: "conflict", msg: `Conflicts with ${conflict.client_name} (${conflict.start_time}–${conflict.end_time})` }
+          : { type: "ok", msg: "Slot is available" }
+        );
       } catch { /* aborted */ }
     }, 400);
     return () => { clearTimeout(timer); controller.abort(); };
@@ -149,9 +177,8 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
     setSubmitError("");
     try {
       const url = isEdit ? `/api/podcast-studio/bookings/${editBooking!.id}` : "/api/podcast-studio/bookings";
-      const method = isEdit ? "PATCH" : "POST";
       const res = await fetch(url, {
-        method,
+        method: isEdit ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
@@ -196,46 +223,39 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <form onSubmit={handleSubmit(onSubmit)} className="lg:col-span-2 space-y-6">
+
         {/* Section A: Booking Details */}
         <div className="bg-card border rounded-xl p-6">
-          <SectionTitle icon={<Calendar className="h-4 w-4" />} title="Booking Details" sub="Date, time, client information" />
+          <SectionTitle icon={<Calendar className="h-4 w-4" />} title="Booking Details" sub="Date, time, type, and client" />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+            {/* Booking Date */}
             <div className="space-y-1.5">
               <Label htmlFor="booking_date">Booking Date <span className="text-destructive">*</span></Label>
               <Input id="booking_date" type="date" {...register("booking_date")} />
               {errors.booking_date && <p className="text-xs text-destructive">{errors.booking_date.message}</p>}
             </div>
 
+            {/* Start Time */}
             <div className="space-y-1.5">
               <Label>Start Time <span className="text-destructive">*</span></Label>
               <Select value={watchTime || ""} onValueChange={v => v && setValue("start_time", v)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select start time…" />
-                </SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Select start time…" /></SelectTrigger>
                 <SelectContent className="max-h-60">
-                  {STUDIO_SLOTS.map(slot => (
-                    <SelectItem key={slot} value={slot}>{formatTimeDisplay(slot)}</SelectItem>
-                  ))}
+                  {STUDIO_SLOTS.map(slot => <SelectItem key={slot} value={slot}>{formatTimeDisplay(slot)}</SelectItem>)}
                 </SelectContent>
               </Select>
               {errors.start_time && <p className="text-xs text-destructive">{errors.start_time.message}</p>}
             </div>
 
+            {/* Duration */}
             <div className="space-y-1.5">
               <Label>Duration <span className="text-destructive">*</span></Label>
-              <Select
-                value={String(watchDuration || "")}
-                onValueChange={v => v && setValue("duration_minutes", Number(v))}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select duration…" />
-                </SelectTrigger>
+              <Select value={String(watchDuration || "")} onValueChange={v => v && setValue("duration_minutes", Number(v))}>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Select duration…" /></SelectTrigger>
                 <SelectContent className="max-h-60">
                   {DURATION_OPTIONS.map(d => {
-                    if (watchTime) {
-                      const et = addMinutesToTime(watchTime, d);
-                      if (timeToMinutes(et) > timeToMinutes(STUDIO_CLOSE)) return null;
-                    }
+                    if (watchTime) { const et = addMinutesToTime(watchTime, d); if (timeToMinutes(et) > timeToMinutes(STUDIO_CLOSE)) return null; }
                     return (
                       <SelectItem key={d} value={String(d)}>
                         {formatDuration(d)}{watchTime ? ` → ${formatTimeDisplay(addMinutesToTime(watchTime, d))}` : ""}
@@ -247,12 +267,45 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
               {errors.duration_minutes && <p className="text-xs text-destructive">{errors.duration_minutes.message}</p>}
             </div>
 
+            {/* Booking Type */}
+            <div className="space-y-1.5">
+              <Label>Booking Type <span className="text-destructive">*</span></Label>
+              <Select value={watchBookingType || "One-time"} onValueChange={v => v && setValue("booking_type", v as typeof BOOKING_TYPES[number])}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="One-time">One-time</SelectItem>
+                  <SelectItem value="Recurring">Recurring</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Seater Type */}
+            <div className="space-y-1.5">
+              <Label>Seater Type</Label>
+              <Select value={watchSeater || ""} onValueChange={v => setValue("seater_type", v ? v as typeof SEATER_TYPES[number] : undefined)}>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Select seater…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1-Seater">1-Seater — Solo</SelectItem>
+                  <SelectItem value="2-Seater">2-Seater — Co-host</SelectItem>
+                  <SelectItem value="3-Seater">3-Seater — Panel of 3</SelectItem>
+                  <SelectItem value="4-Seater">4-Seater — Full panel</SelectItem>
+                </SelectContent>
+              </Select>
+              {watchSeater && activeRate && (
+                <p className="text-xs text-muted-foreground">
+                  Rates: ₹{activeRate.recording_rate_per_hour.toLocaleString("en-IN")}/hr recording · ₹{activeRate.editing_rate_per_hour.toLocaleString("en-IN")}/hr editing
+                </p>
+              )}
+              {watchSeater && !activeRate && rates.length > 0 && (
+                <p className="text-xs text-muted-foreground">No rates configured for {watchSeater} — <a href="/podcast-studio/settings" className="underline">set in Studio Settings</a></p>
+              )}
+            </div>
+
+            {/* Status */}
             <div className="space-y-1.5">
               <Label>Status</Label>
               <Select value={watch("status") || "Confirmed"} onValueChange={v => v && setValue("status", v as FormData["status"])}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Confirmed">Confirmed</SelectItem>
                   <SelectItem value="Completed">Completed</SelectItem>
@@ -261,6 +314,7 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
               </Select>
             </div>
 
+            {/* Client Name */}
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="client_name">Client Name <span className="text-destructive">*</span></Label>
               <div className="relative">
@@ -270,22 +324,25 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
               {errors.client_name && <p className="text-xs text-destructive">{errors.client_name.message}</p>}
             </div>
 
+            {/* Phone */}
             <div className="space-y-1.5">
               <Label htmlFor="phone">Phone Number</Label>
               <Input id="phone" placeholder="+91 98765 43210" {...register("phone")} />
             </div>
 
+            {/* Notes */}
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="notes">Notes</Label>
               <textarea
                 id="notes"
-                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
+                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
                 placeholder="Episode name, requirements, special requests…"
                 {...register("notes")}
               />
             </div>
           </div>
 
+          {/* Availability indicator */}
           {availabilityMsg && (
             <div className={cn(
               "mt-4 flex items-center gap-2 px-3 py-2 rounded-lg text-sm",
@@ -303,24 +360,74 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
 
         {/* Section B: Revenue Components */}
         <div className="bg-card border rounded-xl p-6">
-          <SectionTitle icon={<DollarSign className="h-4 w-4" />} title="Revenue Components" sub="Recording, editing, and tax" />
+          <SectionTitle icon={<DollarSign className="h-4 w-4" />} title="Revenue Components" sub="Recording, editing, and GST" />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+            {/* Recording Hours */}
             <div className="space-y-1.5">
               <Label htmlFor="recording_hours">Recording Hours</Label>
               <Input id="recording_hours" type="number" step="0.5" min="0" placeholder="0" {...register("recording_hours", { valueAsNumber: true })} />
             </div>
+
+            {/* Recording Value */}
             <div className="space-y-1.5">
-              <Label htmlFor="recording_value">Recording Value (₹)</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="recording_value">Recording Value (₹)</Label>
+                {suggestedRecValue !== null && suggestedRecValue > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setValue("recording_value", suggestedRecValue)}
+                    className="flex items-center gap-1 text-[11px] text-violet-600 hover:text-violet-700 font-medium"
+                  >
+                    <Wand2 className="h-3 w-3" /> Use suggested
+                  </button>
+                )}
+              </div>
               <Input id="recording_value" type="number" step="1" min="0" placeholder="0" {...register("recording_value", { valueAsNumber: true })} />
+              {suggestedRecValue !== null && suggestedRecValue > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Suggested: ₹{suggestedRecValue.toLocaleString("en-IN")}
+                  {" "}({watchRecHours} hr{Number(watchRecHours) !== 1 ? "s" : ""} × ₹{activeRate!.recording_rate_per_hour.toLocaleString("en-IN")}/hr for {watchSeater})
+                </p>
+              )}
+              {watchSeater && activeRate && Number(watchRecHours) === 0 && (
+                <p className="text-xs text-muted-foreground">Enter recording hours to see suggested value</p>
+              )}
             </div>
+
+            {/* Editing Hours */}
             <div className="space-y-1.5">
               <Label htmlFor="editing_hours">Editing Hours</Label>
               <Input id="editing_hours" type="number" step="0.5" min="0" placeholder="0" {...register("editing_hours", { valueAsNumber: true })} />
             </div>
+
+            {/* Editing Value */}
             <div className="space-y-1.5">
-              <Label htmlFor="editing_value">Editing Value (₹)</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="editing_value">Editing Value (₹)</Label>
+                {suggestedEditValue !== null && suggestedEditValue > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setValue("editing_value", suggestedEditValue)}
+                    className="flex items-center gap-1 text-[11px] text-violet-600 hover:text-violet-700 font-medium"
+                  >
+                    <Wand2 className="h-3 w-3" /> Use suggested
+                  </button>
+                )}
+              </div>
               <Input id="editing_value" type="number" step="1" min="0" placeholder="0" {...register("editing_value", { valueAsNumber: true })} />
+              {suggestedEditValue !== null && suggestedEditValue > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Suggested: ₹{suggestedEditValue.toLocaleString("en-IN")}
+                  {" "}({watchEditHours} hr{Number(watchEditHours) !== 1 ? "s" : ""} × ₹{activeRate!.editing_rate_per_hour.toLocaleString("en-IN")}/hr for {watchSeater})
+                </p>
+              )}
+              {watchSeater && activeRate && Number(watchEditHours) === 0 && (
+                <p className="text-xs text-muted-foreground">Enter editing hours to see suggested value</p>
+              )}
             </div>
+
+            {/* GST */}
             <div className="space-y-1.5">
               <Label htmlFor="gst_percent">GST %</Label>
               <Input id="gst_percent" type="number" step="0.01" min="0" max="100" placeholder="18" {...register("gst_percent", { valueAsNumber: true })} />
@@ -349,41 +456,27 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
         </div>
       </form>
 
-      {/* Live summary card */}
+      {/* Live summary */}
       <div className="space-y-4">
         <div className="bg-card border rounded-xl p-5 sticky top-6">
           <h3 className="font-semibold mb-4 flex items-center gap-2">
-            <Clock className="h-4 w-4 text-violet-600" />
-            Booking Summary
+            <Clock className="h-4 w-4 text-violet-600" /> Booking Summary
           </h3>
           <div className="space-y-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Date</span>
-              <span className="font-medium">{watchDate || "—"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Start</span>
-              <span className="font-medium">{watchTime ? formatTimeDisplay(watchTime) : "—"}</span>
-            </div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Date</span><span className="font-medium">{watchDate || "—"}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Start</span><span className="font-medium">{watchTime ? formatTimeDisplay(watchTime) : "—"}</span></div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">End</span>
               <span className={cn("font-medium", endExceedsClose && "text-destructive")}>
                 {endTime ? `${formatTimeDisplay(endTime)}${endExceedsClose ? " ⚠️" : ""}` : "—"}
               </span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Duration</span>
-              <span className="font-medium">{watchDuration ? formatDuration(Number(watchDuration)) : "—"}</span>
-            </div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Duration</span><span className="font-medium">{watchDuration ? formatDuration(Number(watchDuration)) : "—"}</span></div>
+            {watchBookingType && <div className="flex justify-between"><span className="text-muted-foreground">Type</span><span className="font-medium">{watchBookingType}</span></div>}
+            {watchSeater && <div className="flex justify-between"><span className="text-muted-foreground">Seater</span><span className="font-medium">{watchSeater}</span></div>}
             <div className="border-t pt-3 space-y-2">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Base Amount</span>
-                <span className="font-medium">₹{base.toLocaleString("en-IN")}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">GST ({watchGst}%)</span>
-                <span className="font-medium">₹{gstAmt.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
-              </div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Base Amount</span><span className="font-medium">₹{base.toLocaleString("en-IN")}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">GST ({watchGst}%)</span><span className="font-medium">₹{gstAmt.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span></div>
               <div className="flex justify-between font-bold border-t pt-2">
                 <span>Total Revenue</span>
                 <span className="text-violet-700">₹{total.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
@@ -394,10 +487,17 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
 
         <div className="bg-muted/50 rounded-xl p-4 text-xs text-muted-foreground space-y-1">
           <p className="font-medium text-foreground">Studio Hours</p>
-          <p>Open: 10:00 AM</p>
-          <p>Close: 8:30 PM</p>
-          <p>Slots: 30-minute intervals</p>
-          <p>Capacity: 21 slots/day</p>
+          <p>Open: 10:00 AM · Close: 8:30 PM</p>
+          <p>Slots: 30-min intervals · 21 slots/day</p>
+          {watchSeater && activeRate && (activeRate.recording_rate_per_hour > 0 || activeRate.editing_rate_per_hour > 0) && (
+            <>
+              <div className="border-t pt-1 mt-1">
+                <p className="font-medium text-foreground">{watchSeater} Rates</p>
+                {activeRate.recording_rate_per_hour > 0 && <p>Recording: ₹{activeRate.recording_rate_per_hour.toLocaleString("en-IN")}/hr</p>}
+                {activeRate.editing_rate_per_hour > 0 && <p>Editing: ₹{activeRate.editing_rate_per_hour.toLocaleString("en-IN")}/hr</p>}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

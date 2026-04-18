@@ -30,6 +30,8 @@ export default async function EditBookingPage({ params }: { params: Params }) {
     gst_amount: Number(booking.gst_amount),
     total_revenue: Number(booking.total_revenue),
     status: booking.status as "Confirmed" | "Cancelled" | "Completed",
+    booking_type: (booking.booking_type ?? "One-time") as "One-time" | "Recurring",
+    seater_type: booking.seater_type as "1-Seater" | "2-Seater" | "3-Seater" | "4-Seater" | null | undefined,
   };
 
   return (

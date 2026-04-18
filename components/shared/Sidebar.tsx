@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   BarChart3, Users, Building2, CheckSquare, CalendarClock,
-  Settings, LayoutDashboard, Radar, Menu, Briefcase, Mic2,
+  Settings, LayoutDashboard, Radar, Menu, Briefcase, Mic2, SlidersHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -39,6 +39,7 @@ const NAV_CONFIG = [
       { href: "/podcast-studio", label: "Dashboard", icon: Mic2, roles: ["Admin"] },
       { href: "/podcast-studio/calendar", label: "Availability", icon: CalendarClock, roles: ["Admin"] },
       { href: "/podcast-studio/bookings", label: "Bookings", icon: BarChart3, roles: ["Admin"] },
+      { href: "/podcast-studio/settings", label: "Studio Settings", icon: SlidersHorizontal, roles: ["Admin"] },
     ],
   },
   {

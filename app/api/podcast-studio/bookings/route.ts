@@ -18,6 +18,8 @@ const createSchema = z.object({
   editing_value: z.number().min(0).optional().nullable(),
   gst_percent: z.number().min(0).max(100).default(18),
   status: z.enum(["Confirmed", "Cancelled", "Completed"]).default("Confirmed"),
+  booking_type: z.enum(["One-time", "Recurring"]).default("One-time"),
+  seater_type: z.enum(["1-Seater", "2-Seater", "3-Seater", "4-Seater"]).nullable().optional(),
 });
 
 export async function GET(request: Request) {
@@ -140,6 +142,8 @@ export async function POST(request: Request) {
         gst_amount: gstAmt,
         total_revenue: total,
         status: d.status,
+        booking_type: d.booking_type,
+        seater_type: d.seater_type ?? null,
       },
     });
 
