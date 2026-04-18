@@ -104,6 +104,67 @@ export function todayIST(): string {
   return new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
+// Subtract N days from a "YYYY-MM-DD" string
+export function subtractDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+// Get first and last day of the previous month
+export function getPrevMonthBounds(today: string): { start: string; end: string; label: string } {
+  const [y, m] = today.split("-").map(Number);
+  const prevMonth = m === 1 ? 12 : m - 1;
+  const prevYear = m === 1 ? y - 1 : y;
+  const lastDay = new Date(prevYear, prevMonth, 0).getDate();
+  const mm = prevMonth.toString().padStart(2, "0");
+  const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return {
+    start: `${prevYear}-${mm}-01`,
+    end: `${prevYear}-${mm}-${lastDay.toString().padStart(2, "0")}`,
+    label: `${MONTH_NAMES[prevMonth - 1]} ${prevYear}`,
+  };
+}
+
+export type DashboardRange = "current_month" | "7d" | "30d" | "last_month" | "ytd" | "custom";
+
+export function resolveDateRange(
+  range: DashboardRange,
+  today: string,
+  from?: string,
+  to?: string,
+): { start: string; end: string; label: string } {
+  const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  switch (range) {
+    case "7d":
+      return { start: subtractDays(today, 6), end: today, label: "Last 7 days" };
+    case "30d":
+      return { start: subtractDays(today, 29), end: today, label: "Last 30 days" };
+    case "last_month": {
+      const b = getPrevMonthBounds(today);
+      return { ...b };
+    }
+    case "ytd":
+      return { start: `${today.slice(0, 4)}-01-01`, end: today, label: `YTD ${today.slice(0, 4)}` };
+    case "custom": {
+      const s = from ?? today;
+      const e = to ?? today;
+      const sd = new Date(s + "T00:00:00");
+      const ed = new Date(e + "T00:00:00");
+      return {
+        start: s,
+        end: e,
+        label: `${sd.getDate()} ${MONTH_NAMES[sd.getMonth()]} – ${ed.getDate()} ${MONTH_NAMES[ed.getMonth()]} ${ed.getFullYear()}`,
+      };
+    }
+    default: {
+      const { start, end } = getMonthBounds(today.slice(0, 7));
+      const d = new Date(start + "T00:00:00");
+      return { start, end, label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}` };
+    }
+  }
+}
+
 export function formatDateDisplay(dateStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
