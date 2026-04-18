@@ -19,8 +19,8 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, Download, MoreHorizontal, Plus, ChevronLeft, ChevronRight, Loader2, Eye, Edit, Copy, Trash2 } from "lucide-react";
-import { formatTimeDisplay, formatDateDisplay } from "@/lib/podcast-studio";
+import { Search, Download, MoreHorizontal, Plus, ChevronLeft, ChevronRight, Loader2, Eye, Edit, Copy, Trash2, CalendarRange, ChevronDown } from "lucide-react";
+import { formatTimeDisplay, formatDateDisplay, resolveDateRange, todayIST, type DashboardRange } from "@/lib/podcast-studio";
 
 type Booking = {
   id: string;
@@ -42,18 +42,14 @@ type Booking = {
   status: string;
 };
 
-const MONTH_OPTIONS = (() => {
-  const opts: { label: string; value: string }[] = [];
-  const now = new Date();
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    opts.push({
-      label: d.toLocaleString("en-IN", { month: "long", year: "numeric" }),
-      value: d.toISOString().slice(0, 7),
-    });
-  }
-  return opts;
-})();
+const RANGE_PRESETS: { label: string; value: DashboardRange }[] = [
+  { label: "This Month", value: "current_month" },
+  { label: "Last 7 Days", value: "7d" },
+  { label: "Last 30 Days", value: "30d" },
+  { label: "Last Month", value: "last_month" },
+  { label: "YTD", value: "ytd" },
+  { label: "Custom", value: "custom" },
+];
 
 function StatusBadge({ status }: { status: string }) {
   return (
@@ -76,7 +72,10 @@ export function BookingsList() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [monthFilter, setMonthFilter] = useState("all");
+  const [rangeFilter, setRangeFilter] = useState<DashboardRange>("current_month");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [showCustom, setShowCustom] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [viewBooking, setViewBooking] = useState<Booking | null>(null);
@@ -85,12 +84,15 @@ export function BookingsList() {
   const fetchBookings = useCallback(async () => {
     setLoading(true);
     try {
+      const today = todayIST();
+      const { start, end } = resolveDateRange(rangeFilter, today, customFrom || undefined, customTo || undefined);
       const params = new URLSearchParams({
         page: String(page),
         limit: String(limit),
         ...(search && { search }),
         ...(statusFilter !== "all" && { status: statusFilter }),
-        ...(monthFilter !== "all" && { month: monthFilter }),
+        start_date: start,
+        end_date: end,
       });
       const res = await fetch(`/api/podcast-studio/bookings?${params}`);
       if (res.ok) {
@@ -101,10 +103,10 @@ export function BookingsList() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, statusFilter, monthFilter]);
+  }, [page, search, statusFilter, rangeFilter, customFrom, customTo]);
 
   useEffect(() => { fetchBookings(); }, [fetchBookings]);
-  useEffect(() => { setPage(1); }, [search, statusFilter, monthFilter]);
+  useEffect(() => { setPage(1); }, [search, statusFilter, rangeFilter, customFrom, customTo]);
 
   async function handleDelete() {
     if (!deleteId) return;
@@ -173,7 +175,66 @@ export function BookingsList() {
         </div>
       )}
 
-      {/* Controls */}
+      {/* Date range filter */}
+      <div className="bg-card border rounded-xl px-4 py-3 space-y-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <CalendarRange className="h-4 w-4" />
+            <span className="font-medium text-foreground text-xs">
+              {resolveDateRange(rangeFilter, todayIST(), customFrom || undefined, customTo || undefined).label}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5 ml-auto">
+            {RANGE_PRESETS.map(p => (
+              <button
+                key={p.value}
+                onClick={() => {
+                  if (p.value === "custom") { setShowCustom(s => !s); return; }
+                  setShowCustom(false);
+                  setRangeFilter(p.value);
+                }}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-xs font-medium transition-all border",
+                  rangeFilter === p.value && p.value !== "custom"
+                    ? "bg-violet-600 text-white border-violet-600"
+                    : p.value === "custom" && showCustom
+                    ? "bg-violet-600 text-white border-violet-600"
+                    : "bg-background text-muted-foreground border-border hover:border-violet-300 hover:text-foreground"
+                )}
+              >
+                {p.label}
+                {p.value === "custom" && <ChevronDown className={cn("inline h-3 w-3 ml-1 transition-transform", showCustom && "rotate-180")} />}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {showCustom && (
+          <div className="flex flex-wrap items-center gap-2 animate-in fade-in-0 slide-in-from-top-1 duration-150">
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-muted-foreground whitespace-nowrap">From</label>
+              <Input type="date" className="h-7 text-xs w-36" value={customFrom} onChange={e => setCustomFrom(e.target.value)} />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-muted-foreground whitespace-nowrap">To</label>
+              <Input type="date" className="h-7 text-xs w-36" value={customTo} onChange={e => setCustomTo(e.target.value)} min={customFrom} />
+            </div>
+            <Button
+              size="sm"
+              className="h-7 px-3 text-xs bg-violet-600 hover:bg-violet-700 text-white"
+              onClick={() => { if (customFrom && customTo && customFrom <= customTo) { setRangeFilter("custom"); setShowCustom(false); } }}
+              disabled={!customFrom || !customTo || customFrom > customTo}
+            >
+              Apply
+            </Button>
+            {customFrom && customTo && customFrom > customTo && (
+              <p className="text-xs text-destructive">End date must be after start date</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Search + status + actions */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -193,17 +254,6 @@ export function BookingsList() {
             <SelectItem value="Confirmed">Confirmed</SelectItem>
             <SelectItem value="Completed">Completed</SelectItem>
             <SelectItem value="Cancelled">Cancelled</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={monthFilter} onValueChange={v => setMonthFilter(v ?? "all")}>
-          <SelectTrigger className="w-full sm:w-44">
-            <SelectValue placeholder="Month" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Months</SelectItem>
-            {MONTH_OPTIONS.map(m => (
-              <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-            ))}
           </SelectContent>
         </Select>
         <Button variant="outline" size="icon" onClick={exportCSV} title="Export CSV">
