@@ -17,18 +17,18 @@ const API_KEY_GROUPS: { group: string; desc: string; fields: ApiKeyField[] }[] =
     group: 'AI & NLP',
     desc: 'Required for intent scoring and lead analysis',
     fields: [
-      { key: 'api_key_claude', label: 'Anthropic Claude API Key', category: 'api_keys', placeholder: 'sk-ant-...', required: true },
-      { key: 'api_key_openai', label: 'OpenAI API Key', category: 'api_keys', placeholder: 'sk-...', required: true },
+      { key: 'api_key_claude', label: 'Anthropic Claude API Key', category: 'api_keys', placeholder: 'sk-ant-...', required: false },
+      { key: 'api_key_openai', label: 'OpenAI API Key', category: 'api_keys', placeholder: 'sk-...', required: false },
     ],
   },
   {
     group: 'Always-Active Sources',
     desc: 'Core scrapers — work without SerpAPI',
     fields: [
-      { key: 'api_key_youtube', label: 'YouTube Data API v3', category: 'api_keys', placeholder: 'AIzaSy...', required: true, note: 'console.cloud.google.com → Enable YouTube Data API v3' },
+      { key: 'api_key_youtube', label: 'YouTube Data API v3', category: 'api_keys', placeholder: 'AIzaSy...', required: false, note: 'console.cloud.google.com → Enable YouTube Data API v3' },
       { key: 'api_key_google_places', label: 'Google Places API', category: 'api_keys', placeholder: 'AIzaSy...', required: false, note: 'Same Google Cloud project — Enable Places API. $200 free credit/month' },
-      { key: 'api_key_reddit_client_id', label: 'Reddit Client ID', category: 'api_keys', placeholder: 'Your Reddit app client ID', required: true, note: 'reddit.com/prefs/apps → Create script app' },
-      { key: 'api_key_reddit_client_secret', label: 'Reddit Client Secret', category: 'api_keys', placeholder: 'Your Reddit app secret', required: true },
+      { key: 'api_key_reddit_client_id', label: 'Reddit Client ID', category: 'api_keys', placeholder: 'Your Reddit app client ID', required: false, note: 'reddit.com/prefs/apps → Create script app' },
+      { key: 'api_key_reddit_client_secret', label: 'Reddit Client Secret', category: 'api_keys', placeholder: 'Your Reddit app secret', required: false },
     ],
   },
   {
