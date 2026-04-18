@@ -2,7 +2,8 @@ export type Permission =
   | "lead:create" | "lead:read" | "lead:update" | "lead:delete"
   | "opportunity:create" | "opportunity:update" | "opportunity:read" | "opportunity:delete"
   | "task:create" | "task:read" | "task:update" | "task:delete"
-  | "user:manage" | "report:view" | "financial:view";
+  | "user:manage" | "report:view" | "financial:view"
+  | "podcast_studio:manage";
 
 const PERMS: Record<string, Permission[]> = {
   Admin: [
@@ -10,6 +11,7 @@ const PERMS: Record<string, Permission[]> = {
     "opportunity:create", "opportunity:update", "opportunity:read", "opportunity:delete",
     "task:create", "task:read", "task:update", "task:delete",
     "user:manage", "report:view", "financial:view",
+    "podcast_studio:manage",
   ],
   Sales: [
     "lead:create", "lead:read", "lead:update",
