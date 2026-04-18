@@ -12,7 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { Loader2, AlertCircle, CheckCircle2, Clock, DollarSign, Calendar, User, Wand2 } from "lucide-react";
+import { Loader2, AlertCircle, CheckCircle2, Clock, DollarSign, Calendar, User, Wand2, RefreshCw } from "lucide-react";
 import {
   STUDIO_SLOTS, DURATION_OPTIONS, formatTimeDisplay, formatDuration,
   addMinutesToTime, timeToMinutes, STUDIO_CLOSE,
@@ -105,6 +105,29 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
   const [submitError, setSubmitError] = useState("");
   const [availabilityMsg, setAvailabilityMsg] = useState<{ type: "ok" | "conflict" | "loading"; msg: string } | null>(null);
 
+  // Recurring state
+  const [recurringDays, setRecurringDays] = useState<number[]>([]);
+  const [recurringUntil, setRecurringUntil] = useState("");
+  const [recurringFreq, setRecurringFreq] = useState<"weekly" | "biweekly">("weekly");
+  const [recurringProgress, setRecurringProgress] = useState<{ done: number; total: number; created: number; conflicts: number } | null>(null);
+
+  function generateRecurringDates(startDate: string, selectedDays: number[], until: string, freq: "weekly" | "biweekly"): string[] {
+    if (!startDate || selectedDays.length === 0 || !until) return [];
+    const dates = new Set<string>();
+    const step = freq === "biweekly" ? 14 : 7;
+    const end = new Date(until + "T00:00:00");
+    const start = new Date(startDate + "T00:00:00");
+    for (const targetDay of selectedDays) {
+      const d = new Date(start);
+      while (d.getDay() !== targetDay) d.setDate(d.getDate() + 1);
+      while (d <= end) {
+        dates.add(d.toISOString().split("T")[0]);
+        d.setDate(d.getDate() + step);
+      }
+    }
+    return [...dates].sort();
+  }
+
   // Load rates once
   useEffect(() => {
     fetch("/api/podcast-studio/rates")
@@ -138,6 +161,20 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
   const suggestedEditValue = activeRate && Number(watchEditHours) > 0
     ? activeRate.editing_rate_per_hour * Number(watchEditHours)
     : null;
+
+  // Auto-select day of week + default until when switching to Recurring
+  useEffect(() => {
+    if (watchBookingType === "Recurring" && watchDate) {
+      const day = new Date(watchDate + "T00:00:00").getDay();
+      setRecurringDays(prev => prev.length === 0 ? [day] : prev);
+      setRecurringUntil(prev => {
+        if (prev) return prev;
+        const d = new Date(watchDate + "T00:00:00");
+        d.setDate(d.getDate() + 28);
+        return d.toISOString().split("T")[0];
+      });
+    }
+  }, [watchDate, watchBookingType]);
 
   // Availability check
   useEffect(() => {
@@ -175,6 +212,32 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
 
   async function onSubmit(data: FormData) {
     setSubmitError("");
+
+    // Recurring: create one booking per generated date
+    if (data.booking_type === "Recurring" && !isEdit) {
+      const dates = generateRecurringDates(data.booking_date, recurringDays, recurringUntil, recurringFreq);
+      if (dates.length === 0) {
+        setSubmitError("No dates generated. Select at least one day and an end date.");
+        return;
+      }
+      setRecurringProgress({ done: 0, total: dates.length, created: 0, conflicts: 0 });
+      let created = 0, conflicts = 0;
+      for (const date of dates) {
+        try {
+          const res = await fetch("/api/podcast-studio/bookings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...data, booking_date: date }),
+          });
+          if (res.ok) created++; else conflicts++;
+        } catch { conflicts++; }
+        setRecurringProgress(p => p ? { ...p, done: p.done + 1, created, conflicts } : null);
+      }
+      router.push(`/podcast-studio/bookings?created=${created}&skipped=${conflicts}`);
+      router.refresh();
+      return;
+    }
+
     try {
       const url = isEdit ? `/api/podcast-studio/bookings/${editBooking!.id}` : "/api/podcast-studio/bookings";
       const res = await fetch(url, {
@@ -313,6 +376,93 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Recurring Config */}
+            {watchBookingType === "Recurring" && !isEdit && (() => {
+              const DAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
+              const recurringDates = generateRecurringDates(watchDate, recurringDays, recurringUntil, recurringFreq);
+              const PREVIEW_MAX = 6;
+              return (
+                <div className="sm:col-span-2 rounded-lg border border-violet-200 bg-violet-50/50 p-4 space-y-4">
+                  <div className="flex items-center gap-2 text-sm font-medium text-violet-700">
+                    <RefreshCw className="h-4 w-4" /> Recurring Schedule
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {/* Frequency */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Frequency</Label>
+                      <Select value={recurringFreq} onValueChange={v => setRecurringFreq(v as "weekly" | "biweekly")}>
+                        <SelectTrigger className="h-8 text-sm bg-white"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="weekly">Every week</SelectItem>
+                          <SelectItem value="biweekly">Every 2 weeks</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {/* Until */}
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label className="text-xs">Repeat until</Label>
+                      <Input
+                        type="date"
+                        className="h-8 text-sm bg-white"
+                        value={recurringUntil}
+                        min={watchDate || undefined}
+                        onChange={e => setRecurringUntil(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  {/* Days of week */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Days of week</Label>
+                    <div className="flex gap-1.5">
+                      {DAY_LABELS.map((label, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setRecurringDays(prev =>
+                            prev.includes(idx) ? prev.filter(d => d !== idx) : [...prev, idx]
+                          )}
+                          className={cn(
+                            "w-8 h-8 rounded-full text-xs font-semibold transition-colors",
+                            recurringDays.includes(idx)
+                              ? "bg-violet-600 text-white"
+                              : "bg-white border text-muted-foreground hover:border-violet-400"
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Preview */}
+                  {recurringDates.length > 0 ? (
+                    <div className="text-xs text-violet-800 space-y-1">
+                      <span className="font-semibold">{recurringDates.length} booking{recurringDates.length !== 1 ? "s" : ""} will be created</span>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {recurringDates.slice(0, PREVIEW_MAX).map(d => (
+                          <span key={d} className="bg-white border border-violet-200 rounded px-1.5 py-0.5 text-[11px]">
+                            {new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                          </span>
+                        ))}
+                        {recurringDates.length > PREVIEW_MAX && (
+                          <span className="text-muted-foreground text-[11px] self-center">+{recurringDates.length - PREVIEW_MAX} more</span>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Select at least one day and an end date to preview slots.</p>
+                  )}
+                  {/* Progress during submit */}
+                  {recurringProgress && (
+                    <div className="flex items-center gap-2 text-xs text-violet-700 bg-white border border-violet-200 rounded-md px-3 py-2">
+                      <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                      Creating bookings… {recurringProgress.done}/{recurringProgress.total}
+                      {recurringProgress.conflicts > 0 && ` · ${recurringProgress.conflicts} conflict${recurringProgress.conflicts !== 1 ? "s" : ""} skipped`}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Client Name */}
             <div className="space-y-1.5 sm:col-span-2">
@@ -462,6 +612,15 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
           <h3 className="font-semibold mb-4 flex items-center gap-2">
             <Clock className="h-4 w-4 text-violet-600" /> Booking Summary
           </h3>
+          {watchBookingType === "Recurring" && !isEdit && (() => {
+            const count = generateRecurringDates(watchDate, recurringDays, recurringUntil, recurringFreq).length;
+            return count > 0 ? (
+              <div className="mb-3 flex items-center gap-2 rounded-lg bg-violet-100 px-3 py-2 text-sm text-violet-800">
+                <RefreshCw className="h-3.5 w-3.5 shrink-0" />
+                <span><span className="font-bold">{count}</span> recurring slots</span>
+              </div>
+            ) : null;
+          })()}
           <div className="space-y-3 text-sm">
             <div className="flex justify-between"><span className="text-muted-foreground">Date</span><span className="font-medium">{watchDate || "—"}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Start</span><span className="font-medium">{watchTime ? formatTimeDisplay(watchTime) : "—"}</span></div>
