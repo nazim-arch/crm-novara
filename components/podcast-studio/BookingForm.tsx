@@ -71,15 +71,16 @@ interface BookingFormProps {
 }
 
 type RecurringFreq = "weekly" | "biweekly" | "monthly" | "custom";
+type CustomSlot = { date: string; start_time: string; duration_minutes: number };
 
 function generateRecurringDates(
   startDate: string,
   selectedDays: number[],
   until: string,
   freq: RecurringFreq,
-  custom: string[] = [],
+  customSlots: CustomSlot[] = [],
 ): string[] {
-  if (freq === "custom") return [...custom].sort();
+  if (freq === "custom") return customSlots.map(s => s.date).sort();
   if (!startDate || !until) return [];
   if (freq === "monthly") {
     const dates: string[] = [];
@@ -147,9 +148,10 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
   const [recurringUntil, setRecurringUntil] = useState("");
   const [recurringFreq, setRecurringFreq] = useState<RecurringFreq>("weekly");
   const [recurringProgress, setRecurringProgress] = useState<{ created: number; conflicts: number } | null>(null);
-  const [customDates, setCustomDates] = useState<string[]>([]);
-  const [customDateInput, setCustomDateInput] = useState("");
-  const [dateConflicts, setDateConflicts] = useState<Set<string>>(new Set());
+  const [customSlots, setCustomSlots] = useState<CustomSlot[]>([]);
+  const [customSlotInput, setCustomSlotInput] = useState<{ date: string; start_time: string; duration_minutes: number }>({ date: "", start_time: "", duration_minutes: 60 });
+  // conflictKeys = "date|start_time" for each slot that has a conflict
+  const [conflictKeys, setConflictKeys] = useState<Set<string>>(new Set());
 
   // Load rates once
   useEffect(() => {
@@ -178,15 +180,20 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
 
   // Memoised recurring dates list
   const recurringDates = useMemo(
-    () => generateRecurringDates(watchDate, recurringDays, recurringUntil, recurringFreq, customDates),
+    () => generateRecurringDates(watchDate, recurringDays, recurringUntil, recurringFreq, customSlots),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [watchDate, recurringDays.join(","), recurringUntil, recurringFreq, customDates.join(",")],
+    [watchDate, recurringDays.join(","), recurringUntil, recurringFreq, customSlots.map(s => s.date + s.start_time).join(",")],
   );
 
-  // Pre-submit conflict check for recurring slots
+  // Pre-submit conflict check for recurring slots (per-slot times for custom mode)
   useEffect(() => {
-    if (watchBookingType !== "Recurring" || isEdit || recurringDates.length === 0 || !watchTime || !endTime || endExceedsClose) {
-      setDateConflicts(new Set());
+    if (watchBookingType !== "Recurring" || isEdit || recurringDates.length === 0) {
+      setConflictKeys(new Set());
+      return;
+    }
+    // For non-custom: require a valid shared time
+    if (recurringFreq !== "custom" && (!watchTime || !endTime || endExceedsClose)) {
+      setConflictKeys(new Set());
       return;
     }
     const controller = new AbortController();
@@ -197,25 +204,41 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
         const res = await fetch(`/api/podcast-studio/slots?start_date=${minDate}&end_date=${maxDate}`, { signal: controller.signal });
         if (!res.ok) return;
         const json = await res.json();
-        const newStart = timeToMinutes(watchTime);
-        const newEnd = timeToMinutes(endTime);
-        const conflicts = new Set<string>();
-        for (const date of recurringDates) {
-          const day = json.data?.[date];
-          if (!day) continue;
-          type B = { start_time: string; end_time: string; status: string };
-          const hasConflict = (day.bookings as B[]).some(b =>
-            b.status !== "Cancelled" &&
-            newStart < timeToMinutes(b.end_time) && newEnd > timeToMinutes(b.start_time)
-          );
-          if (hasConflict) conflicts.add(date);
+        type B = { start_time: string; end_time: string; status: string };
+        const keys = new Set<string>();
+
+        if (recurringFreq === "custom") {
+          for (const slot of customSlots) {
+            const day = json.data?.[slot.date];
+            if (!day) continue;
+            const slotEnd = addMinutesToTime(slot.start_time, slot.duration_minutes);
+            const sStart = timeToMinutes(slot.start_time);
+            const sEnd = timeToMinutes(slotEnd);
+            const hasConflict = (day.bookings as B[]).some(b =>
+              b.status !== "Cancelled" &&
+              sStart < timeToMinutes(b.end_time) && sEnd > timeToMinutes(b.start_time)
+            );
+            if (hasConflict) keys.add(`${slot.date}|${slot.start_time}`);
+          }
+        } else {
+          const newStart = timeToMinutes(watchTime!);
+          const newEnd = timeToMinutes(endTime!);
+          for (const date of recurringDates) {
+            const day = json.data?.[date];
+            if (!day) continue;
+            const hasConflict = (day.bookings as B[]).some(b =>
+              b.status !== "Cancelled" &&
+              newStart < timeToMinutes(b.end_time) && newEnd > timeToMinutes(b.start_time)
+            );
+            if (hasConflict) keys.add(`${date}|${watchTime}`);
+          }
         }
-        setDateConflicts(conflicts);
+        setConflictKeys(keys);
       } catch { /* aborted */ }
     }, 600);
     return () => { clearTimeout(timer); controller.abort(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recurringDates.join(","), watchTime, endTime, endExceedsClose, watchBookingType, isEdit]);
+  }, [recurringDates.join(","), customSlots.map(s => s.date + s.start_time + s.duration_minutes).join(","), watchTime, endTime, endExceedsClose, watchBookingType, recurringFreq, isEdit]);
 
   // Active rate for selected seater
   const activeRate = rates.find(r => r.seater_type === watchSeater);
@@ -286,10 +309,14 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
       setRecurringProgress(null);
       try {
         const recurring_group_id = crypto.randomUUID();
+        // Build per-slot array: custom mode uses individual times, others use shared form time
+        const slots: CustomSlot[] = recurringFreq === "custom"
+          ? customSlots
+          : recurringDates.map(date => ({ date, start_time: data.start_time, duration_minutes: data.duration_minutes }));
         const res = await fetch("/api/podcast-studio/bookings/bulk", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...data, dates: recurringDates, recurring_group_id }),
+          body: JSON.stringify({ ...data, slots, recurring_group_id }),
         });
         const json = await res.json();
         if (!res.ok) { setSubmitError(json.error ?? "Failed to create bookings"); return; }
@@ -507,65 +534,116 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
                     </div>
                   )}
 
-                  {/* Custom date picker */}
+                  {/* Custom slot picker — per-slot date + time + duration */}
                   {recurringFreq === "custom" && (
                     <div className="space-y-2">
-                      <Label className="text-xs">Add specific dates</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          type="date"
-                          className="h-8 text-sm bg-white"
-                          value={customDateInput}
-                          min={watchDate || undefined}
-                          onChange={e => setCustomDateInput(e.target.value)}
-                        />
+                      <Label className="text-xs">Add slots (each with its own date and time)</Label>
+                      <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-end">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-muted-foreground">Date</span>
+                          <Input
+                            type="date"
+                            className="h-8 text-xs bg-white"
+                            value={customSlotInput.date}
+                            min={watchDate || undefined}
+                            onChange={e => setCustomSlotInput(p => ({ ...p, date: e.target.value }))}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-muted-foreground">Start time</span>
+                          <Select
+                            value={customSlotInput.start_time}
+                            onValueChange={v => v && setCustomSlotInput(p => ({ ...p, start_time: v }))}
+                          >
+                            <SelectTrigger className="h-8 text-xs bg-white"><SelectValue placeholder="Time…" /></SelectTrigger>
+                            <SelectContent className="max-h-52">
+                              {STUDIO_SLOTS.map(s => <SelectItem key={s} value={s} className="text-xs">{formatTimeDisplay(s)}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-muted-foreground">Duration</span>
+                          <Select
+                            value={String(customSlotInput.duration_minutes)}
+                            onValueChange={v => setCustomSlotInput(p => ({ ...p, duration_minutes: Number(v) }))}
+                          >
+                            <SelectTrigger className="h-8 text-xs bg-white"><SelectValue /></SelectTrigger>
+                            <SelectContent className="max-h-52">
+                              {DURATION_OPTIONS.map(d => {
+                                if (customSlotInput.start_time) {
+                                  const et = addMinutesToTime(customSlotInput.start_time, d);
+                                  if (timeToMinutes(et) > timeToMinutes(STUDIO_CLOSE)) return null;
+                                }
+                                return (
+                                  <SelectItem key={d} value={String(d)} className="text-xs">
+                                    {formatDuration(d)}{customSlotInput.start_time ? ` → ${formatTimeDisplay(addMinutesToTime(customSlotInput.start_time, d))}` : ""}
+                                  </SelectItem>
+                                );
+                              })}
+                            </SelectContent>
+                          </Select>
+                        </div>
                         <button
                           type="button"
-                          disabled={!customDateInput || customDates.includes(customDateInput)}
+                          disabled={
+                            !customSlotInput.date || !customSlotInput.start_time ||
+                            customSlots.some(s => s.date === customSlotInput.date && s.start_time === customSlotInput.start_time)
+                          }
                           onClick={() => {
-                            if (customDateInput && !customDates.includes(customDateInput)) {
-                              setCustomDates(prev => [...prev, customDateInput]);
-                              setCustomDateInput("");
+                            if (customSlotInput.date && customSlotInput.start_time) {
+                              setCustomSlots(prev => [...prev, { ...customSlotInput }]);
+                              setCustomSlotInput(p => ({ ...p, date: "" }));
                             }
                           }}
-                          className="px-3 h-8 rounded-md border text-xs font-medium bg-white hover:bg-violet-50 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                          className="h-8 px-3 rounded-md border text-xs font-medium bg-white hover:bg-violet-50 disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           Add
                         </button>
                       </div>
-                      {customDates.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {[...customDates].sort().map(d => (
-                            <span key={d} className="flex items-center gap-1 bg-white border border-violet-200 rounded px-2 py-0.5 text-[11px]">
-                              {new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-                              <button
-                                type="button"
-                                onClick={() => setCustomDates(prev => prev.filter(x => x !== d))}
-                                className="text-muted-foreground hover:text-destructive leading-none"
-                              >×</button>
-                            </span>
-                          ))}
+                      {customSlots.length > 0 && (
+                        <div className="space-y-1 mt-1">
+                          {[...customSlots].sort((a, b) => a.date.localeCompare(b.date) || a.start_time.localeCompare(b.start_time)).map(s => {
+                            const key = `${s.date}|${s.start_time}`;
+                            const isConflict = conflictKeys.has(key);
+                            const endT = addMinutesToTime(s.start_time, s.duration_minutes);
+                            return (
+                              <div key={key} className={cn(
+                                "flex items-center justify-between rounded px-2.5 py-1.5 text-[11px] border",
+                                isConflict ? "bg-red-50 border-red-200 text-red-700" : "bg-white border-violet-100 text-violet-800"
+                              )}>
+                                <span className="font-medium">
+                                  {new Date(s.date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
+                                  {" · "}{formatTimeDisplay(s.start_time)}–{formatTimeDisplay(endT)}
+                                  {" · "}{formatDuration(s.duration_minutes)}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  {isConflict && <span className="text-red-600 font-semibold">Conflict</span>}
+                                  <button type="button" onClick={() => setCustomSlots(prev => prev.filter(x => !(x.date === s.date && x.start_time === s.start_time)))} className="text-muted-foreground hover:text-destructive">×</button>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
                   )}
 
-                  {/* Preview */}
-                  {recurringDates.length > 0 ? (
+                  {/* Preview (non-custom modes only — custom shows full list above) */}
+                  {recurringFreq !== "custom" && recurringDates.length > 0 ? (
                     <div className="text-xs space-y-1.5">
                       <div className="flex items-center gap-3">
                         <span className="font-semibold text-violet-800">
-                          {recurringDates.length - dateConflicts.size} of {recurringDates.length} slot{recurringDates.length !== 1 ? "s" : ""} available
+                          {recurringDates.length - conflictKeys.size} of {recurringDates.length} slot{recurringDates.length !== 1 ? "s" : ""} available
                         </span>
-                        {dateConflicts.size > 0 && (
-                          <span className="text-red-600 font-medium">{dateConflicts.size} conflict{dateConflicts.size !== 1 ? "s" : ""} — will be skipped</span>
+                        {conflictKeys.size > 0 && (
+                          <span className="text-red-600 font-medium">{conflictKeys.size} conflict{conflictKeys.size !== 1 ? "s" : ""} — will be skipped</span>
                         )}
                       </div>
                       <div className="flex flex-wrap gap-1">
                         {recurringDates.slice(0, PREVIEW_MAX).map(d => (
                           <span key={d} className={cn(
                             "rounded px-1.5 py-0.5 text-[11px] border font-medium",
-                            dateConflicts.has(d)
+                            conflictKeys.has(`${d}|${watchTime}`)
                               ? "bg-red-50 border-red-300 text-red-700 line-through"
                               : watchTime
                               ? "bg-emerald-50 border-emerald-300 text-emerald-700"
@@ -579,15 +657,13 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
                         )}
                       </div>
                     </div>
-                  ) : (
+                  ) : recurringFreq !== "custom" ? (
                     <p className="text-xs text-muted-foreground">
-                      {recurringFreq === "custom"
-                        ? "Add at least one date above."
-                        : recurringFreq === "monthly"
+                      {recurringFreq === "monthly"
                         ? "Set an end date to preview slots."
                         : "Select at least one day and an end date to preview slots."}
                     </p>
-                  )}
+                  ) : null}
 
                   {/* Progress during submit */}
                   {recurringProgress && (

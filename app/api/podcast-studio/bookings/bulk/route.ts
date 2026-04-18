@@ -5,10 +5,14 @@ import { NextResponse } from "next/server";
 import { timeToMinutes, addMinutesToTime, STUDIO_SLOTS, STUDIO_CLOSE } from "@/lib/podcast-studio";
 import { z } from "zod";
 
-const bulkSchema = z.object({
-  dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).min(1).max(366),
+const slotSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   start_time: z.string().regex(/^\d{2}:\d{2}$/),
   duration_minutes: z.number().int().min(30).max(630).refine(v => v % 30 === 0),
+});
+
+const bulkSchema = z.object({
+  slots: z.array(slotSchema).min(1).max(366),
   client_name: z.string().min(1).max(200),
   phone: z.string().max(20).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
@@ -37,27 +41,23 @@ export async function POST(request: Request) {
 
     const d = parsed.data;
 
-    if (!STUDIO_SLOTS.includes(d.start_time))
-      return NextResponse.json({ error: "Start time must be a valid 30-minute studio slot" }, { status: 400 });
+    // Validate each slot's time/duration upfront
+    for (const slot of d.slots) {
+      if (!STUDIO_SLOTS.includes(slot.start_time))
+        return NextResponse.json({ error: `Invalid studio slot: ${slot.start_time} on ${slot.date}` }, { status: 400 });
+      const et = addMinutesToTime(slot.start_time, slot.duration_minutes);
+      if (timeToMinutes(et) > timeToMinutes(STUDIO_CLOSE))
+        return NextResponse.json({ error: `Slot on ${slot.date} would end at ${et}, exceeding 8:30 PM close` }, { status: 400 });
+    }
 
-    const endTime = addMinutesToTime(d.start_time, d.duration_minutes);
-    if (timeToMinutes(endTime) > timeToMinutes(STUDIO_CLOSE))
-      return NextResponse.json({ error: `Booking would end at ${endTime}, exceeding studio close time of 8:30 PM` }, { status: 400 });
-
-    const newStart = timeToMinutes(d.start_time);
-    const newEnd = timeToMinutes(endTime);
-
-    // Pre-fetch all existing bookings for the date range in one query
-    const sortedDates = [...d.dates].sort();
+    // Pre-fetch all existing bookings for all requested dates in one query
+    const allDates = [...new Set(d.slots.map(s => s.date))];
     const existing = await prisma.podcastStudioBooking.findMany({
-      where: {
-        booking_date: { in: d.dates },
-        status: { not: "Cancelled" },
-      },
+      where: { booking_date: { in: allDates }, status: { not: "Cancelled" } },
       select: { booking_date: true, start_time: true, end_time: true, client_name: true },
     });
 
-    // Group existing bookings by date for fast lookup
+    // Group by date for fast lookup
     const byDate = new Map<string, typeof existing>();
     for (const b of existing) {
       const list = byDate.get(b.booking_date) ?? [];
@@ -71,20 +71,25 @@ export async function POST(request: Request) {
     const gstAmt = (base * Number(d.gst_percent)) / 100;
     const total = base + gstAmt;
 
-    const created: { date: string; id: string }[] = [];
-    const conflicts: { date: string; reason: string }[] = [];
+    const created: { date: string; start_time: string; id: string }[] = [];
+    const conflicts: { date: string; start_time: string; reason: string }[] = [];
 
-    for (const date of sortedDates) {
-      const dayBookings = byDate.get(date) ?? [];
+    for (const slot of d.slots) {
+      const endTime = addMinutesToTime(slot.start_time, slot.duration_minutes);
+      const slotStart = timeToMinutes(slot.start_time);
+      const slotEnd = timeToMinutes(endTime);
+      const dayBookings = byDate.get(slot.date) ?? [];
+
       const conflict = dayBookings.find(b => {
         const bStart = timeToMinutes(b.start_time);
         const bEnd = timeToMinutes(b.end_time);
-        return newStart < bEnd && newEnd > bStart;
+        return slotStart < bEnd && slotEnd > bStart;
       });
 
       if (conflict) {
         conflicts.push({
-          date,
+          date: slot.date,
+          start_time: slot.start_time,
           reason: `Conflicts with "${conflict.client_name}" (${conflict.start_time}–${conflict.end_time})`,
         });
         continue;
@@ -92,10 +97,10 @@ export async function POST(request: Request) {
 
       const booking = await prisma.podcastStudioBooking.create({
         data: {
-          booking_date: date,
-          start_time: d.start_time,
+          booking_date: slot.date,
+          start_time: slot.start_time,
           end_time: endTime,
-          duration_minutes: d.duration_minutes,
+          duration_minutes: slot.duration_minutes,
           client_name: d.client_name,
           phone: d.phone ?? null,
           notes: d.notes ?? null,
@@ -114,11 +119,10 @@ export async function POST(request: Request) {
         },
       });
 
-      created.push({ date, id: booking.id });
-      // Add to local map so same-date duplicates in the input list are also caught
-      const list = byDate.get(date) ?? [];
-      list.push({ booking_date: date, start_time: d.start_time, end_time: endTime, client_name: d.client_name });
-      byDate.set(date, list);
+      created.push({ date: slot.date, start_time: slot.start_time, id: booking.id });
+      // Track newly created so same-date duplicates in input are caught
+      dayBookings.push({ booking_date: slot.date, start_time: slot.start_time, end_time: endTime, client_name: d.client_name });
+      byDate.set(slot.date, dayBookings);
     }
 
     return NextResponse.json({
