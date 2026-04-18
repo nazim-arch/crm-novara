@@ -34,7 +34,17 @@ export async function GET(_req: Request, { params }: { params: Params }) {
     const { id } = await params;
     const booking = await prisma.podcastStudioBooking.findUnique({ where: { id } });
     if (!booking) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    return NextResponse.json({ data: booking });
+    return NextResponse.json({ data: {
+      ...booking,
+      recording_hours: booking.recording_hours !== null ? Number(booking.recording_hours) : null,
+      recording_value: booking.recording_value !== null ? Number(booking.recording_value) : null,
+      editing_hours: booking.editing_hours !== null ? Number(booking.editing_hours) : null,
+      editing_value: booking.editing_value !== null ? Number(booking.editing_value) : null,
+      gst_percent: Number(booking.gst_percent),
+      base_amount: Number(booking.base_amount),
+      gst_amount: Number(booking.gst_amount),
+      total_revenue: Number(booking.total_revenue),
+    } });
   } catch (error) {
     console.error("GET /api/podcast-studio/bookings/[id]:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

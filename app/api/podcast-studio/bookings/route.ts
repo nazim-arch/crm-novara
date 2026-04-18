@@ -69,7 +69,18 @@ export async function GET(request: Request) {
       }),
     ]);
 
-    return NextResponse.json({ data: bookings, meta: { total, page, pages: Math.ceil(total / limit) } });
+    const serialized = bookings.map(b => ({
+      ...b,
+      recording_hours: b.recording_hours !== null ? Number(b.recording_hours) : null,
+      recording_value: b.recording_value !== null ? Number(b.recording_value) : null,
+      editing_hours: b.editing_hours !== null ? Number(b.editing_hours) : null,
+      editing_value: b.editing_value !== null ? Number(b.editing_value) : null,
+      gst_percent: Number(b.gst_percent),
+      base_amount: Number(b.base_amount),
+      gst_amount: Number(b.gst_amount),
+      total_revenue: Number(b.total_revenue),
+    }));
+    return NextResponse.json({ data: serialized, meta: { total, page, pages: Math.ceil(total / limit) } });
   } catch (error) {
     console.error("GET /api/podcast-studio/bookings:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

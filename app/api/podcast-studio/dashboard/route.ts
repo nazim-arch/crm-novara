@@ -94,7 +94,7 @@ export async function GET(request: Request) {
       const dow = DOW[new Date(b.booking_date + "T00:00:00").getDay()];
       weeklyMap[dow].sessions += 1;
       weeklyMap[dow].hours += b.duration_minutes / 60;
-      weeklyMap[dow].slots += getOccupiedSlots("10:00", b.duration_minutes).length; // simplified
+      weeklyMap[dow].slots += getOccupiedSlots(b.start_time, b.duration_minutes).length;
       weeklyMap[dow].revenue += Number(b.total_revenue);
     }
     const weeklyPattern = DOW.slice(1).concat(DOW[0]).map(d => ({
@@ -123,7 +123,7 @@ export async function GET(request: Request) {
       if (!monthlyPerf[key]) continue;
       monthlyPerf[key].sessions += 1;
       monthlyPerf[key].duration += b.duration_minutes;
-      monthlyPerf[key].slots += getOccupiedSlots("10:00", b.duration_minutes).length;
+      monthlyPerf[key].slots += getOccupiedSlots(b.start_time, b.duration_minutes).length;
       monthlyPerf[key].revenue += Number(b.total_revenue);
       monthlyPerf[key].days.add(b.booking_date);
     }

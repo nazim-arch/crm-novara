@@ -31,6 +31,8 @@ type Booking = {
   client_name: string;
   phone?: string | null;
   notes?: string | null;
+  booking_type?: string | null;
+  seater_type?: string | null;
   recording_hours?: number | null;
   recording_value?: number | null;
   editing_hours?: number | null;
@@ -124,20 +126,41 @@ export function BookingsList() {
     router.push(`/podcast-studio/bookings/new?date=${b.booking_date}&time=${b.start_time}`);
   }
 
-  function exportCSV() {
-    if (!bookings.length) return;
+  async function exportCSV() {
+    const today = todayIST();
+    const { start, end } = resolveDateRange(rangeFilter, today, customFrom || undefined, customTo || undefined);
+    const params = new URLSearchParams({
+      limit: "10000",
+      ...(search && { search }),
+      ...(statusFilter !== "all" && { status: statusFilter }),
+      start_date: start,
+      end_date: end,
+    });
+    let allBookings: Booking[] = bookings;
+    try {
+      const res = await fetch(`/api/podcast-studio/bookings?${params}`);
+      if (res.ok) allBookings = (await res.json()).data ?? bookings;
+    } catch { /* fall back to current page */ }
+
+    if (!allBookings.length) return;
+    const csvEsc = (v: string | number | null | undefined) => {
+      const s = String(v ?? "");
+      return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
+    };
     const headers = [
       "Date","Start","End","Duration (min)","Client","Phone",
+      "Booking Type","Seater Type",
       "Recording Hrs","Recording Value","Editing Hrs","Editing Value",
       "Base Amount","GST %","GST Amount","Total Revenue","Status","Notes",
     ];
-    const rows = bookings.map(b => [
+    const rows = allBookings.map(b => [
       b.booking_date, b.start_time, b.end_time, b.duration_minutes,
-      b.client_name, b.phone ?? "",
+      csvEsc(b.client_name), csvEsc(b.phone),
+      b.booking_type ?? "One-time", b.seater_type ?? "",
       b.recording_hours ?? "", b.recording_value ?? "",
       b.editing_hours ?? "", b.editing_value ?? "",
       b.base_amount, b.gst_percent, b.gst_amount, b.total_revenue,
-      b.status, (b.notes ?? "").replace(/,/g, ";"),
+      b.status, csvEsc(b.notes),
     ]);
     const csv = [headers, ...rows].map(r => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -274,6 +297,7 @@ export function BookingsList() {
                 <TableHead className="whitespace-nowrap">Time</TableHead>
                 <TableHead className="whitespace-nowrap">Duration</TableHead>
                 <TableHead>Client</TableHead>
+                <TableHead className="whitespace-nowrap hidden md:table-cell">Type / Seater</TableHead>
                 <TableHead className="whitespace-nowrap hidden sm:table-cell">Phone</TableHead>
                 <TableHead className="whitespace-nowrap text-right">Rec. Value</TableHead>
                 <TableHead className="whitespace-nowrap text-right">Edit. Value</TableHead>
@@ -288,13 +312,13 @@ export function BookingsList() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={13} className="text-center py-12">
+                  <TableCell colSpan={14} className="text-center py-12">
                     <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
                   </TableCell>
                 </TableRow>
               ) : bookings.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={13} className="text-center py-16">
+                  <TableCell colSpan={14} className="text-center py-16">
                     <div className="space-y-2">
                       <p className="text-muted-foreground font-medium">No bookings found</p>
                       <p className="text-sm text-muted-foreground">Try adjusting your filters or create a new booking</p>
@@ -310,6 +334,14 @@ export function BookingsList() {
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-sm">{b.duration_minutes} min</TableCell>
                     <TableCell className="font-medium max-w-[140px] truncate">{b.client_name}</TableCell>
+                    <TableCell className="hidden md:table-cell text-sm">
+                      <div className="flex flex-col gap-0.5">
+                        <span className={cn("inline-flex w-fit items-center px-1.5 py-0.5 rounded text-[10px] font-medium",
+                          b.booking_type === "Recurring" ? "bg-violet-100 text-violet-700" : "bg-slate-100 text-slate-600"
+                        )}>{b.booking_type ?? "One-time"}</span>
+                        {b.seater_type && <span className="text-xs text-muted-foreground">{b.seater_type}</span>}
+                      </div>
+                    </TableCell>
                     <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">{b.phone ?? "—"}</TableCell>
                     <TableCell className="text-right text-sm">{b.recording_value ? `₹${Number(b.recording_value).toLocaleString("en-IN")}` : "—"}</TableCell>
                     <TableCell className="text-right text-sm">{b.editing_value ? `₹${Number(b.editing_value).toLocaleString("en-IN")}` : "—"}</TableCell>
@@ -403,6 +435,8 @@ export function BookingsList() {
               <div><p className="text-muted-foreground text-xs mb-0.5">Duration</p><p className="font-medium">{viewBooking.duration_minutes} min</p></div>
               <div><p className="text-muted-foreground text-xs mb-0.5">Start</p><p className="font-medium">{formatTimeDisplay(viewBooking.start_time)}</p></div>
               <div><p className="text-muted-foreground text-xs mb-0.5">End</p><p className="font-medium">{formatTimeDisplay(viewBooking.end_time)}</p></div>
+              <div><p className="text-muted-foreground text-xs mb-0.5">Booking Type</p><p className="font-medium">{viewBooking.booking_type ?? "One-time"}</p></div>
+              <div><p className="text-muted-foreground text-xs mb-0.5">Seater</p><p className="font-medium">{viewBooking.seater_type ?? "—"}</p></div>
               {viewBooking.phone && <div className="col-span-2"><p className="text-muted-foreground text-xs mb-0.5">Phone</p><p className="font-medium">{viewBooking.phone}</p></div>}
               {viewBooking.notes && <div className="col-span-2"><p className="text-muted-foreground text-xs mb-0.5">Notes</p><p className="text-sm">{viewBooking.notes}</p></div>}
             </div>
