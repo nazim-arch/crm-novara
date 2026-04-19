@@ -1,4 +1,6 @@
 // Podcast Studio shared constants and utilities
+export type { DashboardRange } from "./date-range";
+export { resolveDateRange } from "./date-range";
 
 export const STUDIO_OPEN = "10:00";   // 10:00 AM
 export const STUDIO_CLOSE = "20:30";  // 8:30 PM (end time limit)
@@ -124,45 +126,6 @@ export function getPrevMonthBounds(today: string): { start: string; end: string;
     end: `${prevYear}-${mm}-${lastDay.toString().padStart(2, "0")}`,
     label: `${MONTH_NAMES[prevMonth - 1]} ${prevYear}`,
   };
-}
-
-export type DashboardRange = "current_month" | "7d" | "30d" | "last_month" | "ytd" | "custom";
-
-export function resolveDateRange(
-  range: DashboardRange,
-  today: string,
-  from?: string,
-  to?: string,
-): { start: string; end: string; label: string } {
-  const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  switch (range) {
-    case "7d":
-      return { start: subtractDays(today, 6), end: today, label: "Last 7 days" };
-    case "30d":
-      return { start: subtractDays(today, 29), end: today, label: "Last 30 days" };
-    case "last_month": {
-      const b = getPrevMonthBounds(today);
-      return { ...b };
-    }
-    case "ytd":
-      return { start: `${today.slice(0, 4)}-01-01`, end: today, label: `YTD ${today.slice(0, 4)}` };
-    case "custom": {
-      const s = from ?? today;
-      const e = to ?? today;
-      const sd = new Date(s + "T00:00:00");
-      const ed = new Date(e + "T00:00:00");
-      return {
-        start: s,
-        end: e,
-        label: `${sd.getDate()} ${MONTH_NAMES[sd.getMonth()]} – ${ed.getDate()} ${MONTH_NAMES[ed.getMonth()]} ${ed.getFullYear()}`,
-      };
-    }
-    default: {
-      const { start, end } = getMonthBounds(today.slice(0, 7));
-      const d = new Date(start + "T00:00:00");
-      return { start, end, label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}` };
-    }
-  }
 }
 
 export function formatDateDisplay(dateStr: string): string {

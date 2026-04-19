@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { CalendarRange, ChevronDown } from "lucide-react";
-import type { DashboardRange } from "@/lib/podcast-studio";
+import type { DashboardRange } from "@/lib/date-range";
 
 const PRESETS: { label: string; value: DashboardRange }[] = [
   { label: "This Month", value: "current_month" },

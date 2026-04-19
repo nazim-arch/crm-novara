@@ -22,6 +22,8 @@ interface Kpis {
   hotLeads: number;
   activeLeads: number;
   wonLeads: number;
+  newLeadsInRange: number;
+  wonLeadsInRange: number;
   todayFollowUps: number;
   overdueFollowUps: number;
   pipelineValue: number;
@@ -95,6 +97,7 @@ interface ClientTaskRow { name: string; count: number }
 
 interface Props {
   canViewFinancials: boolean;
+  rangeLabel: string;
   kpis: Kpis;
   todayLeads: TodayLead[];
   overdueLeads: OverdueLead[];
@@ -221,6 +224,7 @@ function TempBadge({ temp }: { temp: string | null }) {
 
 export function CrmDashboardClient({
   canViewFinancials,
+  rangeLabel,
   kpis,
   todayLeads,
   overdueLeads,
@@ -252,12 +256,29 @@ export function CrmDashboardClient({
   }));
 
   return (
-    <div className="p-6 space-y-8 max-w-[1400px] mx-auto">
+    <div className="space-y-8 max-w-[1400px] mx-auto">
+
+      {/* ── Period KPIs (range-scoped) ────────────────────────────────── */}
+      <section>
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+          {rangeLabel}
+        </h2>
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <KpiCard label="New Leads" value={kpis.newLeadsInRange} icon={Users} href="/leads" />
+          <KpiCard label="Deals Won" value={kpis.wonLeadsInRange} icon={Trophy} iconClass="text-yellow-500" valueClass="text-yellow-600" />
+          <KpiCard label="Today's Follow-ups" value={kpis.todayFollowUps} icon={CalendarClock}
+            iconClass={kpis.todayFollowUps > 0 ? "text-green-600" : "text-muted-foreground"}
+            valueClass={kpis.todayFollowUps > 0 ? "text-green-600" : ""} href="/follow-ups" />
+          <KpiCard label="Overdue Follow-ups" value={kpis.overdueFollowUps} icon={AlertTriangle}
+            iconClass={kpis.overdueFollowUps > 0 ? "text-destructive" : "text-muted-foreground"}
+            valueClass={kpis.overdueFollowUps > 0 ? "text-destructive" : ""} href="/follow-ups" />
+        </div>
+      </section>
 
       {/* ── Section 1: KPI Snapshot ───────────────────────────────────── */}
       <section>
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-          Activity KPIs
+          Pipeline Overview (All-time)
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           <KpiCard
@@ -282,19 +303,11 @@ export function CrmDashboardClient({
             href="/leads"
           />
           <KpiCard
-            label="Won Leads"
+            label="Won Leads (All-time)"
             value={kpis.wonLeads}
             icon={Trophy}
             iconClass="text-yellow-500"
             valueClass="text-yellow-600"
-          />
-          <KpiCard
-            label="Today's Follow-ups"
-            value={kpis.todayFollowUps}
-            icon={CalendarClock}
-            iconClass={kpis.todayFollowUps > 0 ? "text-green-600" : "text-muted-foreground"}
-            valueClass={kpis.todayFollowUps > 0 ? "text-green-600" : ""}
-            href="/follow-ups"
           />
         </div>
 
@@ -303,15 +316,7 @@ export function CrmDashboardClient({
             <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 mt-5">
               Revenue KPIs
             </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-              <KpiCard
-                label="Overdue Follow-ups"
-                value={kpis.overdueFollowUps}
-                icon={AlertTriangle}
-                iconClass={kpis.overdueFollowUps > 0 ? "text-destructive" : "text-muted-foreground"}
-                valueClass={kpis.overdueFollowUps > 0 ? "text-destructive" : ""}
-                href="/follow-ups"
-              />
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               <KpiCard
                 label="Pipeline Value"
                 value={kpis.pipelineValue > 0 ? fc(kpis.pipelineValue) : "—"}

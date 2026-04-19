@@ -9,6 +9,8 @@ import { cn } from "@/lib/utils";
 interface Props {
   userId: string;
   userName: string;
+  initialYear?: number;
+  initialMonth?: number;
 }
 
 interface CommissionRecord {
@@ -34,10 +36,10 @@ function fmt(n: number | null) {
   return `₹${n.toLocaleString("en-IN")}`;
 }
 
-export function SalesCommissionDashboard({ userId, userName }: Props) {
+export function SalesCommissionDashboard({ userId, userName, initialYear, initialMonth }: Props) {
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(initialYear ?? now.getFullYear());
+  const [month, setMonth] = useState(initialMonth ?? now.getMonth() + 1);
   const [record, setRecord] = useState<CommissionRecord | null>(null);
   const [loading, setLoading] = useState(false);
 
