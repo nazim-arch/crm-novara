@@ -158,6 +158,13 @@ model User {
   expenses_added       OpportunityExpense[]
   password_reset_tokens PasswordResetToken[]
 
+  commission_slabs         SalesCommissionSlab[]   @relation("CommissionSlabs")
+  commission_slabs_created SalesCommissionSlab[]   @relation("SlabsCreatedBy")
+  monthly_targets          SalesMonthlyTarget[]    @relation("MonthlyTargets")
+  monthly_targets_set      SalesMonthlyTarget[]    @relation("TargetsSetBy")
+  commission_records       SalesCommissionRecord[] @relation("CommissionRecords")
+  commission_records_final SalesCommissionRecord[] @relation("RecordsFinalized")
+
   @@map("users")
 }
 
@@ -571,6 +578,82 @@ model SequenceCounter {
   last_val Int    @default(0)
 
   @@map("sequence_counters")
+}
+
+// ─────────────────────────────────────────────
+// SALES COMMISSION
+// ─────────────────────────────────────────────
+
+enum CommissionRecStatus {
+  Live
+  Finalized
+}
+
+model SalesCommissionSlab {
+  id             String   @id @default(cuid())
+  structure_id   String   // UUID grouping all slabs saved in one batch
+  user_id        String
+  effective_from DateTime @db.Date
+  from_amount    Decimal  @db.Decimal(14, 2)
+  to_amount      Decimal? @db.Decimal(14, 2) // null = uncapped top slab
+  commission_pct Decimal  @db.Decimal(6, 4)
+  sort_order     Int
+  created_by_id  String
+  created_at     DateTime @default(now())
+
+  user       User @relation("CommissionSlabs",   fields: [user_id],       references: [id])
+  created_by User @relation("SlabsCreatedBy",    fields: [created_by_id], references: [id])
+
+  @@index([user_id, effective_from])
+  @@index([structure_id])
+  @@map("sales_commission_slabs")
+}
+
+model SalesMonthlyTarget {
+  id            String   @id @default(cuid())
+  user_id       String
+  year          Int
+  month         Int      // 1–12
+  target_amount Decimal  @db.Decimal(14, 2)
+  set_by_id     String
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  user   User @relation("MonthlyTargets", fields: [user_id],  references: [id])
+  set_by User @relation("TargetsSetBy",   fields: [set_by_id], references: [id])
+
+  @@unique([user_id, year, month])
+  @@index([user_id])
+  @@map("sales_monthly_targets")
+}
+
+model SalesCommissionRecord {
+  id                  String              @id @default(cuid())
+  user_id             String
+  year                Int
+  month               Int
+  closed_revenue      Decimal             @db.Decimal(14, 2)
+  leads_won           Int                 @default(0)
+  leads_won_no_value  Int                 @default(0)
+  target_amount       Decimal?            @db.Decimal(14, 2)
+  achievement_pct     Decimal?            @db.Decimal(8, 4)
+  slab_from           Decimal?            @db.Decimal(14, 2)
+  slab_to             Decimal?            @db.Decimal(14, 2)
+  slab_pct            Decimal?            @db.Decimal(6, 4)
+  commission_amount   Decimal?            @db.Decimal(14, 2)
+  rec_status          CommissionRecStatus @default(Live)
+  finalized_at        DateTime?
+  finalized_by_id     String?
+  created_at          DateTime            @default(now())
+  updated_at          DateTime            @updatedAt
+
+  user         User  @relation("CommissionRecords",  fields: [user_id],         references: [id])
+  finalized_by User? @relation("RecordsFinalized",   fields: [finalized_by_id], references: [id])
+
+  @@unique([user_id, year, month])
+  @@index([user_id])
+  @@index([year, month])
+  @@map("sales_commission_records")
 }
 
 // ─────────────────────────────────────────────

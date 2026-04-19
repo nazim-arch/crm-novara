@@ -8,6 +8,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   BarChart3, Users, Building2, CheckSquare, CalendarClock,
   Settings, LayoutDashboard, Radar, Menu, Briefcase, Mic2, SlidersHorizontal,
+  TrendingUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -40,6 +41,15 @@ const NAV_CONFIG = [
       { href: "/podcast-studio/calendar", label: "Availability", icon: CalendarClock, roles: ["Admin"] },
       { href: "/podcast-studio/bookings", label: "Bookings", icon: BarChart3, roles: ["Admin"] },
       { href: "/podcast-studio/settings", label: "Studio Settings", icon: SlidersHorizontal, roles: ["Admin"] },
+    ],
+  },
+  {
+    label: "Commission",
+    items: [
+      { href: "/sales-commission", label: "My Commission", icon: TrendingUp, roles: ["Sales"] },
+      { href: "/sales-commission", label: "Commission Overview", icon: TrendingUp, roles: ["Admin"] },
+      { href: "/sales-commission/targets", label: "Set Targets", icon: BarChart3, roles: ["Admin"] },
+      { href: "/sales-commission/report", label: "Commission Report", icon: BarChart3, roles: ["Admin"] },
     ],
   },
   {
