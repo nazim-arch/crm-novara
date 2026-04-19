@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2, Download } from "lucide-react";
 import { CommissionStatusBadge } from "./CommissionStatusBadge";
-import { commissionStatus } from "@/lib/sales-commission";
+import { commissionStatus } from "@/lib/commission-utils";
 
 interface ReportRow {
   id: string;

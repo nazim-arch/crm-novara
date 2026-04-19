@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Loader2, TrendingUp, Target, IndianRupee, Trophy } from "lucide-react";
 import { CommissionStatusBadge } from "./CommissionStatusBadge";
-import { commissionStatus } from "@/lib/sales-commission";
+import { commissionStatus } from "@/lib/commission-utils";
 import { cn } from "@/lib/utils";
 
 interface Props {

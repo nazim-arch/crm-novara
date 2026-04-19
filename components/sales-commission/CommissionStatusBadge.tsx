@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import type { CommissionStatus } from "@/lib/sales-commission";
+import type { CommissionStatus } from "@/lib/commission-utils";
 
 const BADGE_STYLES: Record<CommissionStatus, string> = {
   "Above Target": "bg-emerald-100 text-emerald-700",

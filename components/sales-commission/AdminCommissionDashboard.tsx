@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommissionStatusBadge } from "./CommissionStatusBadge";
-import { commissionStatus } from "@/lib/sales-commission";
+import { commissionStatus } from "@/lib/commission-utils";
 import { cn } from "@/lib/utils";
 
 interface ReportRow {
