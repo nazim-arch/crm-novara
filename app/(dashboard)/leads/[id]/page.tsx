@@ -51,6 +51,12 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
           orderBy: { scheduled_at: "asc" },
           take: 20,
         },
+        _count: {
+          select: {
+            tasks: { where: { deleted_at: null } },
+            followups: true,
+          },
+        },
       },
     }),
     prisma.note.findMany({
@@ -101,7 +107,12 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
           {canDelete && (
             <DeleteConfirmButton
               label="Delete"
-              confirmText={`Delete "${lead.full_name}"? This cannot be undone.`}
+              confirmText={[
+                `Delete "${lead.full_name}"? This cannot be undone.`,
+                lead._count.tasks > 0 && `${lead._count.tasks} linked task${lead._count.tasks !== 1 ? "s" : ""} will also be deleted.`,
+                lead._count.followups > 0 && `${lead._count.followups} follow-up${lead._count.followups !== 1 ? "s" : ""} will also be deleted.`,
+                lead.status === "Won" && "Commission records for this lead's sales rep will be recalculated.",
+              ].filter(Boolean).join(" ")}
               apiPath={`/api/leads/${id}`}
               redirectTo="/leads"
             />

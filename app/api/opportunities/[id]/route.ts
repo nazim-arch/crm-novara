@@ -154,9 +154,20 @@ export async function DELETE(_request: Request, { params }: { params: Params }) 
     if (!hasPermission(session.user.role, "opportunity:delete")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await params;
+    const now = new Date();
+
+    // Cascade: soft-delete linked tasks
+    await prisma.task.updateMany({
+      where: { opportunity_id: id, deleted_at: null },
+      data: { deleted_at: now },
+    });
+
+    // Cascade: hard-delete linked follow-ups (no soft-delete on FollowUp)
+    await prisma.followUp.deleteMany({ where: { opportunity_id: id } });
+
     await prisma.opportunity.update({
       where: { id, deleted_at: null },
-      data: { deleted_at: new Date() },
+      data: { deleted_at: now },
     });
 
     return NextResponse.json({ success: true });

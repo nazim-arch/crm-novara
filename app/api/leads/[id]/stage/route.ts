@@ -74,26 +74,26 @@ export async function POST(request: Request, { params }: { params: Params }) {
       }),
     ]);
 
-    // ── Won: recalculate closed_revenue on all linked opportunities ──
-    if (to_stage === "Won" && settlement_value !== undefined && deal_commission_percent !== undefined) {
+    // ── Recalculate closed_revenue when Won state changes (entering or leaving Won) ──
+    if (to_stage === "Won" || lead.status === "Won") {
       const linkedOpps = await prisma.leadOpportunity.findMany({
         where: { lead_id: id },
         select: { opportunity_id: true },
       });
 
       for (const { opportunity_id } of linkedOpps) {
-        // Sum commission from all Won leads linked to this opportunity
         const wonLeads = await prisma.leadOpportunity.findMany({
           where: { opportunity_id },
           include: {
             lead: {
-              select: { status: true, settlement_value: true, deal_commission_percent: true },
+              select: { status: true, settlement_value: true, deal_commission_percent: true, deleted_at: true },
             },
           },
         });
 
         const closedRevenue = wonLeads.reduce((sum, lo) => {
           if (
+            lo.lead.deleted_at === null &&
             lo.lead.status === "Won" &&
             lo.lead.settlement_value !== null &&
             lo.lead.deal_commission_percent !== null
@@ -112,32 +112,34 @@ export async function POST(request: Request, { params }: { params: Params }) {
         });
       }
 
-      // ── Notify all Admin users ──
-      const admins = await prisma.user.findMany({
-        where: { role: "Admin", is_active: true },
-        select: { id: true },
-      });
-      if (admins.length > 0) {
-        await prisma.notification.createMany({
-          data: admins.map((admin) => ({
-            user_id: admin.id,
-            type: "StageChanged" as const,
-            message: `Deal Won: ${lead.full_name} (${lead.lead_number}) — Settlement ₹${Number(settlement_value).toLocaleString("en-IN")}`,
-            entity_type: "Lead" as const,
-            entity_id: id,
-          })),
-          skipDuplicates: true,
+      // ── Notify admins only when entering Won ──
+      if (to_stage === "Won" && settlement_value !== undefined && deal_commission_percent !== undefined) {
+        const admins = await prisma.user.findMany({
+          where: { role: "Admin", is_active: true },
+          select: { id: true },
+        });
+        if (admins.length > 0) {
+          await prisma.notification.createMany({
+            data: admins.map((admin) => ({
+              user_id: admin.id,
+              type: "StageChanged" as const,
+              message: `Deal Won: ${lead.full_name} (${lead.lead_number}) — Settlement ₹${Number(settlement_value).toLocaleString("en-IN")}`,
+              entity_type: "Lead" as const,
+              entity_id: id,
+            })),
+            skipDuplicates: true,
+          });
+        }
+        notifyLeadWon({
+          assignedToId: lead.assigned_to_id,
+          leadId: id,
+          leadName: lead.full_name,
+          leadNumber: lead.lead_number,
+          settlementValue: Number(settlement_value),
+          commissionPercent: Number(deal_commission_percent),
+          closedByName: session.user.name ?? session.user.email ?? "Someone",
         });
       }
-      notifyLeadWon({
-        assignedToId: lead.assigned_to_id,
-        leadId: id,
-        leadName: lead.full_name,
-        leadNumber: lead.lead_number,
-        settlementValue: Number(settlement_value),
-        commissionPercent: Number(deal_commission_percent),
-        closedByName: session.user.name ?? session.user.email ?? "Someone",
-      });
     }
 
     // ── Lost: notify all Admin users ──

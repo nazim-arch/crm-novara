@@ -55,6 +55,12 @@ export default async function OpportunityDetailPage({ params }: { params: Params
           orderBy: { scheduled_at: "asc" },
           take: 20,
         },
+        _count: {
+          select: {
+            tasks: { where: { deleted_at: null } },
+            follow_ups: true,
+          },
+        },
       },
     }),
     prisma.opportunityExpense.findMany({
@@ -101,7 +107,11 @@ export default async function OpportunityDetailPage({ params }: { params: Params
           {canDelete && (
             <DeleteConfirmButton
               label="Delete"
-              confirmText={`Delete "${opp.name}"? This cannot be undone.`}
+              confirmText={[
+                `Delete "${opp.name}"? This cannot be undone.`,
+                opp._count.tasks > 0 && `${opp._count.tasks} linked task${opp._count.tasks !== 1 ? "s" : ""} will also be deleted.`,
+                opp._count.follow_ups > 0 && `${opp._count.follow_ups} follow-up${opp._count.follow_ups !== 1 ? "s" : ""} will also be deleted.`,
+              ].filter(Boolean).join(" ")}
               apiPath={`/api/opportunities/${id}`}
               redirectTo="/opportunities"
             />
