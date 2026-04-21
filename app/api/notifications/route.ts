@@ -10,6 +10,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const unreadOnly = searchParams.get("unread") === "true";
+  const limit = Math.min(parseInt(searchParams.get("limit") ?? "20", 10), 50);
 
   const notifications = await prisma.notification.findMany({
     where: {
@@ -17,7 +18,7 @@ export async function GET(request: Request) {
       ...(unreadOnly && { read: false }),
     },
     orderBy: { created_at: "desc" },
-    take: 50,
+    take: limit,
   });
 
   return NextResponse.json({ data: notifications });
