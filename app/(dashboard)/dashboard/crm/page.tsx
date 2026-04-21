@@ -129,7 +129,7 @@ export default async function CrmDashboardPage({ searchParams }: { searchParams:
       ? prisma.opportunity.aggregate({ where: { deleted_at: null }, _sum: { total_sales_value: true, possible_revenue: true, closed_revenue: true } })
       : Promise.resolve({ _sum: { total_sales_value: null, possible_revenue: null, closed_revenue: null } }),
     canViewFinancials
-      ? prisma.opportunityExpense.aggregate({ _sum: { amount: true } })
+      ? prisma.opportunityExpense.aggregate({ where: { opportunity: { deleted_at: null } }, _sum: { amount: true } })
       : Promise.resolve({ _sum: { amount: null } }),
     canViewFinancials
       ? prisma.opportunity.findMany({
@@ -140,7 +140,7 @@ export default async function CrmDashboardPage({ searchParams }: { searchParams:
         })
       : Promise.resolve([]),
     canViewFinancials
-      ? prisma.opportunityExpense.groupBy({ by: ["opportunity_id"], _sum: { amount: true } })
+      ? prisma.opportunityExpense.groupBy({ by: ["opportunity_id"], where: { opportunity: { deleted_at: null } }, _sum: { amount: true } })
       : Promise.resolve([]),
     prisma.activity.findMany({
       include: { actor: { select: { name: true } } },

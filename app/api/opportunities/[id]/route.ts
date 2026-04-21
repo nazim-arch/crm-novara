@@ -162,8 +162,9 @@ export async function DELETE(_request: Request, { params }: { params: Params }) 
       data: { deleted_at: now },
     });
 
-    // Cascade: hard-delete linked follow-ups (no soft-delete on FollowUp)
+    // Cascade: hard-delete linked follow-ups and expenses (no soft-delete on these)
     await prisma.followUp.deleteMany({ where: { opportunity_id: id } });
+    await prisma.opportunityExpense.deleteMany({ where: { opportunity_id: id } });
 
     await prisma.opportunity.update({
       where: { id, deleted_at: null },
