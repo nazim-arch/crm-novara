@@ -71,6 +71,11 @@ interface NominatimResult {
   class: string;
 }
 
+interface KeyAvailability {
+  sources: Record<string, boolean>;
+  ai: { claude: boolean; openai: boolean };
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function GenerateLeadsPage() {
   const router = useRouter();
@@ -78,6 +83,7 @@ export default function GenerateLeadsPage() {
   const [progress, setProgress] = useState('');
   const [progressDetail, setProgressDetail] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [keyAvail, setKeyAvail] = useState<KeyAvailability | null>(null);
 
   // Form state
   const [city, setCity] = useState('');
@@ -89,17 +95,44 @@ export default function GenerateLeadsPage() {
   const [personas, setPersonas] = useState<string[]>([]);
   const [urgency, setUrgency] = useState('exploring');
   const [freeOnly, setFreeOnly] = useState(false);
-  const [selectedSources, setSelectedSources] = useState<string[]>(['youtube', 'reddit', 'google_maps', 'quora', 'portal_forums', 'financial_forums']);
+  const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const [keywords, setKeywords] = useState('');
 
+  // Fetch which API keys are configured; auto-select available sources
+  useEffect(() => {
+    fetch('/api/intentradar/available-sources')
+      .then(r => r.json())
+      .then((data: KeyAvailability) => {
+        setKeyAvail(data);
+        // Auto-select all sources that have keys configured
+        const available = Object.entries(data.sources).filter(([, ok]) => ok).map(([id]) => id);
+        setSelectedSources(available);
+      })
+      .catch(() => {
+        // Fallback: select free sources only
+        setSelectedSources(['youtube', 'reddit']);
+      });
+  }, []);
+
   const togglePersona = (p: string) => setPersonas(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]);
-  const toggleSource = (s: string) => setSelectedSources(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
+  const toggleSource = (s: string) => {
+    const available = keyAvail?.sources[s] ?? true;
+    if (!available) return; // can't select sources without keys
+    setSelectedSources(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
+  };
   const removeMarket = (m: string) => setSelectedMarkets(prev => prev.filter(x => x !== m));
 
   // When free-only toggled on, keep only free sources selected
   const handleFreeOnly = (on: boolean) => {
     setFreeOnly(on);
     if (on) setSelectedSources(prev => prev.filter(id => FREE_SOURCE_IDS.includes(id)));
+    else {
+      // Re-select all available sources
+      if (keyAvail) {
+        const available = Object.entries(keyAvail.sources).filter(([, ok]) => ok).map(([id]) => id);
+        setSelectedSources(available);
+      }
+    }
   };
 
   const visibleGroups = freeOnly
@@ -289,32 +322,75 @@ export default function GenerateLeadsPage() {
           </div>
         </div>
 
+        {/* AI provider availability banner */}
+        {keyAvail && (
+          <div style={{
+            display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap',
+          }}>
+            <span style={{ fontSize: 11, color: '#78716c', alignSelf: 'center', fontWeight: 600 }}>AI insights:</span>
+            <span style={{
+              fontSize: 11, padding: '3px 8px', borderRadius: 6, fontWeight: 700,
+              background: keyAvail.ai.claude ? '#dcfce7' : '#fef2f2',
+              color: keyAvail.ai.claude ? '#15803d' : '#dc2626',
+            }}>
+              {keyAvail.ai.claude ? '✓' : '✗'} Claude
+            </span>
+            <span style={{
+              fontSize: 11, padding: '3px 8px', borderRadius: 6, fontWeight: 700,
+              background: keyAvail.ai.openai ? '#dcfce7' : '#fef2f2',
+              color: keyAvail.ai.openai ? '#15803d' : '#dc2626',
+            }}>
+              {keyAvail.ai.openai ? '✓' : '✗'} GPT-4o
+            </span>
+            {!keyAvail.ai.claude && !keyAvail.ai.openai && (
+              <span style={{ fontSize: 11, color: '#f59e0b' }}>No AI keys — rule-based scoring only</span>
+            )}
+          </div>
+        )}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {visibleGroups.map(group => (
             <div key={group.label}>
               <p style={{ fontSize: 11, fontWeight: 700, color: '#a8a29e', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{group.label}</p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 8 }}>
-                {group.sources.map(s => (
-                  <div key={s.id} onClick={() => toggleSource(s.id)} style={{
-                    display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px',
-                    borderRadius: 10, border: `1px solid ${selectedSources.includes(s.id) ? '#4338ca' : '#e7e5e4'}`,
-                    background: selectedSources.includes(s.id) ? '#eef2ff' : 'white', cursor: 'pointer',
-                    position: 'relative',
-                  }}>
-                    <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>{s.icon}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: selectedSources.includes(s.id) ? '#4338ca' : '#1c1917' }}>{s.label}</div>
-                      <div style={{ fontSize: 10, color: '#a8a29e', marginTop: 1 }}>{s.desc}</div>
-                      <div style={{
-                        display: 'inline-block', marginTop: 4, fontSize: 9, fontWeight: 700,
-                        padding: '2px 6px', borderRadius: 4,
-                        background: s.free ? '#dcfce7' : '#fef9c3', color: s.free ? '#15803d' : '#854d0e',
-                      }}>
-                        {s.freeNote}
+                {group.sources.map(s => {
+                  const hasKey = keyAvail?.sources[s.id] ?? true;
+                  const selected = selectedSources.includes(s.id);
+                  return (
+                    <div key={s.id} onClick={() => toggleSource(s.id)} style={{
+                      display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px',
+                      borderRadius: 10, border: `1px solid ${selected ? '#4338ca' : hasKey ? '#e7e5e4' : '#fecaca'}`,
+                      background: selected ? '#eef2ff' : hasKey ? 'white' : '#fff5f5',
+                      cursor: hasKey ? 'pointer' : 'not-allowed', position: 'relative',
+                      opacity: hasKey ? 1 : 0.6,
+                    }}>
+                      <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>{s.icon}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: selected ? '#4338ca' : hasKey ? '#1c1917' : '#78716c' }}>{s.label}</div>
+                        <div style={{ fontSize: 10, color: '#a8a29e', marginTop: 1 }}>{s.desc}</div>
+                        <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+                          <div style={{
+                            display: 'inline-block', fontSize: 9, fontWeight: 700,
+                            padding: '2px 6px', borderRadius: 4,
+                            background: s.free ? '#dcfce7' : '#fef9c3', color: s.free ? '#15803d' : '#854d0e',
+                          }}>
+                            {s.freeNote}
+                          </div>
+                          {keyAvail && (
+                            <div style={{
+                              display: 'inline-block', fontSize: 9, fontWeight: 700,
+                              padding: '2px 6px', borderRadius: 4,
+                              background: hasKey ? '#f0fdf4' : '#fef2f2',
+                              color: hasKey ? '#15803d' : '#dc2626',
+                            }}>
+                              {hasKey ? '✓ Key ready' : '✗ No key'}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))}

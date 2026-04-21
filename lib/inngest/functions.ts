@@ -83,19 +83,10 @@ export const generateLeadsFunction = inngest.createFunction(
           whyStrong: '',
         };
 
-        if (lead.tier === 'hot' || lead.tier === 'warm') {
-          try {
-            aiInsights = await generateAIInsights(lead, campaignContext);
-          } catch {
-            // non-fatal — save lead without AI insight
-          }
-        } else {
-          aiInsights.recommendedAction = lead.tier === 'cool'
-            ? 'Add to nurture sequence. Monitor for signal escalation.'
-            : 'Passive monitoring only.';
-          aiInsights.whyStrong = lead.behavioralPatterns.length > 0
-            ? `Patterns: ${lead.behavioralPatterns.join(', ')}`
-            : 'Basic interest signal detected';
+        try {
+          aiInsights = await generateAIInsights(lead, campaignContext);
+        } catch {
+          // non-fatal — save lead without AI insight
         }
 
         const scoreFields = {
