@@ -52,6 +52,7 @@ export default async function CrmDashboardPage({ searchParams }: { searchParams:
     hotLeads,
     activeLeads,
     wonLeads,
+    lostLeads,
     // Range-filtered metrics
     newLeadsInRange,
     wonLeadsInRange,
@@ -78,6 +79,7 @@ export default async function CrmDashboardPage({ searchParams }: { searchParams:
     prisma.lead.count({ where: leadWhere({ temperature: "Hot", status: { notIn: ["Won", "Lost", "Recycle"] } }) }),
     prisma.lead.count({ where: leadWhere({ status: { notIn: ["Won", "Lost", "Recycle"] } }) }),
     prisma.lead.count({ where: leadWhere({ status: "Won" }) }),
+    prisma.lead.count({ where: leadWhere({ status: "Lost" }) }),
     // Range-filtered
     prisma.lead.count({ where: leadWhereInRange() }),
     prisma.lead.count({ where: leadWhereInRange({ status: "Won" }) }),
@@ -204,7 +206,7 @@ export default async function CrmDashboardPage({ searchParams }: { searchParams:
         canViewFinancials={canViewFinancials}
         rangeLabel={rangeLabel}
         kpis={{
-          totalLeads, hotLeads, activeLeads, wonLeads,
+          totalLeads, hotLeads, activeLeads, wonLeads, lostLeads,
           newLeadsInRange, wonLeadsInRange,
           todayFollowUps: todayFollowUpsCount,
           overdueFollowUps: overdueFollowUpsCount,

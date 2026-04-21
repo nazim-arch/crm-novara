@@ -22,6 +22,7 @@ interface Kpis {
   hotLeads: number;
   activeLeads: number;
   wonLeads: number;
+  lostLeads: number;
   newLeadsInRange: number;
   wonLeadsInRange: number;
   todayFollowUps: number;
@@ -308,6 +309,14 @@ export function CrmDashboardClient({
             icon={Trophy}
             iconClass="text-yellow-500"
             valueClass="text-yellow-600"
+          />
+          <KpiCard
+            label="Lost Leads (All-time)"
+            value={kpis.lostLeads}
+            icon={XCircle}
+            iconClass="text-red-400"
+            valueClass="text-red-500"
+            href="/leads"
           />
         </div>
 
