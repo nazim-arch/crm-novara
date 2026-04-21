@@ -26,10 +26,6 @@ export default defineConfig({
       dependencies: ["setup"],
     },
   ],
-  webServer: {
-    command: "npm run dev",
-    url: "http://localhost:3000",
-    reuseExistingServer: true,
-    timeout: 120_000,
-  },
+  // Start the dev server manually before running: npm run dev
+  // webServer is omitted — Playwright uses baseURL: http://localhost:3000 directly
 });
