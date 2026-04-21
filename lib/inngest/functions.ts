@@ -44,17 +44,17 @@ export const generateLeadsFunction = inngest.createFunction(
       buyerPersonas, urgency, keywords,
     };
 
-    // ─── Top-level error boundary ───────────────────────────────────────────
-    // Any unhandled exception marks the campaign as failed with an error
-    // message so it never stays stuck in "running". We then re-throw so
-    // Inngest also records the failure on its side.
+    const campaignContext = {
+      city, microMarkets, budgetMin, budgetMax,
+      propertyType, bhkConfig: bhkConfig ?? undefined,
+    };
+
     try {
 
       // Step 1: Run all scrapers
       const rawSignals = await step.run('run-scrapers', async () => {
         await updateCampaignStatus(campaignId, 'running', { startedAt: new Date() });
 
-        // Log key availability for debugging
         const keyChecks = await Promise.all([
           getApiKey('youtube').then(v => ({ key: 'youtube', has: !!v })),
           getApiKey('serp').then(v => ({ key: 'serp', has: !!v })),
@@ -69,7 +69,7 @@ export const generateLeadsFunction = inngest.createFunction(
         return runAllScrapers(scraperConfig, sources);
       });
 
-      // Step 2: Log raw signals to DB (audit trail)
+      // Step 2: Log raw signals (audit trail)
       await step.run('log-signals', async () => {
         for (const signal of rawSignals) {
           await logSignal({
@@ -84,11 +84,9 @@ export const generateLeadsFunction = inngest.createFunction(
         }
       });
 
-      // Step 3: Score, dedupe, and freshness-rank leads
-      const campaignContext = {
-        city, microMarkets, budgetMin, budgetMax,
-        propertyType, bhkConfig: bhkConfig ?? undefined,
-      };
+      // Step 3: Score, dedupe, freshness-rank (pure computation, no DB)
+      const now = new Date();
+      const freshnessScore = computeFreshnessScore(now);
 
       const scoredLeads = rawSignals
         .map(signal => ({ ...signal, capturedAt: new Date(signal.capturedAt) }))
@@ -100,9 +98,8 @@ export const generateLeadsFunction = inngest.createFunction(
         .sort((a, b) => b.totalScore - a.totalScore)
         .slice(0, 50);
 
-      // Run probabilistic deduplication over the batch
       const dedupeInput = scoredLeads.map((l, idx) => ({
-        id: String(idx), // temporary index-based ID for batch comparison
+        id: String(idx),
         profileHandle: l.profileHandle,
         sourcePlatform: l.sourcePlatform,
         sourceContent: l.sourceContent,
@@ -114,11 +111,6 @@ export const generateLeadsFunction = inngest.createFunction(
       }));
       const dedupeResults = deduplicateBatch(dedupeInput);
 
-      // Compute freshness (all fresh for new batch; existing leads updated via lastSeenAt)
-      const now = new Date();
-      const freshnessScore = computeFreshnessScore(now); // 1.0 for brand-new signals
-
-      // Re-sort by composite rank weight
       const ranked = scoredLeads
         .map((lead, idx) => ({
           ...lead,
@@ -130,22 +122,12 @@ export const generateLeadsFunction = inngest.createFunction(
           computeRankWeight(a.totalScore, a.freshnessScore!, a.dedupeDecision ?? null)
         );
 
-      // Step 4: AI insights + persist leads
-      await step.run('save-leads-with-insights', async () => {
-        for (const lead of ranked) {
-          let aiInsights = {
-            claudeInsight: null as string | null,
-            gptInsight: null as string | null,
-            recommendedAction: '',
-            responseDraft: '',
-            whyStrong: '',
-          };
+      // Step 4: Save all leads WITHOUT AI insights (fast — just DB writes)
+      const savedLeadIds = await step.run('save-leads', async () => {
+        const ids: Array<{ id: string; idx: number }> = [];
 
-          try {
-            aiInsights = await generateAIInsights(lead, campaignContext);
-          } catch {
-            // Non-fatal — save lead without AI insight
-          }
+        for (let i = 0; i < ranked.length; i++) {
+          const lead = ranked[i];
 
           const scoreFields = {
             totalScore: lead.totalScore,
@@ -166,14 +148,8 @@ export const generateLeadsFunction = inngest.createFunction(
             inferredTimeline: lead.inferredTimeline,
             isNRI: lead.isNRI,
             nriCountry: lead.nriCountry,
-            aiInsightClaude: aiInsights.claudeInsight,
-            aiInsightGPT: aiInsights.gptInsight,
-            aiRecommendedAction: aiInsights.recommendedAction,
-            aiResponseDraft: aiInsights.responseDraft,
-            aiWhyStrong: aiInsights.whyStrong,
             behavioralPatterns: lead.behavioralPatterns,
             velocityPattern: lead.velocityPattern,
-            // Production fields
             leadOriginType: lead.originType,
             firstSeenAt: now,
             lastSeenAt: now,
@@ -182,6 +158,12 @@ export const generateLeadsFunction = inngest.createFunction(
             duplicateProbability: lead.duplicateProbability ?? null,
             dedupeDecision: lead.dedupeDecision ?? 'distinct',
             matchReasons: lead.matchReasons ?? [],
+            // AI insights populated in next step
+            aiInsightClaude: null as string | null,
+            aiInsightGPT: null as string | null,
+            aiRecommendedAction: '',
+            aiResponseDraft: '',
+            aiWhyStrong: '',
           };
 
           const createData = {
@@ -198,8 +180,10 @@ export const generateLeadsFunction = inngest.createFunction(
             ...scoreFields,
           };
 
+          let savedId: string;
+
           if (lead.profileHandle) {
-            await prisma.ir_lead.upsert({
+            const saved = await prisma.ir_lead.upsert({
               where: {
                 profileHandle_sourcePlatform_campaignId: {
                   profileHandle: lead.profileHandle,
@@ -209,31 +193,56 @@ export const generateLeadsFunction = inngest.createFunction(
               },
               update: { ...scoreFields, lastSeenAt: now },
               create: createData,
+              select: { id: true },
             });
+            savedId = saved.id;
           } else {
             const contentPrefix = lead.sourceContent.slice(0, 100);
             const existing = await prisma.ir_lead.findFirst({
-              where: {
-                campaignId,
-                sourcePlatform: lead.sourcePlatform,
-                sourceContent: { startsWith: contentPrefix },
-              },
+              where: { campaignId, sourcePlatform: lead.sourcePlatform, sourceContent: { startsWith: contentPrefix } },
               select: { id: true },
             });
-
             if (existing) {
-              await prisma.ir_lead.update({
-                where: { id: existing.id },
-                data: { ...scoreFields, lastSeenAt: now },
-              });
+              await prisma.ir_lead.update({ where: { id: existing.id }, data: { ...scoreFields, lastSeenAt: now } });
+              savedId = existing.id;
             } else {
-              await prisma.ir_lead.create({ data: createData });
+              const created = await prisma.ir_lead.create({ data: createData, select: { id: true } });
+              savedId = created.id;
             }
           }
+
+          ids.push({ id: savedId, idx: i });
         }
+
+        return ids;
       });
 
-      // Step 5: Mark campaign complete
+      // Step 5: AI insights — one step per lead, run in parallel
+      // Each step is a single OpenAI call (~3-5s), safely within Vercel's timeout.
+      await Promise.all(
+        savedLeadIds.map(({ id: leadId, idx }) =>
+          step.run(`insights-${idx}`, async () => {
+            const lead = ranked[idx];
+            try {
+              const insights = await generateAIInsights(lead, campaignContext);
+              await prisma.ir_lead.update({
+                where: { id: leadId },
+                data: {
+                  aiInsightClaude: insights.claudeInsight,
+                  aiInsightGPT: insights.gptInsight,
+                  aiRecommendedAction: insights.recommendedAction,
+                  aiResponseDraft: insights.responseDraft,
+                  aiWhyStrong: insights.whyStrong,
+                },
+              });
+            } catch {
+              // Non-fatal — lead is already saved; insights just won't show
+            }
+          })
+        )
+      );
+
+      // Step 6: Mark campaign complete
       await step.run('complete-campaign', async () => {
         const counts = {
           hot: ranked.filter(l => l.tier === 'hot').length,
@@ -253,26 +262,19 @@ export const generateLeadsFunction = inngest.createFunction(
       return { campaignId, totalLeads: ranked.length };
 
     } catch (error) {
-      // ─── Failure handler ─────────────────────────────────────────────────
-      // Persist failed state so the campaign never stays stuck in "running".
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(`[IntentRadar] Campaign ${campaignId} failed:`, errorMessage);
 
       try {
         await prisma.ir_campaign.update({
           where: { id: campaignId },
-          data: {
-            status: 'failed',
-            failedAt: new Date(),
-            errorMessage,
-            updatedAt: new Date(),
-          },
+          data: { status: 'failed', failedAt: new Date(), errorMessage, updatedAt: new Date() },
         });
       } catch (dbError) {
         console.error('[IntentRadar] Could not persist failed status:', dbError);
       }
 
-      throw error; // Re-throw so Inngest records the failure on its side
+      throw error;
     }
   }
 );
