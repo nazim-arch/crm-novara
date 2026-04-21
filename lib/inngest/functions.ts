@@ -96,7 +96,7 @@ export const generateLeadsFunction = inngest.createFunction(
           evidenceSnippet: extractSnippet(signal.content),
         }))
         .sort((a, b) => b.totalScore - a.totalScore)
-        .slice(0, 50);
+        .slice(0, 25);
 
       const dedupeInput = scoredLeads.map((l, idx) => ({
         id: String(idx),
@@ -217,10 +217,9 @@ export const generateLeadsFunction = inngest.createFunction(
         return ids;
       });
 
-      // Step 5: AI insights — one step per lead, run in parallel
-      // Each step is a single OpenAI call (~3-5s), safely within Vercel's timeout.
+      // Step 5: AI insights — top 10 leads only, one step each, run in parallel
       await Promise.all(
-        savedLeadIds.map(({ id: leadId, idx }) =>
+        savedLeadIds.slice(0, 10).map(({ id: leadId, idx }) =>
           step.run(`insights-${idx}`, async () => {
             const lead = ranked[idx];
             try {
