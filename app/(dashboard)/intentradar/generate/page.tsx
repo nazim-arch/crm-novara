@@ -98,19 +98,24 @@ export default function GenerateLeadsPage() {
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const [keywords, setKeywords] = useState('');
 
+  const ALL_SOURCE_IDS = SOURCE_GROUPS.flatMap(g => g.sources).map(s => s.id);
+
   // Fetch which API keys are configured; auto-select available sources
   useEffect(() => {
     fetch('/api/intentradar/available-sources')
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`${r.status}`);
+        return r.json();
+      })
       .then((data: KeyAvailability) => {
         setKeyAvail(data);
         // Auto-select all sources that have keys configured
         const available = Object.entries(data.sources).filter(([, ok]) => ok).map(([id]) => id);
-        setSelectedSources(available);
+        setSelectedSources(available.length > 0 ? available : ALL_SOURCE_IDS);
       })
       .catch(() => {
-        // Fallback: select free sources only
-        setSelectedSources(['youtube', 'reddit']);
+        // Fallback: select all sources — scrapers will skip ones without keys at runtime
+        setSelectedSources(ALL_SOURCE_IDS);
       });
   }, []);
 

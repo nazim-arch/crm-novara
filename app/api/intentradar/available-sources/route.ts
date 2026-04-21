@@ -8,12 +8,12 @@ import { getApiKey } from '@/lib/intentradar/db';
 // Empty array = works without any key (public API)
 const SOURCE_KEY_MAP: Record<string, string[]> = {
   youtube:          ['youtube'],
-  reddit:           [],                      // public API, no key needed
+  reddit:           [],                  // public API, no key needed
   google_maps:      ['google_places'],
   instagram:        ['serp'],
   facebook:         ['serp'],
   linkedin:         ['serp'],
-  telegram:         ['telegram_bot_token'],
+  telegram:         ['telegram_bot'],    // matches getApiKey('telegram_bot') in scrapers
   quora:            ['serp'],
   news:             ['serp'],
   financial_forums: ['serp'],

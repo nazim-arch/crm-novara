@@ -1,5 +1,5 @@
 import { inngest } from './client';
-import { prisma, updateCampaignStatus, logSignal } from '@/lib/intentradar/db';
+import { prisma, updateCampaignStatus, logSignal, getApiKey } from '@/lib/intentradar/db';
 import { runAllScrapers } from '@/lib/intentradar/scrapers';
 import { scoreSignal } from '@/lib/intentradar/scoring';
 import { generateAIInsights } from '@/lib/intentradar/ai-insights';
@@ -41,9 +41,22 @@ export const generateLeadsFunction = inngest.createFunction(
       buyerPersonas, urgency, keywords,
     };
 
-    // Step 1: Run all scrapers
+    // Step 1: Log key availability, then run all scrapers
     const rawSignals = await step.run('run-scrapers', async () => {
       await updateCampaignStatus(campaignId, 'running', { startedAt: new Date() });
+
+      // Log which API keys are configured so we can debug missing sources
+      const keyChecks = await Promise.all([
+        getApiKey('youtube').then(v => ({ key: 'youtube', has: !!v })),
+        getApiKey('serp').then(v => ({ key: 'serp', has: !!v })),
+        getApiKey('google_places').then(v => ({ key: 'google_places', has: !!v })),
+        getApiKey('reddit_client_id').then(v => ({ key: 'reddit_client_id', has: !!v })),
+        getApiKey('claude').then(v => ({ key: 'claude', has: !!v })),
+        getApiKey('openai').then(v => ({ key: 'openai', has: !!v })),
+      ]);
+      console.log('[IntentRadar] API key status:', keyChecks.map(k => `${k.key}=${k.has ? 'YES' : 'NO'}`).join(' | '));
+      console.log('[IntentRadar] Sources requested:', sources.join(', '));
+
       return runAllScrapers(scraperConfig, sources);
     });
 
