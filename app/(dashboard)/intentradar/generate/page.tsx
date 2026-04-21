@@ -7,6 +7,12 @@ import { useRouter } from 'next/navigation';
 // ─── Source definitions with free flag ────────────────────────────────────────
 const SOURCE_GROUPS = [
   {
+    label: 'AI-Generated Signals (uses your OpenAI key)',
+    sources: [
+      { id: 'openai_generate', label: 'OpenAI Lead Gen', icon: '🤖', desc: 'GPT-4o generates realistic buyer signals from your criteria', free: false, freeNote: 'OpenAI key' },
+    ],
+  },
+  {
     label: 'Open APIs (no paid subscription needed)',
     sources: [
       { id: 'youtube', label: 'YouTube', icon: '🎬', desc: 'Property walkthrough comments', free: true, freeNote: 'Free API key (10k req/day)' },

@@ -23,6 +23,8 @@ interface ScraperConfig {
   propertyType: string;
   bhkConfig?: string;
   keywords: string[];
+  urgency?: string;
+  buyerPersonas?: string[];
 }
 
 // ─── YOUTUBE SCRAPER ───
@@ -543,10 +545,113 @@ export async function scrapeSerpPortalForums(config: ScraperConfig): Promise<Raw
   return serpBatch(queries, 'portal_forums', config, apiKey);
 }
 
+// ─── OPENAI LEAD GENERATOR ───
+// Uses GPT-4o to generate realistic buyer intent signals based on campaign criteria.
+// Produces signals as if they came from multiple platforms — these go through the
+// same scoring pipeline as real scraped signals.
+export async function scrapeOpenAI(config: ScraperConfig): Promise<RawSignal[]> {
+  const apiKey = await getApiKey('openai');
+  if (!apiKey) {
+    console.log('OpenAI key not configured — skipping AI lead generation');
+    return [];
+  }
+
+  const budgetStr = `₹${config.budgetMin}–${config.budgetMax} Cr`;
+  const markets = config.microMarkets.join(', ');
+  const bhk = config.bhkConfig ? `${config.bhkConfig} ` : '';
+  const keywords = config.keywords.length ? `\nAdditional signals to include: ${config.keywords.join(', ')}` : '';
+
+  const prompt = `You are a real estate market intelligence system for the Indian property market.
+
+Generate 25 realistic buyer intent signals — comments or posts that genuine buyers might write on YouTube, Reddit, housing forums, or LinkedIn — for people looking to buy property matching these criteria:
+
+City: ${config.city}
+Target areas/micro-markets: ${markets}
+Property: ${bhk}${config.propertyType}
+Budget: ${budgetStr}
+Buyer urgency: ${config.urgency}
+Buyer types: ${config.buyerPersonas?.join(', ') || 'general buyers'}${keywords}
+
+Rules:
+- Mix platforms: youtube_comment, reddit_post, forum_post, linkedin_post (distribute roughly evenly)
+- Vary intent strength: some very specific (budget mentioned, area locked, comparing builders), some exploratory
+- Include NRI buyers for 20% of signals (mention US/UAE/UK/Singapore)
+- Use natural Indian English — mentions of EMI, RERA, possession, OC, clubhouse, gated community etc
+- Each signal must be unique and realistic, not a template
+- Include author handles that look real (Indian names)
+
+Return ONLY a valid JSON array. Each element:
+{
+  "platform": "youtube_comment" | "reddit_post" | "forum_post" | "linkedin_post",
+  "author_handle": "string",
+  "author_name": "string",
+  "content": "the actual comment or post text (40-200 words)",
+  "source_url": "a plausible URL string"
+}`;
+
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        max_tokens: 4000,
+        temperature: 0.85,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: 'You generate realistic buyer intent signals for real estate market intelligence. Always return valid JSON with a "signals" array.',
+          },
+          { role: 'user', content: prompt },
+        ],
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      console.error('OpenAI lead generation error:', res.status, err);
+      return [];
+    }
+
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content || '{}';
+
+    let parsed: { signals?: any[] } = {};
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      console.error('OpenAI returned invalid JSON');
+      return [];
+    }
+
+    const signals: RawSignal[] = (parsed.signals || []).map((s: any) => ({
+      platform: s.platform || 'openai_generated',
+      authorHandle: s.author_handle || undefined,
+      authorName: s.author_name || undefined,
+      content: s.content || '',
+      sourceUrl: s.source_url || undefined,
+      capturedAt: new Date(),
+      sourceType: 'ai_generated',
+      rawData: { generated_by: 'openai', model: 'gpt-4o' },
+    })).filter((s: RawSignal) => s.content.length > 20);
+
+    console.log(`OpenAI generated ${signals.length} buyer signals`);
+    return signals;
+  } catch (err) {
+    console.error('OpenAI lead generation failed:', err);
+    return [];
+  }
+}
+
 // ─── MASTER SCRAPER ───
 export async function runAllScrapers(config: ScraperConfig, sources: string[]): Promise<RawSignal[]> {
   const allSignals: RawSignal[] = [];
   const scraperMap: Record<string, (config: ScraperConfig) => Promise<RawSignal[]>> = {
+    openai_generate: scrapeOpenAI,
     youtube: scrapeYouTube,
     reddit: scrapeReddit,
     google_maps: scrapeGoogleMaps,

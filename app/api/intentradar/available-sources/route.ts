@@ -7,6 +7,7 @@ import { getApiKey } from '@/lib/intentradar/db';
 // Map each source ID to the DB key names it requires
 // Empty array = works without any key (public API)
 const SOURCE_KEY_MAP: Record<string, string[]> = {
+  openai_generate:  ['openai'],          // uses OpenAI to generate buyer signals
   youtube:          ['youtube'],
   reddit:           [],                  // public API, no key needed
   google_maps:      ['google_places'],
