@@ -1,4 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
+import { config } from "dotenv";
+config({ path: ".env.local" });
+config({ path: ".env" });
 
 export default defineConfig({
   testDir: "./e2e",
@@ -19,6 +22,7 @@ export default defineConfig({
       name: "setup",
       testMatch: "**/global-setup.ts",
       use: { storageState: undefined },
+      timeout: 60_000,
     },
     {
       name: "chromium",

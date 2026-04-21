@@ -9,7 +9,7 @@ setup("authenticate", async ({ page }) => {
   const password = process.env.TEST_PASSWORD;
   if (!email || !password) throw new Error("TEST_EMAIL and TEST_PASSWORD env vars are required");
 
-  await page.goto("/login");
+  await page.goto("/login", { waitUntil: "networkidle" });
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
   await page.locator('button[type="submit"]').click();
