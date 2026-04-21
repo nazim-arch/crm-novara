@@ -92,6 +92,7 @@ export default function GenerateLeadsPage() {
   const [keyAvail, setKeyAvail] = useState<KeyAvailability | null>(null);
   const [activeCampaignId, setActiveCampaignId] = useState<string | null>(null);
   const [stopping, setStopping] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Form state
   const [city, setCity] = useState('');
@@ -107,6 +108,23 @@ export default function GenerateLeadsPage() {
   const [keywords, setKeywords] = useState('');
 
   const ALL_SOURCE_IDS = SOURCE_GROUPS.flatMap(g => g.sources).map(s => s.id);
+
+  // On mount: check if a campaign is already running (e.g. after browser refresh)
+  useEffect(() => {
+    fetch('/api/intentradar/campaigns/running')
+      .then(r => r.json())
+      .then(({ campaign }) => {
+        if (campaign?.id) {
+          setActiveCampaignId(campaign.id);
+          setLoading(true);
+          setProgress('Scanning sources for buyer signals...');
+          setProgressDetail('Resumed after page refresh');
+          startPolling(campaign.id, Date.now());
+        }
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fetch which API keys are configured; auto-select available sources
   useEffect(() => {
@@ -154,6 +172,47 @@ export default function GenerateLeadsPage() {
 
   const canGenerate = city && selectedMarkets.length > 0 && budgetMin && budgetMax && selectedSources.length > 0;
 
+  const startPolling = useCallback((campaignId: string, startedAt: number) => {
+    const POLL_INTERVAL = 5000;
+    const MAX_WAIT_MS = 10 * 60 * 1000;
+
+    const poll = async (): Promise<void> => {
+      if (Date.now() - startedAt > MAX_WAIT_MS) {
+        router.push(`/intentradar/leads?campaignId=${campaignId}`);
+        return;
+      }
+      try {
+        const statusRes = await fetch(`/api/intentradar/generate/status?campaignId=${campaignId}`);
+        const { campaign } = await statusRes.json();
+        if (campaign.status === 'completed') {
+          setProgress(`Found ${campaign.totalLeads} leads! Redirecting...`);
+          setProgressDetail(`${campaign.hotLeads} HOT · ${campaign.warmLeads} WARM · ${campaign.coolLeads} COOL`);
+          setTimeout(() => router.push(`/intentradar/leads?campaignId=${campaignId}`), 1500);
+          return;
+        }
+        if (campaign.status === 'failed') {
+          const msg = campaign.errorMessage
+            ? `Generation failed: ${campaign.errorMessage}`
+            : 'Lead generation failed — check Vercel logs for details.';
+          setError(msg);
+          setLoading(false);
+          setActiveCampaignId(null);
+          return;
+        }
+        if (campaign.status === 'running') {
+          setProgress('Scanning sources for buyer signals...');
+          setProgressDetail(`Running for ${Math.round((Date.now() - startedAt) / 1000)}s…`);
+        }
+      } catch {
+        // Network hiccup — keep polling
+      }
+      pollRef.current = setTimeout(poll, POLL_INTERVAL);
+    };
+
+    pollRef.current = setTimeout(poll, POLL_INTERVAL);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router]);
+
   const handleGenerate = async () => {
     if (!canGenerate) return;
     setLoading(true);
@@ -188,38 +247,7 @@ export default function GenerateLeadsPage() {
       setActiveCampaignId(campaignId);
       setProgress('Scanning sources for buyer signals...');
       setProgressDetail('This runs in the background — typically 2-5 minutes');
-
-      const POLL_INTERVAL = 5000;
-      const MAX_WAIT_MS = 10 * 60 * 1000;
-      const startedAt = Date.now();
-
-      const poll = async (): Promise<void> => {
-        if (Date.now() - startedAt > MAX_WAIT_MS) {
-          router.push(`/intentradar/leads?campaignId=${campaignId}`);
-          return;
-        }
-        const statusRes = await fetch(`/api/intentradar/generate/status?campaignId=${campaignId}`);
-        const { campaign } = await statusRes.json();
-        if (campaign.status === 'completed') {
-          setProgress(`Found ${campaign.totalLeads} leads! Redirecting...`);
-          setProgressDetail(`${campaign.hotLeads} HOT · ${campaign.warmLeads} WARM · ${campaign.coolLeads} COOL`);
-          setTimeout(() => router.push(`/intentradar/leads?campaignId=${campaignId}`), 1500);
-          return;
-        }
-        if (campaign.status === 'failed') {
-          const msg = campaign.errorMessage
-            ? `Generation failed: ${campaign.errorMessage}`
-            : 'Lead generation failed — check Vercel logs for details.';
-          throw new Error(msg);
-        }
-        if (campaign.status === 'running') {
-          setProgress('Scanning sources for buyer signals...');
-          setProgressDetail(`Running for ${Math.round((Date.now() - startedAt) / 1000)}s…`);
-        }
-        setTimeout(poll, POLL_INTERVAL);
-      };
-
-      setTimeout(poll, POLL_INTERVAL);
+      startPolling(campaignId, Date.now());
     } catch (e: any) {
       setError(e.message || 'Something went wrong');
       setLoading(false);
