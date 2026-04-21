@@ -55,7 +55,7 @@ const NAV_CONFIG = [
   {
     label: "Reports",
     items: [
-      { href: "/reports", label: "Revenue & Net Profit", icon: FileText, roles: ["Admin", "Manager"] },
+      { href: "/reports", label: "Revenue & Net Profit", icon: FileText, roles: ["Admin"] },
     ],
   },
   {

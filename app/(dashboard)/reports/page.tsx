@@ -7,7 +7,7 @@ import { ReportsClient } from "@/components/reports/ReportsClient";
 export default async function ReportsPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "financial:view")) redirect("/dashboard/crm");
+  if (session.user.role !== "Admin") redirect("/dashboard/crm");
 
   const salesUsers = await prisma.user.findMany({
     where: { is_active: true, role: { in: ["Sales", "Admin", "Manager"] } },
