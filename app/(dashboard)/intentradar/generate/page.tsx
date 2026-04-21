@@ -1,22 +1,50 @@
 // app/intentradar/generate/page.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
-const CITIES = ['Bangalore', 'Mumbai', 'Delhi-NCR', 'Hyderabad', 'Pune', 'Chennai', 'Kolkata', 'Ahmedabad', 'Goa'];
+// ─── Source definitions with free flag ────────────────────────────────────────
+const SOURCE_GROUPS = [
+  {
+    label: 'Open APIs (no paid subscription needed)',
+    sources: [
+      { id: 'youtube', label: 'YouTube', icon: '🎬', desc: 'Property walkthrough comments', free: true, freeNote: 'Free API key (10k req/day)' },
+      { id: 'reddit', label: 'Reddit', icon: '💬', desc: 'r/IndianRealEstate + city subreddits', free: true, freeNote: 'No key needed' },
+    ],
+  },
+  {
+    label: 'Social Media (requires SerpAPI key)',
+    sources: [
+      { id: 'instagram', label: 'Instagram', icon: '📸', desc: 'Builder & influencer posts', free: false, freeNote: 'SerpAPI ~$50/mo' },
+      { id: 'facebook', label: 'Facebook Groups', icon: '👥', desc: 'NRI & local buyer groups', free: false, freeNote: 'SerpAPI ~$50/mo' },
+      { id: 'linkedin', label: 'LinkedIn', icon: '💼', desc: 'Job relocations & NRI return signals', free: false, freeNote: 'SerpAPI ~$50/mo' },
+    ],
+  },
+  {
+    label: 'Maps & Reviews (requires Google Places API key)',
+    sources: [
+      { id: 'google_maps', label: 'Google Maps', icon: '📍', desc: 'Project & broker reviews', free: false, freeNote: 'Google Places ($200 free credit/mo)' },
+    ],
+  },
+  {
+    label: 'Messaging (requires Telegram Bot Token)',
+    sources: [
+      { id: 'telegram', label: 'Telegram', icon: '✈️', desc: 'Public real estate groups', free: false, freeNote: 'Free Bot Token' },
+    ],
+  },
+  {
+    label: 'Forums & Q&A (requires SerpAPI key)',
+    sources: [
+      { id: 'quora', label: 'Quora', icon: '❓', desc: 'Property buying & NRI Q&A threads', free: false, freeNote: 'SerpAPI ~$50/mo' },
+      { id: 'portal_forums', label: 'Portal Forums', icon: '🏢', desc: '99acres, NoBroker, Housing', free: false, freeNote: 'SerpAPI ~$50/mo' },
+      { id: 'financial_forums', label: 'Financial Forums', icon: '🏦', desc: 'BankBazaar, Paisabazaar home loan queries', free: false, freeNote: 'SerpAPI ~$50/mo' },
+      { id: 'news', label: 'Property News', icon: '📰', desc: 'ET Realty, MoneyControl, Mint, TOI', free: false, freeNote: 'SerpAPI ~$50/mo' },
+    ],
+  },
+];
 
-const MICRO_MARKETS: Record<string, string[]> = {
-  'Bangalore': ['Indiranagar', 'Koramangala', 'HSR Layout', 'Whitefield', 'Sarjapur Road', 'Hebbal', 'Yelahanka', 'Electronic City', 'JP Nagar', 'Bannerghatta Road', 'Marathahalli', 'KR Puram'],
-  'Mumbai': ['Andheri', 'Bandra', 'Thane', 'Powai', 'Worli', 'Goregaon', 'Mulund', 'Navi Mumbai', 'Panvel', 'Chembur'],
-  'Delhi-NCR': ['Gurgaon', 'Noida', 'Greater Noida', 'Dwarka', 'Faridabad', 'Ghaziabad', 'Golf Course Road', 'Sohna Road'],
-  'Hyderabad': ['Gachibowli', 'HITEC City', 'Kondapur', 'Banjara Hills', 'Jubilee Hills', 'Miyapur', 'Kompally', 'Shamshabad'],
-  'Pune': ['Hinjewadi', 'Wakad', 'Baner', 'Kharadi', 'Viman Nagar', 'Koregaon Park', 'Hadapsar', 'PCMC'],
-  'Chennai': ['OMR', 'ECR', 'Anna Nagar', 'Adyar', 'Velachery', 'Porur', 'Sholinganallur', 'Tambaram'],
-  'Kolkata': ['Salt Lake', 'Rajarhat', 'New Town', 'Alipore', 'EM Bypass', 'Howrah', 'Garia'],
-  'Ahmedabad': ['SG Highway', 'Satellite', 'Prahlad Nagar', 'Bopal', 'South Bopal', 'Shela', 'Vastrapur'],
-  'Goa': ['Panjim', 'Mapusa', 'Margao', 'Calangute', 'Anjuna', 'Porvorim', 'Assagao'],
-};
+const FREE_SOURCE_IDS = SOURCE_GROUPS.flatMap(g => g.sources).filter(s => s.free).map(s => s.id);
 
 const PROPERTY_TYPES = ['Apartment', 'Villa', 'Plot', 'Penthouse', 'Row House', 'Commercial'];
 const BHK_OPTIONS = ['1 BHK', '2 BHK', '3 BHK', '4 BHK', '4+ BHK'];
@@ -32,42 +60,18 @@ const URGENCY_OPTIONS = [
   { id: '6_months', label: '3-6 Months', color: '#f59e0b' },
   { id: 'exploring', label: 'Exploring (6+ months)', color: '#22c55e' },
 ];
-const SOURCE_GROUPS = [
-  {
-    label: 'Always Active',
-    sources: [
-      { id: 'youtube', label: 'YouTube', icon: '🎬', desc: 'Comments on property walkthrough channels' },
-      { id: 'reddit', label: 'Reddit', icon: '💬', desc: 'r/IndianRealEstate + city subreddits' },
-      { id: 'google_maps', label: 'Google Maps', icon: '📍', desc: 'Project & broker office reviews' },
-    ],
-  },
-  {
-    label: 'Social Media (requires SerpAPI key)',
-    sources: [
-      { id: 'instagram', label: 'Instagram', icon: '📸', desc: 'Builder & influencer posts' },
-      { id: 'facebook', label: 'Facebook Groups', icon: '👥', desc: 'NRI & local buyer groups' },
-      { id: 'linkedin', label: 'LinkedIn', icon: '💼', desc: 'Job relocations & NRI return signals' },
-    ],
-  },
-  {
-    label: 'Messaging (requires Telegram Bot Token)',
-    sources: [
-      { id: 'telegram', label: 'Telegram', icon: '✈️', desc: 'Public real estate groups bot monitors' },
-    ],
-  },
-  {
-    label: 'Forums & Q&A (requires SerpAPI key)',
-    sources: [
-      { id: 'quora', label: 'Quora', icon: '❓', desc: 'Property buying & NRI Q&A threads' },
-      { id: 'portal_forums', label: 'Portal Forums', icon: '🏢', desc: '99acres, NoBroker, Housing buyer sections' },
-      { id: 'financial_forums', label: 'Financial Forums', icon: '🏦', desc: 'BankBazaar, Paisabazaar home loan queries' },
-      { id: 'news', label: 'Property News', icon: '📰', desc: 'ET Realty, MoneyControl, Mint, TOI' },
-    ],
-  },
-];
 
-const SOURCES = SOURCE_GROUPS.flatMap(g => g.sources);
+// ─── Nominatim types ──────────────────────────────────────────────────────────
+interface NominatimResult {
+  place_id: number;
+  display_name: string;
+  name: string;
+  address: Record<string, string>;
+  type: string;
+  class: string;
+}
 
+// ─── Main page ────────────────────────────────────────────────────────────────
 export default function GenerateLeadsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -84,18 +88,23 @@ export default function GenerateLeadsPage() {
   const [bhkConfig, setBhkConfig] = useState('');
   const [personas, setPersonas] = useState<string[]>([]);
   const [urgency, setUrgency] = useState('exploring');
+  const [freeOnly, setFreeOnly] = useState(false);
   const [selectedSources, setSelectedSources] = useState<string[]>(['youtube', 'reddit', 'google_maps', 'quora', 'portal_forums', 'financial_forums']);
   const [keywords, setKeywords] = useState('');
 
-  const toggleMarket = (m: string) => {
-    setSelectedMarkets(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
+  const togglePersona = (p: string) => setPersonas(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]);
+  const toggleSource = (s: string) => setSelectedSources(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
+  const removeMarket = (m: string) => setSelectedMarkets(prev => prev.filter(x => x !== m));
+
+  // When free-only toggled on, keep only free sources selected
+  const handleFreeOnly = (on: boolean) => {
+    setFreeOnly(on);
+    if (on) setSelectedSources(prev => prev.filter(id => FREE_SOURCE_IDS.includes(id)));
   };
-  const togglePersona = (p: string) => {
-    setPersonas(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]);
-  };
-  const toggleSource = (s: string) => {
-    setSelectedSources(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
-  };
+
+  const visibleGroups = freeOnly
+    ? SOURCE_GROUPS.map(g => ({ ...g, sources: g.sources.filter(s => s.free) })).filter(g => g.sources.length > 0)
+    : SOURCE_GROUPS;
 
   const canGenerate = city && selectedMarkets.length > 0 && budgetMin && budgetMax && selectedSources.length > 0;
 
@@ -107,7 +116,6 @@ export default function GenerateLeadsPage() {
     setProgressDetail('');
 
     try {
-      // Fire the job — returns in <1s with a campaignId
       const res = await fetch('/api/intentradar/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -134,38 +142,28 @@ export default function GenerateLeadsPage() {
       setProgress('Scanning sources for buyer signals...');
       setProgressDetail('This runs in the background — typically 2-5 minutes');
 
-      // Poll for completion every 5 seconds
       const POLL_INTERVAL = 5000;
-      const MAX_WAIT_MS = 10 * 60 * 1000; // 10 minutes
+      const MAX_WAIT_MS = 10 * 60 * 1000;
       const startedAt = Date.now();
 
       const poll = async (): Promise<void> => {
         if (Date.now() - startedAt > MAX_WAIT_MS) {
-          // Timed out on frontend — job still running, redirect anyway
           router.push(`/intentradar/leads?campaignId=${campaignId}`);
           return;
         }
-
         const statusRes = await fetch(`/api/intentradar/generate/status?campaignId=${campaignId}`);
         const { campaign } = await statusRes.json();
-
         if (campaign.status === 'completed') {
           setProgress(`Found ${campaign.totalLeads} leads! Redirecting...`);
           setProgressDetail(`${campaign.hotLeads} HOT · ${campaign.warmLeads} WARM · ${campaign.coolLeads} COOL`);
           setTimeout(() => router.push(`/intentradar/leads?campaignId=${campaignId}`), 1500);
           return;
         }
-
-        if (campaign.status === 'failed') {
-          throw new Error('Lead generation failed. Check server logs.');
-        }
-
-        // still running — show live progress message
+        if (campaign.status === 'failed') throw new Error('Lead generation failed. Check server logs.');
         if (campaign.status === 'running') {
           setProgress('Scanning sources for buyer signals...');
           setProgressDetail(`Running for ${Math.round((Date.now() - startedAt) / 1000)}s…`);
         }
-
         setTimeout(poll, POLL_INTERVAL);
       };
 
@@ -175,8 +173,6 @@ export default function GenerateLeadsPage() {
       setLoading(false);
     }
   };
-
-  const markets = MICRO_MARKETS[city] || [];
 
   return (
     <div style={{ maxWidth: 780, margin: '0 auto', padding: '32px 20px 60px' }}>
@@ -190,44 +186,28 @@ export default function GenerateLeadsPage() {
       </div>
 
       {/* ── CITY ── */}
-      <Section title="City" required>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {CITIES.map(c => (
-            <Chip key={c} selected={city === c} onClick={() => { setCity(c); setSelectedMarkets([]); }}>{c}</Chip>
-          ))}
-        </div>
+      <Section title="City" required subtitle="Search any city in India or worldwide">
+        <CitySearch value={city} onChange={(c) => { setCity(c); setSelectedMarkets([]); }} />
       </Section>
 
       {/* ── MICRO-MARKETS ── */}
-      {city && (
-        <Section title="Micro-Markets" required subtitle="Select target localities">
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {markets.map(m => (
-              <Chip key={m} selected={selectedMarkets.includes(m)} onClick={() => toggleMarket(m)}>{m}</Chip>
-            ))}
-          </div>
-          {selectedMarkets.length > 0 && (
-            <p style={{ fontSize: 12, color: '#4338ca', marginTop: 8, fontWeight: 600 }}>
-              Selected: {selectedMarkets.join(', ')}
-            </p>
-          )}
-        </Section>
-      )}
+      <Section title="Micro-Markets" required subtitle="Search and add any localities, neighbourhoods, or areas">
+        <MarketTagInput
+          city={city}
+          selected={selectedMarkets}
+          onAdd={(m) => setSelectedMarkets(prev => prev.includes(m) ? prev : [...prev, m])}
+          onRemove={removeMarket}
+        />
+      </Section>
 
       {/* ── BUDGET ── */}
       <Section title="Budget Range (in Crores)" required>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <input
-            type="number" step="0.5" min="0" placeholder="Min (e.g., 1.5)"
-            value={budgetMin} onChange={e => setBudgetMin(e.target.value)}
-            style={inputStyle}
-          />
+          <input type="number" step="0.5" min="0" placeholder="Min (e.g., 1.5)"
+            value={budgetMin} onChange={e => setBudgetMin(e.target.value)} style={inputStyle} />
           <span style={{ color: '#a8a29e', fontWeight: 600 }}>to</span>
-          <input
-            type="number" step="0.5" min="0" placeholder="Max (e.g., 3)"
-            value={budgetMax} onChange={e => setBudgetMax(e.target.value)}
-            style={inputStyle}
-          />
+          <input type="number" step="0.5" min="0" placeholder="Max (e.g., 3)"
+            value={budgetMax} onChange={e => setBudgetMax(e.target.value)} style={inputStyle} />
           <span style={{ color: '#a8a29e', fontSize: 13 }}>Cr</span>
         </div>
       </Section>
@@ -283,21 +263,55 @@ export default function GenerateLeadsPage() {
 
       {/* ── SOURCES ── */}
       <Section title="Signal Sources" required subtitle="Select platforms to scan">
+        {/* Free-only toggle */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '10px 14px', borderRadius: 10, background: freeOnly ? '#f0fdf4' : '#fafaf9',
+          border: `1px solid ${freeOnly ? '#86efac' : '#e7e5e4'}`, marginBottom: 14, cursor: 'pointer',
+        }} onClick={() => handleFreeOnly(!freeOnly)}>
+          <div>
+            <span style={{ fontSize: 13, fontWeight: 700, color: freeOnly ? '#15803d' : '#1c1917' }}>
+              🆓 Free APIs Only
+            </span>
+            <span style={{ fontSize: 11, color: '#a8a29e', marginLeft: 8 }}>
+              Use only YouTube & Reddit — no paid subscriptions needed
+            </span>
+          </div>
+          <div style={{
+            width: 40, height: 22, borderRadius: 11, background: freeOnly ? '#22c55e' : '#d1d5db',
+            position: 'relative', transition: 'background 0.2s', flexShrink: 0,
+          }}>
+            <div style={{
+              position: 'absolute', top: 3, left: freeOnly ? 21 : 3,
+              width: 16, height: 16, borderRadius: '50%', background: 'white',
+              transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+            }} />
+          </div>
+        </div>
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {SOURCE_GROUPS.map(group => (
+          {visibleGroups.map(group => (
             <div key={group.label}>
               <p style={{ fontSize: 11, fontWeight: 700, color: '#a8a29e', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{group.label}</p>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 8 }}>
                 {group.sources.map(s => (
                   <div key={s.id} onClick={() => toggleSource(s.id)} style={{
-                    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                    display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px',
                     borderRadius: 10, border: `1px solid ${selectedSources.includes(s.id) ? '#4338ca' : '#e7e5e4'}`,
                     background: selectedSources.includes(s.id) ? '#eef2ff' : 'white', cursor: 'pointer',
+                    position: 'relative',
                   }}>
-                    <span style={{ fontSize: 18 }}>{s.icon}</span>
-                    <div>
+                    <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>{s.icon}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: selectedSources.includes(s.id) ? '#4338ca' : '#1c1917' }}>{s.label}</div>
-                      <div style={{ fontSize: 10, color: '#a8a29e' }}>{s.desc}</div>
+                      <div style={{ fontSize: 10, color: '#a8a29e', marginTop: 1 }}>{s.desc}</div>
+                      <div style={{
+                        display: 'inline-block', marginTop: 4, fontSize: 9, fontWeight: 700,
+                        padding: '2px 6px', borderRadius: 4,
+                        background: s.free ? '#dcfce7' : '#fef9c3', color: s.free ? '#15803d' : '#854d0e',
+                      }}>
+                        {s.freeNote}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -309,11 +323,9 @@ export default function GenerateLeadsPage() {
 
       {/* ── CUSTOM KEYWORDS ── */}
       <Section title="Custom Keywords" subtitle="Optional — comma separated additional search terms">
-        <input
-          type="text" value={keywords} onChange={e => setKeywords(e.target.value)}
+        <input type="text" value={keywords} onChange={e => setKeywords(e.target.value)}
           placeholder="e.g., RERA approved, gated community, near metro, east facing"
-          style={{ ...inputStyle, width: '100%' }}
-        />
+          style={{ ...inputStyle, width: '100%' }} />
       </Section>
 
       {/* ── GENERATE BUTTON ── */}
@@ -327,23 +339,18 @@ export default function GenerateLeadsPage() {
           </div>
         ) : (
           <>
-            <button
-              onClick={handleGenerate}
-              disabled={!canGenerate}
-              style={{
-                padding: '16px 48px', borderRadius: 12, border: 'none',
-                background: canGenerate ? 'linear-gradient(135deg, #4338ca, #6366f1)' : '#e7e5e4',
-                color: canGenerate ? 'white' : '#a8a29e',
-                fontWeight: 800, fontSize: 16, cursor: canGenerate ? 'pointer' : 'not-allowed',
-                boxShadow: canGenerate ? '0 4px 14px rgba(67,56,202,0.3)' : 'none',
-                transition: 'all 0.2s',
-              }}
-            >
+            <button onClick={handleGenerate} disabled={!canGenerate} style={{
+              padding: '16px 48px', borderRadius: 12, border: 'none',
+              background: canGenerate ? 'linear-gradient(135deg, #4338ca, #6366f1)' : '#e7e5e4',
+              color: canGenerate ? 'white' : '#a8a29e',
+              fontWeight: 800, fontSize: 16, cursor: canGenerate ? 'pointer' : 'not-allowed',
+              boxShadow: canGenerate ? '0 4px 14px rgba(67,56,202,0.3)' : 'none', transition: 'all 0.2s',
+            }}>
               🚀 Generate Leads
             </button>
             {!canGenerate && (
               <p style={{ fontSize: 12, color: '#f59e0b', marginTop: 8 }}>
-                Please fill in: city, micro-markets, budget range, and select at least one source
+                Please fill in: city, at least one micro-market, budget range, and select at least one source
               </p>
             )}
           </>
@@ -358,8 +365,237 @@ export default function GenerateLeadsPage() {
   );
 }
 
-// ─── Reusable Components ───
+// ─── City Autocomplete ────────────────────────────────────────────────────────
+function CitySearch({ value, onChange }: { value: string; onChange: (city: string) => void }) {
+  const [query, setQuery] = useState(value);
+  const [suggestions, setSuggestions] = useState<NominatimResult[]>([]);
+  const [open, setOpen] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => { setQuery(value); }, [value]);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const search = useCallback((q: string) => {
+    if (q.length < 2) { setSuggestions([]); return; }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&addressdetails=1&limit=6&featuretype=city&accept-language=en`;
+        const res = await fetch(url, { headers: { 'User-Agent': 'Novara-CRM/1.0' } });
+        const data: NominatimResult[] = await res.json();
+        // Filter to city/town/village type results
+        const cities = data.filter(r => ['city', 'town', 'village', 'administrative'].includes(r.type) || r.class === 'place');
+        setSuggestions(cities.slice(0, 6));
+        setOpen(cities.length > 0);
+      } catch { /* silently fail */ }
+    }, 350);
+  }, []);
+
+  const handleInput = (q: string) => { setQuery(q); onChange(q); search(q); };
+  const select = (r: NominatimResult) => {
+    const cityName = r.address?.city || r.address?.town || r.address?.village || r.name;
+    setQuery(cityName);
+    onChange(cityName);
+    setSuggestions([]);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative', maxWidth: 360 }}>
+      <input
+        type="text"
+        value={query}
+        onChange={e => handleInput(e.target.value)}
+        onFocus={() => suggestions.length > 0 && setOpen(true)}
+        placeholder="Type any city (e.g., Pune, Bangalore, Hyderabad…)"
+        style={{ ...inputStyle, width: '100%' }}
+      />
+      {open && suggestions.length > 0 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+          background: 'white', border: '1px solid #e7e5e4', borderRadius: 10,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.12)', marginTop: 4, overflow: 'hidden',
+        }}>
+          {suggestions.map(r => {
+            const cityName = r.address?.city || r.address?.town || r.address?.village || r.name;
+            const country = r.address?.country || '';
+            const state = r.address?.state || '';
+            return (
+              <div key={r.place_id} onMouseDown={() => select(r)} style={{
+                padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid #f5f5f4',
+                fontSize: 13, display: 'flex', flexDirection: 'column', gap: 1,
+              }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#f5f3ff')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'white')}
+              >
+                <span style={{ fontWeight: 600, color: '#1c1917' }}>📍 {cityName}</span>
+                <span style={{ fontSize: 11, color: '#a8a29e' }}>{[state, country].filter(Boolean).join(', ')}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {value && (
+        <div style={{ marginTop: 6, fontSize: 12, color: '#4338ca', fontWeight: 600 }}>
+          ✓ City: {value}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Micro-Market Tag Input with Nominatim ────────────────────────────────────
+function MarketTagInput({ city, selected, onAdd, onRemove }: {
+  city: string;
+  selected: string[];
+  onAdd: (market: string) => void;
+  onRemove: (market: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<NominatimResult[]>([]);
+  const [open, setOpen] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const search = useCallback((q: string) => {
+    if (q.length < 2) { setSuggestions([]); setOpen(false); return; }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const cityQuery = city ? `${q}, ${city}` : q;
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cityQuery)}&format=json&addressdetails=1&limit=8&accept-language=en`;
+        const res = await fetch(url, { headers: { 'User-Agent': 'Novara-CRM/1.0' } });
+        const data: NominatimResult[] = await res.json();
+        setSuggestions(data.slice(0, 7));
+        setOpen(data.length > 0);
+      } catch { /* silently fail */ }
+    }, 350);
+  }, [city]);
+
+  const handleInput = (q: string) => { setQuery(q); search(q); };
+
+  const getMarketName = (r: NominatimResult): string => {
+    return (
+      r.address?.suburb ||
+      r.address?.neighbourhood ||
+      r.address?.quarter ||
+      r.address?.village ||
+      r.address?.town ||
+      r.name
+    );
+  };
+
+  const select = (r: NominatimResult) => {
+    const name = getMarketName(r);
+    if (name) { onAdd(name); setQuery(''); setSuggestions([]); setOpen(false); inputRef.current?.focus(); }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if ((e.key === 'Enter' || e.key === ',') && query.trim()) {
+      e.preventDefault();
+      onAdd(query.trim());
+      setQuery('');
+      setSuggestions([]);
+      setOpen(false);
+    }
+    if (e.key === 'Backspace' && !query && selected.length > 0) {
+      onRemove(selected[selected.length - 1]);
+    }
+  };
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative' }}>
+      {/* Tag + input box */}
+      <div
+        style={{
+          display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 10px',
+          borderRadius: 8, border: '1px solid #e7e5e4', background: '#fafaf9',
+          minHeight: 44, cursor: 'text',
+        }}
+        onClick={() => inputRef.current?.focus()}
+      >
+        {selected.map(m => (
+          <span key={m} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '4px 10px', borderRadius: 6, background: '#4338ca', color: 'white',
+            fontSize: 12, fontWeight: 600,
+          }}>
+            {m}
+            <button
+              onMouseDown={e => { e.stopPropagation(); onRemove(m); }}
+              style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.8)', cursor: 'pointer', padding: '0 0 0 2px', fontSize: 14, lineHeight: 1 }}
+            >×</button>
+          </span>
+        ))}
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
+          onChange={e => handleInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onFocus={() => suggestions.length > 0 && setOpen(true)}
+          placeholder={selected.length === 0 ? (city ? `Search localities in ${city}…` : 'Search any locality or neighbourhood…') : ''}
+          style={{
+            border: 'none', background: 'transparent', outline: 'none',
+            fontSize: 13, flex: '1 0 160px', minWidth: 140, padding: '2px 4px',
+          }}
+        />
+      </div>
+
+      <p style={{ fontSize: 11, color: '#a8a29e', marginTop: 4 }}>
+        Search and select · or type any name and press <kbd style={{ fontSize: 10, background: '#f5f5f4', padding: '1px 5px', borderRadius: 4, border: '1px solid #e7e5e4' }}>Enter</kbd> to add custom location
+      </p>
+
+      {/* Dropdown */}
+      {open && suggestions.length > 0 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+          background: 'white', border: '1px solid #e7e5e4', borderRadius: 10,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.12)', marginTop: 4, overflow: 'hidden',
+        }}>
+          {suggestions.map(r => {
+            const name = getMarketName(r);
+            const context = [r.address?.city, r.address?.town, r.address?.state].filter(Boolean).join(', ');
+            const alreadyAdded = selected.includes(name);
+            return (
+              <div key={r.place_id} onMouseDown={() => !alreadyAdded && select(r)} style={{
+                padding: '9px 14px', cursor: alreadyAdded ? 'default' : 'pointer',
+                borderBottom: '1px solid #f5f5f4', fontSize: 13,
+                opacity: alreadyAdded ? 0.5 : 1,
+              }}
+                onMouseEnter={e => { if (!alreadyAdded) e.currentTarget.style.background = '#f5f3ff'; }}
+                onMouseLeave={e => (e.currentTarget.style.background = 'white')}
+              >
+                <span style={{ fontWeight: 600, color: '#1c1917' }}>📍 {name}</span>
+                {alreadyAdded && <span style={{ fontSize: 10, color: '#22c55e', marginLeft: 6 }}>✓ Added</span>}
+                {context && <div style={{ fontSize: 10, color: '#a8a29e', marginTop: 1 }}>{context}</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Reusable Components ──────────────────────────────────────────────────────
 function Section({ title, subtitle, required, children }: { title: string; subtitle?: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 24 }}>
