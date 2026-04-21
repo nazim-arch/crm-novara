@@ -90,6 +90,8 @@ export default function GenerateLeadsPage() {
   const [progressDetail, setProgressDetail] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [keyAvail, setKeyAvail] = useState<KeyAvailability | null>(null);
+  const [activeCampaignId, setActiveCampaignId] = useState<string | null>(null);
+  const [stopping, setStopping] = useState(false);
 
   // Form state
   const [city, setCity] = useState('');
@@ -183,6 +185,7 @@ export default function GenerateLeadsPage() {
       }
 
       const { campaignId } = await res.json();
+      setActiveCampaignId(campaignId);
       setProgress('Scanning sources for buyer signals...');
       setProgressDetail('This runs in the background — typically 2-5 minutes');
 
@@ -220,6 +223,21 @@ export default function GenerateLeadsPage() {
     } catch (e: any) {
       setError(e.message || 'Something went wrong');
       setLoading(false);
+    }
+  };
+
+  const handleStop = async () => {
+    if (!activeCampaignId || stopping) return;
+    setStopping(true);
+    try {
+      await fetch('/api/intentradar/generate/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignId: activeCampaignId }),
+      });
+      // Poll will detect 'completed' on next tick and redirect
+    } catch {
+      setStopping(false);
     }
   };
 
@@ -428,6 +446,19 @@ export default function GenerateLeadsPage() {
             <p style={{ fontSize: 15, fontWeight: 600, color: '#4338ca', marginBottom: 4 }}>{progress}</p>
             <p style={{ fontSize: 12, color: '#a8a29e' }}>{progressDetail || 'Starting up…'}</p>
             <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+            {activeCampaignId && (
+              <button
+                onClick={handleStop}
+                disabled={stopping}
+                style={{
+                  marginTop: 20, padding: '8px 24px', borderRadius: 8, border: '1px solid #fca5a5',
+                  background: stopping ? '#fef2f2' : 'white', color: stopping ? '#a8a29e' : '#dc2626',
+                  fontSize: 13, fontWeight: 600, cursor: stopping ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {stopping ? 'Stopping…' : '⏹ Stop & Save Results'}
+              </button>
+            )}
           </div>
         ) : (
           <>
