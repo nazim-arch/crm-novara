@@ -203,7 +203,12 @@ export default function GenerateLeadsPage() {
           setTimeout(() => router.push(`/intentradar/leads?campaignId=${campaignId}`), 1500);
           return;
         }
-        if (campaign.status === 'failed') throw new Error('Lead generation failed. Check server logs.');
+        if (campaign.status === 'failed') {
+          const msg = campaign.errorMessage
+            ? `Generation failed: ${campaign.errorMessage}`
+            : 'Lead generation failed — check Vercel logs for details.';
+          throw new Error(msg);
+        }
         if (campaign.status === 'running') {
           setProgress('Scanning sources for buyer signals...');
           setProgressDetail(`Running for ${Math.round((Date.now() - startedAt) / 1000)}s…`);

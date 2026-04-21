@@ -1,9 +1,14 @@
 // app/api/intentradar/settings/route.ts
+// SECURITY: This route handles sensitive API keys.
+//   GET  — returns settings with values masked; hasValue flag only. Never exposes plaintext.
+//   POST — encrypts any new non-masked value before persisting. Skips masked values (unchanged).
+// Decryption happens only in server-side service code (lib/intentradar/db.ts getApiKey).
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/intentradar/db';
+import { encrypt, isEncrypted } from '@/lib/intentradar/crypto';
 
-// GET all settings
+// GET all settings — values are masked, never decrypted here
 export async function GET() {
   const session = await auth();
   if (!session?.user || session.user.role !== 'Admin') {
@@ -15,11 +20,14 @@ export async function GET() {
       orderBy: { category: 'asc' },
     });
 
-    // Mask API key values for security (show only last 4 chars)
+    // Return only metadata + masked hint — never the raw (encrypted or plaintext) value
     const masked = settings.map(s => ({
-      ...s,
-      value: s.encrypted ? `***${s.value.slice(-4)}` : s.value,
+      key: s.key,
+      category: s.category,
+      encrypted: s.encrypted,
       hasValue: s.value.length > 0,
+      // Show last 4 chars of the encrypted blob as a visual confirmation hint only
+      value: s.value.length > 0 ? `***${s.value.slice(-4)}` : '',
     }));
 
     return NextResponse.json({ settings: masked });
@@ -29,7 +37,7 @@ export async function GET() {
   }
 }
 
-// POST - save settings
+// POST — encrypt sensitive values before persisting
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user || session.user.role !== 'Admin') {
@@ -38,32 +46,43 @@ export async function POST(req: NextRequest) {
 
   try {
     const { settings } = await req.json();
+    if (!Array.isArray(settings)) {
+      return NextResponse.json({ error: 'settings must be an array' }, { status: 400 });
+    }
 
-    // settings is an array of { key, value, category, encrypted }
     const results = [];
     for (const setting of settings) {
-      // Don't update if value is masked (hasn't changed)
-      if (setting.value?.startsWith('***')) continue;
+      // Skip masked values — user did not change this key
+      if (!setting.value || setting.value.startsWith('***')) continue;
+
+      const rawValue: string = setting.value.trim();
+      const isApiKey = setting.encrypted === true || setting.category === 'api_keys';
+
+      // Encrypt sensitive values; skip encryption for already-encrypted or empty values
+      let storedValue = rawValue;
+      if (isApiKey && rawValue.length > 0 && !isEncrypted(rawValue)) {
+        storedValue = encrypt(rawValue);
+      }
 
       const result = await prisma.ir_settings.upsert({
         where: { key: setting.key },
         update: {
-          value: setting.value || '',
+          value: storedValue,
           category: setting.category || 'general',
-          encrypted: setting.encrypted ?? false,
+          encrypted: isApiKey,
           updatedAt: new Date(),
         },
         create: {
           key: setting.key,
-          value: setting.value || '',
+          value: storedValue,
           category: setting.category || 'general',
-          encrypted: setting.encrypted ?? false,
+          encrypted: isApiKey,
         },
       });
-      results.push(result);
+      results.push(result.key);
     }
 
-    return NextResponse.json({ success: true, count: results.length });
+    return NextResponse.json({ success: true, updated: results });
   } catch (error) {
     console.error('Settings POST error:', error);
     return NextResponse.json({ error: 'Failed to save settings' }, { status: 500 });

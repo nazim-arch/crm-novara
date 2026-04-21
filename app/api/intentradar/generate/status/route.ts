@@ -25,6 +25,8 @@ export async function GET(req: NextRequest) {
       coolLeads: true,
       startedAt: true,
       completedAt: true,
+      failedAt: true,
+      errorMessage: true,
     },
   });
 

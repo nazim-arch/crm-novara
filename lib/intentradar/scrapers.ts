@@ -13,6 +13,9 @@ export interface RawSignal {
   capturedAt: Date;
   sourceType: string;
   rawData?: any;
+  // 'real' = scraped from a live source; 'synthetic' = AI-generated for demo/testing.
+  // This field creates a hard trust boundary between real buyer signals and synthetic ones.
+  originType?: 'real' | 'synthetic';
 }
 
 interface ScraperConfig {
@@ -636,6 +639,8 @@ Return ONLY a valid JSON array. Each element:
       sourceUrl: s.source_url || undefined,
       capturedAt: new Date(),
       sourceType: 'ai_generated',
+      // Explicitly mark as synthetic — these are never real buyer signals
+      originType: 'synthetic' as const,
       rawData: { generated_by: 'openai', model: 'gpt-4o' },
     })).filter((s: RawSignal) => s.content.length > 20);
 

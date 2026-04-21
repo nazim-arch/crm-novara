@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/intentradar/db';
 
-// GET leads for a campaign
+// GET leads — default filters to real leads only (synthetic require explicit opt-in)
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user || session.user.role !== 'Admin') {
@@ -16,15 +16,19 @@ export async function GET(req: NextRequest) {
     const tier = searchParams.get('tier');
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '50');
+    // showSynthetic must be explicitly set to 'true' — default hides synthetic leads
+    const showSynthetic = searchParams.get('showSynthetic') === 'true';
 
-    const where: any = {};
+    const where: Record<string, unknown> = {};
     if (campaignId) where.campaignId = campaignId;
     if (tier) where.tier = tier;
+    // Enforce real-only by default — protects sales team from acting on synthetic data
+    if (!showSynthetic) where.leadOriginType = 'real';
 
     const [leads, total] = await Promise.all([
       prisma.ir_lead.findMany({
         where,
-        orderBy: { totalScore: 'desc' },
+        orderBy: [{ totalScore: 'desc' }, { freshnessScore: 'desc' }, { lastSeenAt: 'desc' }],
         skip: (page - 1) * limit,
         take: limit,
         include: { campaign: { select: { name: true, city: true } } },
@@ -35,6 +39,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       leads,
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+      filters: { showSynthetic },
     });
   } catch (error) {
     console.error('Leads GET error:', error);
@@ -42,7 +47,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// PATCH - update lead status
+// PATCH — update engagement status or notes
 export async function PATCH(req: NextRequest) {
   const session = await auth();
   if (!session?.user || session.user.role !== 'Admin') {

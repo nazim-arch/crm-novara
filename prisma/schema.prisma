@@ -752,12 +752,14 @@ model ir_campaign {
   warmLeads      Int      @default(0)
   coolLeads      Int      @default(0)
   
-  // Timing
+  // Timing & lifecycle — lifecycle: draft → queued → running → completed | failed
   startedAt      DateTime?
   completedAt    DateTime?
+  failedAt       DateTime?
+  errorMessage   String?   @db.Text
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  
+
   leads          ir_lead[]
 }
 
@@ -828,14 +830,30 @@ model ir_lead {
   
   // Cross-platform signals
   crossPlatformSignals Json?    // [{platform, url, content, date}]
-  
+
+  // Origin — real: scraped from live source | synthetic: AI-generated for demo/testing
+  leadOriginType       String   @default("real") // real | synthetic
+
+  // Freshness tracking
+  firstSeenAt          DateTime @default(now())
+  lastSeenAt           DateTime @default(now())
+  freshnessScore       Float    @default(1.0)    // 1.0 = fresh today, decays over time
+
+  // Probabilistic deduplication — uses safe cluster language, never claims certainty
+  clusterId            String?                   // shared ID groups probable-duplicate signals
+  duplicateProbability Float?                    // 0-1 matching confidence
+  dedupeDecision       String?                   // distinct | possible_cluster | probable_duplicate | exact_duplicate
+  matchReasons         String[]                  // human-readable reasons for the cluster decision
+
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
-  
+
   @@index([campaignId])
   @@index([tier])
   @@index([totalScore])
   @@index([sourcePlatform])
+  @@index([leadOriginType])
+  @@index([clusterId])
   @@unique([profileHandle, sourcePlatform, campaignId])
 }
 

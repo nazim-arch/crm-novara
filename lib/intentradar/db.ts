@@ -24,12 +24,28 @@ export async function getSettingsByCategory(category: string) {
 }
 
 // ─── API Key helpers ───
+// Keys are stored encrypted at rest (AES-256-GCM).
+// Decryption happens only here on the server — never exposed to the client.
 export async function getApiKey(provider: string): Promise<string | null> {
-  return getSetting(`api_key_${provider}`);
+  const raw = await getSetting(`api_key_${provider}`);
+  if (!raw || raw.trim() === '') return null;
+  try {
+    const { decrypt } = await import('./crypto');
+    return decrypt(raw); // returns plaintext; handles legacy unencrypted values
+  } catch (err) {
+    console.error(`[IntentRadar] Failed to decrypt key for provider "${provider}":`, err);
+    return null;
+  }
 }
 
 export async function setApiKey(provider: string, value: string) {
-  return setSetting(`api_key_${provider}`, value, 'api_keys', true);
+  if (!value || value.trim() === '') {
+    // Clear the key by storing an empty string — no encryption needed
+    return setSetting(`api_key_${provider}`, '', 'api_keys', true);
+  }
+  const { encrypt } = await import('./crypto');
+  const encrypted = encrypt(value.trim());
+  return setSetting(`api_key_${provider}`, encrypted, 'api_keys', true);
 }
 
 // ─── Campaign helpers ───
