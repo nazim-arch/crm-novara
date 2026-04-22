@@ -43,7 +43,7 @@ export async function GET(request: Request) {
         where,
         include: {
           created_by: { select: { id: true, name: true } },
-          _count: { select: { leads: true } },
+          _count: { select: { leads: { where: { lead: { deleted_at: null } } } } },
           configurations: { orderBy: { created_at: "asc" } },
         },
         orderBy: { updated_at: "desc" },
