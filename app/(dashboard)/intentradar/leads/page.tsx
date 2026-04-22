@@ -34,6 +34,10 @@ interface Lead {
   aiResponseDraft: string | null;
   engagementStatus: string;
   leadOriginType: string;
+  intentMode: string;
+  intentType: string | null;
+  listingPrice: string | null;
+  profileUrl: string | null;
   freshnessScore: number;
   dedupeDecision: string | null;
   duplicateProbability: number | null;
@@ -54,7 +58,18 @@ const PLATFORM_ICONS: Record<string, string> = {
   google_maps: '📍', instagram: '📸', twitter: '🐦',
   telegram: '✈️', facebook: '👥', linkedin: '💼', linkedin_post: '💼',
   '99acres': '🏢', magicbricks: '🧱', housing: '🏠', nobroker: '🔓',
+  squareyards: '🏙', portal_listing: '🏗', portal_forums: '🏢',
   forum_post: '🗨️', openai_generate: '🤖', openai_generated: '🤖',
+  openai_generated_seller: '🤖',
+};
+
+const INTENT_TYPE_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  buyer:      { label: '🔍 Buyer',      color: '#1d4ed8', bg: '#dbeafe' },
+  investor:   { label: '📈 Investor',   color: '#0e7490', bg: '#cffafe' },
+  relocation: { label: '✈️ Relocation', color: '#7c3aed', bg: '#ede9fe' },
+  owner:      { label: '🏠 Owner',      color: '#15803d', bg: '#dcfce7' },
+  broker:     { label: '🤝 Broker',     color: '#b45309', bg: '#fef3c7' },
+  developer:  { label: '🏗 Developer',  color: '#6b21a8', bg: '#f3e8ff' },
 };
 
 const DEDUPE_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -77,6 +92,7 @@ function LeadsContent() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [tierFilter, setTierFilter] = useState<string | null>(null);
+  const [modeFilter, setModeFilter] = useState<'ALL' | 'BUYER' | 'SELLER'>('ALL');
   const [showSynthetic, setShowSynthetic] = useState(false);
   const [expandedLead, setExpandedLead] = useState<string | null>(null);
   const [aiTab, setAiTab] = useState<Record<string, 'claude' | 'gpt'>>({});
@@ -125,12 +141,14 @@ function LeadsContent() {
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, engagementStatus: status } : l));
   };
 
+  const displayedLeads = modeFilter === 'ALL' ? leads : leads.filter(l => l.intentMode === modeFilter);
+
   const counts = {
-    all: leads.length,
-    hot: leads.filter(l => l.tier === 'hot').length,
-    warm: leads.filter(l => l.tier === 'warm').length,
-    cool: leads.filter(l => l.tier === 'cool').length,
-    watching: leads.filter(l => l.tier === 'watching').length,
+    all: displayedLeads.length,
+    hot: displayedLeads.filter(l => l.tier === 'hot').length,
+    warm: displayedLeads.filter(l => l.tier === 'warm').length,
+    cool: displayedLeads.filter(l => l.tier === 'cool').length,
+    watching: displayedLeads.filter(l => l.tier === 'watching').length,
   };
 
   return (
@@ -147,16 +165,27 @@ function LeadsContent() {
             </p>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Mode filter */}
+          {(['ALL', 'BUYER', 'SELLER'] as const).map(m => (
+            <button key={m} onClick={() => setModeFilter(m)} style={{
+              padding: '7px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+              border: `1px solid ${modeFilter === m ? (m === 'SELLER' ? '#f59e0b' : m === 'BUYER' ? '#6366f1' : '#4338ca') : '#e7e5e4'}`,
+              background: modeFilter === m ? (m === 'SELLER' ? '#fffbeb' : m === 'BUYER' ? '#eef2ff' : '#f5f5f4') : 'white',
+              color: modeFilter === m ? (m === 'SELLER' ? '#b45309' : m === 'BUYER' ? '#4338ca' : '#1c1917') : '#78716c',
+            }}>
+              {m === 'ALL' ? 'All Modes' : m === 'BUYER' ? '🔍 Buyers' : '🏷 Sellers'}
+            </button>
+          ))}
           <button onClick={() => setShowSynthetic(s => !s)} style={{
-            padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            padding: '7px 12px', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer',
             border: `1px solid ${showSynthetic ? '#7c3aed' : '#e7e5e4'}`,
             background: showSynthetic ? '#ede9fe' : 'white',
             color: showSynthetic ? '#7c3aed' : '#78716c',
           }}>
             🤖 {showSynthetic ? 'Hide' : 'Show'} Synthetic
           </button>
-          <a href="/intentradar/generate" style={{ padding: '10px 20px', borderRadius: 8, background: '#4338ca', color: 'white', fontWeight: 600, fontSize: 13, textDecoration: 'none' }}>
+          <a href="/intentradar/generate" style={{ padding: '8px 16px', borderRadius: 8, background: '#4338ca', color: 'white', fontWeight: 600, fontSize: 12, textDecoration: 'none' }}>
             + New Search
           </a>
         </div>
@@ -188,15 +217,17 @@ function LeadsContent() {
         </div>
       )}
 
-      {!loading && leads.map(lead => {
+      {!loading && displayedLeads.map(lead => {
         const isExpanded = expandedLead === lead.id;
         const tc = TIER_CONFIG[lead.tier] || TIER_CONFIG.watching;
         const isSynthetic = lead.leadOriginType === 'synthetic';
+        const isSeller = lead.intentMode === 'SELLER';
         const conf = getSourceConfidence(lead.sourcePlatform);
         const fresh = freshnessLabel(lead.freshnessScore ?? 1);
         const freshCol = freshnessColor(lead.freshnessScore ?? 1);
         const dedupe = lead.dedupeDecision ? DEDUPE_CONFIG[lead.dedupeDecision] : null;
         const currentAiTab = aiTab[lead.id] || 'claude';
+        const intentTypeCfg = lead.intentType ? INTENT_TYPE_CONFIG[lead.intentType] : null;
 
         return (
           <div key={lead.id} style={{
@@ -213,30 +244,55 @@ function LeadsContent() {
             <div onClick={() => setExpandedLead(isExpanded ? null : lead.id)} style={{ padding: '14px 18px', cursor: 'pointer' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  {/* Row 1: identity + tier + meta badges */}
+                  {/* Row 1: mode badge + identity + tier + meta badges */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 16 }}>{PLATFORM_ICONS[lead.sourcePlatform] || '📌'}</span>
-                    <span style={{ fontWeight: 700, fontSize: 14, color: isSynthetic ? '#78716c' : '#1c1917' }}>
-                      {lead.profileName || lead.profileHandle || 'Anonymous'}
+
+                    {/* Mode pill */}
+                    <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, fontWeight: 800, letterSpacing: '0.05em',
+                      background: isSeller ? '#fffbeb' : '#eef2ff',
+                      color: isSeller ? '#b45309' : '#4338ca',
+                      border: `1px solid ${isSeller ? '#fcd34d' : '#c7d2fe'}`,
+                    }}>
+                      {isSeller ? '🏷 SELLER' : '🔍 BUYER'}
                     </span>
+
+                    <span style={{ fontWeight: 700, fontSize: 14, color: isSynthetic ? '#78716c' : '#1c1917' }}>
+                      {lead.profileName || lead.profileHandle || (isSeller ? 'Property Listing' : 'Anonymous')}
+                    </span>
+
+                    {/* Intent type */}
+                    {intentTypeCfg && (
+                      <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: intentTypeCfg.bg, color: intentTypeCfg.color, fontWeight: 700 }}>
+                        {intentTypeCfg.label}
+                      </span>
+                    )}
 
                     {/* Tier / synthetic label */}
                     {isSynthetic ? (
                       <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, background: '#ede9fe', color: '#7c3aed', fontWeight: 700, border: '1px solid #c4b5fd' }}>
-                        🤖 AI Generated · not a real buyer
+                        🤖 AI Generated · {isSeller ? 'not a real listing' : 'not a real buyer'}
                       </span>
                     ) : (
                       <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, background: tc.bg, color: tc.color, fontWeight: 700 }}>{tc.label}</span>
                     )}
 
-                    {lead.isNRI && (
+                    {/* Seller: listing price */}
+                    {isSeller && lead.listingPrice && (
+                      <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>
+                        {lead.listingPrice}
+                      </span>
+                    )}
+
+                    {/* Buyer: NRI + budget */}
+                    {!isSeller && lead.isNRI && (
                       <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#eef2ff', color: '#4338ca', fontWeight: 700 }}>
                         NRI{lead.nriCountry ? ` · ${lead.nriCountry}` : ''}
                       </span>
                     )}
-                    {lead.inferredBudget && (
+                    {!isSeller && lead.inferredBudget && (
                       <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#f0fdf4', color: '#15803d', fontWeight: 600 }}>
-                        {lead.inferredBudget}
+                        Budget: {lead.inferredBudget}
                       </span>
                     )}
                   </div>
@@ -300,14 +356,37 @@ function LeadsContent() {
                   ))}
                 </div>
 
-                {/* Attributes */}
+                {/* Attributes — mode-aware */}
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-                  {lead.inferredBuyerType && <Tag label="Buyer" value={lead.inferredBuyerType} />}
-                  {lead.inferredLocation && <Tag label="Area" value={lead.inferredLocation} />}
-                  {lead.inferredTimeline && <Tag label="Timeline" value={lead.inferredTimeline} />}
-                  {lead.behavioralPatterns?.map(p => (
-                    <span key={p} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: '#fdf2f8', color: '#be185d', fontWeight: 600 }}>{p.replace(/_/g, ' ')}</span>
-                  ))}
+                  {isSeller ? (
+                    <>
+                      {lead.inferredBuyerType && <Tag label="Seller type" value={lead.inferredBuyerType} />}
+                      {lead.listingPrice && <Tag label="Price" value={lead.listingPrice} />}
+                      {lead.inferredLocation && <Tag label="Location" value={lead.inferredLocation} />}
+                      {lead.inferredTimeline && <Tag label="Status" value={lead.inferredTimeline} />}
+                      {lead.sourceUrl && (
+                        <a href={lead.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: '#fffbeb', border: '1px solid #fcd34d', color: '#b45309', fontWeight: 700, textDecoration: 'none' }}>
+                          🔗 View Listing
+                        </a>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {lead.intentType && <Tag label="Intent" value={lead.intentType} />}
+                      {lead.inferredBuyerType && <Tag label="Buyer type" value={lead.inferredBuyerType} />}
+                      {lead.inferredBudget && <Tag label="Budget" value={lead.inferredBudget} />}
+                      {lead.inferredLocation && <Tag label="Area" value={lead.inferredLocation} />}
+                      {lead.inferredTimeline && <Tag label="Timeline" value={lead.inferredTimeline} />}
+                      {lead.profileHandle && (
+                        <a href={lead.sourceUrl || '#'} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: '#eef2ff', border: '1px solid #c7d2fe', color: '#4338ca', fontWeight: 700, textDecoration: 'none' }}>
+                          👤 {lead.profileHandle}
+                        </a>
+                      )}
+                      {lead.behavioralPatterns?.map(p => (
+                        <span key={p} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: '#fdf2f8', color: '#be185d', fontWeight: 600 }}>{p.replace(/_/g, ' ')}</span>
+                      ))}
+                    </>
+                  )}
                 </div>
 
                 {/* Full source signal */}

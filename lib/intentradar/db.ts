@@ -61,8 +61,9 @@ export async function createCampaign(data: {
   urgency: string;
   sources: string[];
   keywords: string[];
+  intentMode?: string;
 }) {
-  return prisma.ir_campaign.create({ data: { ...data, status: 'draft' } });
+  return prisma.ir_campaign.create({ data: { ...data, intentMode: data.intentMode || 'BUYER', status: 'draft' } });
 }
 
 export async function updateCampaignStatus(id: string, status: string, extras?: Record<string, any>) {

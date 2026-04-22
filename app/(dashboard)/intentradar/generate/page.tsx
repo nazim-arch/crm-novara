@@ -9,7 +9,8 @@ const SOURCE_GROUPS = [
   {
     label: 'AI-Generated Signals (uses your OpenAI key)',
     sources: [
-      { id: 'openai_generate', label: 'OpenAI Lead Gen', icon: '🤖', desc: 'GPT-4o generates realistic buyer signals from your criteria', free: false, freeNote: 'OpenAI key' },
+      { id: 'openai_generate', label: 'OpenAI Buyer Gen', icon: '🤖', desc: 'GPT-4o generates realistic buyer intent signals', free: false, freeNote: 'OpenAI key' },
+      { id: 'openai_generate_seller', label: 'OpenAI Seller Gen', icon: '🤖', desc: 'GPT-4o generates realistic seller listing signals', free: false, freeNote: 'OpenAI key' },
     ],
   },
   {
@@ -43,9 +44,17 @@ const SOURCE_GROUPS = [
     label: 'Forums & Q&A (requires SerpAPI key)',
     sources: [
       { id: 'quora', label: 'Quora', icon: '❓', desc: 'Property buying & NRI Q&A threads', free: false, freeNote: 'SerpAPI ~$50/mo' },
-      { id: 'portal_forums', label: 'Portal Forums', icon: '🏢', desc: '99acres, NoBroker, Housing', free: false, freeNote: 'SerpAPI ~$50/mo' },
+      { id: 'portal_forums', label: 'Portal Forums', icon: '🏢', desc: '99acres, NoBroker, Housing buyer discussions', free: false, freeNote: 'SerpAPI ~$50/mo' },
       { id: 'financial_forums', label: 'Financial Forums', icon: '🏦', desc: 'BankBazaar, Paisabazaar home loan queries', free: false, freeNote: 'SerpAPI ~$50/mo' },
       { id: 'news', label: 'Property News', icon: '📰', desc: 'ET Realty, MoneyControl, Mint, TOI', free: false, freeNote: 'SerpAPI ~$50/mo' },
+    ],
+  },
+  {
+    label: 'Property Portals — Listings (requires SerpAPI key)',
+    sources: [
+      { id: 'portal_listings', label: '99acres / MagicBricks', icon: '🏗', desc: 'Live sale listings from top portals', free: false, freeNote: 'SerpAPI ~$50/mo' },
+      { id: 'nobroker', label: 'NoBroker', icon: '🔑', desc: 'Owner-direct listings, zero brokerage', free: false, freeNote: 'SerpAPI ~$50/mo' },
+      { id: 'squareyards', label: 'SquareYards', icon: '🏙', desc: 'Developer + broker inventory', free: false, freeNote: 'SerpAPI ~$50/mo' },
     ],
   },
 ];
@@ -94,6 +103,9 @@ export default function GenerateLeadsPage() {
   const [stopping, setStopping] = useState(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Mode
+  const [intentMode, setIntentMode] = useState<'BUYER' | 'SELLER'>('BUYER');
+
   // Form state
   const [city, setCity] = useState('');
   const [selectedMarkets, setSelectedMarkets] = useState<string[]>([]);
@@ -126,6 +138,19 @@ export default function GenerateLeadsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const BUYER_SOURCE_IDS = new Set(['youtube', 'reddit', 'openai_generate', 'instagram', 'facebook', 'linkedin', 'quora', 'financial_forums', 'telegram']);
+  const SELLER_SOURCE_IDS = new Set(['openai_generate_seller', 'portal_listings', '99acres', 'magicbricks', 'housing', 'nobroker', 'squareyards']);
+
+  // When mode changes, reset selected sources to mode-appropriate ones
+  useEffect(() => {
+    if (!keyAvail) return;
+    const available = Object.entries(keyAvail.sources).filter(([, ok]) => ok).map(([id]) => id);
+    const modeFilter = intentMode === 'SELLER' ? SELLER_SOURCE_IDS : BUYER_SOURCE_IDS;
+    const filtered = available.filter(id => modeFilter.has(id));
+    setSelectedSources(filtered.length > 0 ? filtered : [...modeFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intentMode]);
+
   // Fetch which API keys are configured; auto-select available sources
   useEffect(() => {
     fetch('/api/intentradar/available-sources')
@@ -135,14 +160,15 @@ export default function GenerateLeadsPage() {
       })
       .then((data: KeyAvailability) => {
         setKeyAvail(data);
-        // Auto-select all sources that have keys configured
         const available = Object.entries(data.sources).filter(([, ok]) => ok).map(([id]) => id);
-        setSelectedSources(available.length > 0 ? available : ALL_SOURCE_IDS);
+        const modeFilter = intentMode === 'SELLER' ? SELLER_SOURCE_IDS : BUYER_SOURCE_IDS;
+        const filtered = available.filter(id => modeFilter.has(id));
+        setSelectedSources(filtered.length > 0 ? filtered : [...modeFilter]);
       })
       .catch(() => {
-        // Fallback: select all sources — scrapers will skip ones without keys at runtime
-        setSelectedSources(ALL_SOURCE_IDS);
+        setSelectedSources(intentMode === 'SELLER' ? [...SELLER_SOURCE_IDS] : [...BUYER_SOURCE_IDS]);
       });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const togglePersona = (p: string) => setPersonas(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]);
@@ -166,9 +192,11 @@ export default function GenerateLeadsPage() {
     }
   };
 
-  const visibleGroups = freeOnly
+  const modeSourceFilter = intentMode === 'SELLER' ? SELLER_SOURCE_IDS : BUYER_SOURCE_IDS;
+  const visibleGroups = (freeOnly
     ? SOURCE_GROUPS.map(g => ({ ...g, sources: g.sources.filter(s => s.free) })).filter(g => g.sources.length > 0)
-    : SOURCE_GROUPS;
+    : SOURCE_GROUPS
+  ).map(g => ({ ...g, sources: g.sources.filter(s => modeSourceFilter.has(s.id)) })).filter(g => g.sources.length > 0);
 
   const canGenerate = city && selectedMarkets.length > 0 && budgetMin && budgetMax && selectedSources.length > 0;
 
@@ -235,6 +263,7 @@ export default function GenerateLeadsPage() {
           urgency,
           sources: selectedSources,
           keywords: keywords.split(',').map(k => k.trim()).filter(Boolean),
+          intentMode,
         }),
       });
 
@@ -245,7 +274,7 @@ export default function GenerateLeadsPage() {
 
       const { campaignId } = await res.json();
       setActiveCampaignId(campaignId);
-      setProgress('Scanning sources for buyer signals...');
+      setProgress(intentMode === 'SELLER' ? 'Scanning portals for seller listings...' : 'Scanning sources for buyer signals...');
       setProgressDetail('This runs in the background — typically 2-5 minutes');
       startPolling(campaignId, Date.now());
     } catch (e: any) {
@@ -272,11 +301,64 @@ export default function GenerateLeadsPage() {
   return (
     <div style={{ maxWidth: 780, margin: '0 auto', padding: '32px 20px 60px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 32 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <div style={{ width: 44, height: 44, borderRadius: 11, background: 'linear-gradient(135deg, #4338ca, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 800, fontSize: 18 }}>IR</div>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, color: '#1c1917' }}>Generate Leads</h1>
-          <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>Define your criteria and scan all sources for buyer intent signals</p>
+          <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, color: '#1c1917' }}>IntentRadar</h1>
+          <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>Mode-based intent engine — find buyers or sellers from 10+ sources</p>
+        </div>
+      </div>
+
+      {/* ── MODE PICKER ── */}
+      <div style={{ marginBottom: 28 }}>
+        <p style={{ fontSize: 11, fontWeight: 700, color: '#a8a29e', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Intent Mode <span style={{ color: '#ef4444' }}>*</span></p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          {[
+            {
+              id: 'BUYER' as const,
+              icon: '🔍',
+              title: 'Buyer Mode',
+              desc: 'Find people actively looking to buy property — investors, relocators, first-time buyers, NRIs',
+              color: '#4338ca',
+              bg: '#eef2ff',
+              border: '#6366f1',
+              sources: 'YouTube · Reddit · Quora · LinkedIn · OpenAI',
+            },
+            {
+              id: 'SELLER' as const,
+              icon: '🏷',
+              title: 'Seller Mode',
+              desc: 'Find property listings — owners selling directly, broker listings, developer new launches, resale deals',
+              color: '#b45309',
+              bg: '#fffbeb',
+              border: '#f59e0b',
+              sources: '99acres · MagicBricks · NoBroker · OpenAI',
+            },
+          ].map(mode => (
+            <div
+              key={mode.id}
+              onClick={() => setIntentMode(mode.id)}
+              style={{
+                padding: '16px 18px', borderRadius: 12, cursor: 'pointer',
+                border: `2px solid ${intentMode === mode.id ? mode.border : '#e7e5e4'}`,
+                background: intentMode === mode.id ? mode.bg : 'white',
+                transition: 'all 0.15s',
+                position: 'relative',
+              }}
+            >
+              {intentMode === mode.id && (
+                <div style={{ position: 'absolute', top: 10, right: 12, width: 18, height: 18, borderRadius: '50%', background: mode.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ color: 'white', fontSize: 10, fontWeight: 900 }}>✓</span>
+                </div>
+              )}
+              <div style={{ fontSize: 22, marginBottom: 6 }}>{mode.icon}</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: intentMode === mode.id ? mode.color : '#1c1917', marginBottom: 4 }}>{mode.title}</div>
+              <div style={{ fontSize: 11, color: '#78716c', lineHeight: 1.5, marginBottom: 8 }}>{mode.desc}</div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: intentMode === mode.id ? mode.color : '#a8a29e', background: intentMode === mode.id ? `${mode.bg}` : '#fafaf9', padding: '3px 8px', borderRadius: 5, display: 'inline-block', border: `1px solid ${intentMode === mode.id ? mode.border : '#e7e5e4'}` }}>
+                {mode.sources}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -325,8 +407,8 @@ export default function GenerateLeadsPage() {
         </Section>
       </div>
 
-      {/* ── BUYER PERSONAS ── */}
-      <Section title="Target Buyer Personas" subtitle="Select all that apply">
+      {/* ── BUYER PERSONAS — hidden in SELLER mode ── */}
+      {intentMode === 'BUYER' && <Section title="Target Buyer Personas" subtitle="Select all that apply">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {BUYER_PERSONAS.map(p => (
             <div key={p.id} onClick={() => togglePersona(p.id)} style={{
@@ -339,10 +421,10 @@ export default function GenerateLeadsPage() {
             </div>
           ))}
         </div>
-      </Section>
+      </Section>}
 
-      {/* ── URGENCY ── */}
-      <Section title="Buyer Urgency" subtitle="What timeline are you targeting?">
+      {/* ── URGENCY — hidden in SELLER mode ── */}
+      {intentMode === 'BUYER' && <Section title="Buyer Urgency" subtitle="What timeline are you targeting?">
         <div style={{ display: 'flex', gap: 10 }}>
           {URGENCY_OPTIONS.map(u => (
             <div key={u.id} onClick={() => setUrgency(u.id)} style={{
@@ -354,10 +436,10 @@ export default function GenerateLeadsPage() {
             </div>
           ))}
         </div>
-      </Section>
+      </Section>}
 
       {/* ── SOURCES ── */}
-      <Section title="Signal Sources" required subtitle="Select platforms to scan">
+      <Section title={intentMode === 'SELLER' ? 'Listing Sources' : 'Signal Sources'} required subtitle={intentMode === 'SELLER' ? 'Select portals to scan for listings' : 'Select platforms to scan for buyer signals'}>
         {/* Free-only toggle */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -497,7 +579,7 @@ export default function GenerateLeadsPage() {
               fontWeight: 800, fontSize: 16, cursor: canGenerate ? 'pointer' : 'not-allowed',
               boxShadow: canGenerate ? '0 4px 14px rgba(67,56,202,0.3)' : 'none', transition: 'all 0.2s',
             }}>
-              🚀 Generate Leads
+              {intentMode === 'SELLER' ? '🏷 Find Seller Listings' : '🔍 Find Buyer Leads'}
             </button>
             {!canGenerate && (
               <p style={{ fontSize: 12, color: '#f59e0b', marginTop: 8 }}>

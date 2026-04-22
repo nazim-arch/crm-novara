@@ -752,6 +752,9 @@ model ir_campaign {
   warmLeads      Int      @default(0)
   coolLeads      Int      @default(0)
   
+  // Intent mode — drives entire pipeline behaviour
+  intentMode     String   @default("BUYER") // BUYER | SELLER
+
   // Timing & lifecycle — lifecycle: draft → queued → running → completed | failed
   startedAt      DateTime?
   completedAt    DateTime?
@@ -830,6 +833,12 @@ model ir_lead {
   
   // Cross-platform signals
   crossPlatformSignals Json?    // [{platform, url, content, date}]
+
+  // Intent mode — mirrors parent campaign
+  intentMode           String   @default("BUYER") // BUYER | SELLER
+  intentType           String?  // BUYER: buyer|investor|relocation | SELLER: owner|broker|developer
+  listingPrice         String?  // SELLER mode: extracted listing price
+  matchedSupply        Json?    // BUYER mode: shadow lead match {project, location, price}
 
   // Origin — real: scraped from live source | synthetic: AI-generated for demo/testing
   leadOriginType       String   @default("real") // real | synthetic

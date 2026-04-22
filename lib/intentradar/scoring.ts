@@ -53,7 +53,7 @@ export interface ScoredLead {
   velocityPattern: string | null;
 }
 
-interface CampaignCriteria {
+export interface CampaignCriteria {
   city: string;
   microMarkets: string[];
   budgetMin: number;
@@ -62,6 +62,7 @@ interface CampaignCriteria {
   bhkConfig?: string;
   buyerPersonas: string[];
   urgency: string;
+  intentMode?: 'BUYER' | 'SELLER';
 }
 
 // ─── KEYWORD BANKS ───

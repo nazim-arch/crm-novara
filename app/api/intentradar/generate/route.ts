@@ -13,16 +13,9 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const {
-      city,
-      microMarkets,
-      budgetMin,
-      budgetMax,
-      propertyType,
-      bhkConfig,
-      buyerPersonas,
-      urgency,
-      sources,
-      keywords = [],
+      city, microMarkets, budgetMin, budgetMax, propertyType,
+      bhkConfig, buyerPersonas, urgency, sources, keywords = [],
+      intentMode = 'BUYER',
     } = body;
 
     if (!city || !microMarkets?.length || !budgetMin || !budgetMax || !propertyType) {
@@ -32,45 +25,43 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Create campaign immediately (status: 'queued')
+    const mode = intentMode === 'SELLER' ? 'SELLER' : 'BUYER';
+    const modeLabel = mode === 'SELLER' ? '🏷 Seller' : '🔍 Buyer';
+
     const campaign = await createCampaign({
-      name: `${bhkConfig || ''} ${propertyType} in ${microMarkets.slice(0, 2).join(', ')} | ${budgetMin}-${budgetMax} Cr`.trim(),
-      city,
-      microMarkets,
+      name: `${modeLabel} | ${bhkConfig || ''} ${propertyType} in ${microMarkets.slice(0, 2).join(', ')} | ${budgetMin}-${budgetMax} Cr`.trim(),
+      city, microMarkets,
       budgetMin: parseFloat(budgetMin),
       budgetMax: parseFloat(budgetMax),
       propertyType,
       bhkConfig: bhkConfig || null,
       buyerPersonas: buyerPersonas || [],
       urgency: urgency || 'exploring',
-      sources: sources || ['youtube', 'reddit', 'google_maps'],
+      sources: sources || ['openai_generate'],
       keywords: keywords || [],
+      intentMode: mode,
     });
 
-    // Fire background job — returns in <100ms
     await inngest.send({
       name: 'intentradar/generate.requested',
       data: {
         campaignId: campaign.id,
-        city,
-        microMarkets,
+        city, microMarkets,
         budgetMin: parseFloat(budgetMin),
         budgetMax: parseFloat(budgetMax),
         propertyType,
         bhkConfig: bhkConfig || null,
         buyerPersonas: buyerPersonas || [],
         urgency: urgency || 'exploring',
-        sources: sources || ['youtube', 'reddit', 'google_maps'],
+        sources: sources || ['openai_generate'],
         keywords: keywords || [],
+        intentMode: mode,
       },
     });
 
-    return NextResponse.json({ campaignId: campaign.id, status: 'queued' });
+    return NextResponse.json({ campaignId: campaign.id, status: 'queued', intentMode: mode });
   } catch (error) {
     console.error('Generate leads error:', error);
-    return NextResponse.json(
-      { error: 'Failed to queue lead generation', details: String(error) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to queue lead generation', details: String(error) }, { status: 500 });
   }
 }
