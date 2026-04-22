@@ -263,6 +263,8 @@ function LeadsContent() {
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
   const [deletingLead, setDeletingLead] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deletingCampaign, setDeletingCampaign] = useState<string | null>(null);
+  const [confirmDeleteCampaign, setConfirmDeleteCampaign] = useState<string | null>(null);
   const [leadTypeFilter, setLeadTypeFilter] = useState<'ALL' | 'DIRECT' | 'SIGNAL'>('ALL');
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -313,6 +315,23 @@ function LeadsContent() {
     });
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, engagementStatus: status } : l));
     setUpdatingStatus(null);
+  };
+
+  const deleteCampaign = async (campaignId: string) => {
+    setDeletingCampaign(campaignId);
+    await fetch('/api/intentradar/campaigns', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campaignId }),
+    });
+    setCampaigns(prev => prev.filter(c => c.id !== campaignId));
+    if (selectedCampaignId === campaignId) {
+      setSelectedCampaignId(null);
+      setLeads([]);
+      router.replace('/intentradar/leads', { scroll: false });
+    }
+    setConfirmDeleteCampaign(null);
+    setDeletingCampaign(null);
   };
 
   const deleteLead = async (leadId: string) => {
@@ -438,6 +457,22 @@ function LeadsContent() {
                         {(c.coolLeads ?? 0) > 0 && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>🟢 {c.coolLeads}</span>}
                         <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: '#f5f5f4', color: '#78716c', fontWeight: 600 }}>{c.totalLeads} total</span>
                       </div>
+                    )}
+
+                    {/* Campaign delete */}
+                    {confirmDeleteCampaign === c.id ? (
+                      <div style={{ display: 'flex', gap: 4, marginTop: 6 }} onClick={e => e.stopPropagation()}>
+                        <button onClick={() => deleteCampaign(c.id)} disabled={deletingCampaign === c.id} style={{ flex: 1, padding: '4px 0', borderRadius: 5, fontSize: 10, fontWeight: 700, cursor: 'pointer', border: '1px solid #fca5a5', background: '#fee2e2', color: '#dc2626' }}>
+                          {deletingCampaign === c.id ? '…' : 'Delete all'}
+                        </button>
+                        <button onClick={() => setConfirmDeleteCampaign(null)} style={{ flex: 1, padding: '4px 0', borderRadius: 5, fontSize: 10, fontWeight: 600, cursor: 'pointer', border: '1px solid #e7e5e4', background: 'white', color: '#78716c' }}>
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button onClick={e => { e.stopPropagation(); setConfirmDeleteCampaign(c.id); }} style={{ marginTop: 5, width: '100%', padding: '4px 0', borderRadius: 5, fontSize: 10, fontWeight: 600, cursor: 'pointer', border: '1px solid #fca5a5', background: 'white', color: '#dc2626', textAlign: 'center' }}>
+                        🗑 Delete campaign
+                      </button>
                     )}
                   </div>
                 );
