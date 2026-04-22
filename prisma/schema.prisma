@@ -355,7 +355,7 @@ model LeadOpportunity {
   smart_match_score Int?
   notes             String?
 
-  lead        Lead        @relation(fields: [lead_id],        references: [id])
+  lead        Lead        @relation(fields: [lead_id],        references: [id], onDelete: Cascade)
   opportunity Opportunity @relation(fields: [opportunity_id], references: [id])
   tagged_by   User        @relation(fields: [tagged_by_id],   references: [id])
 
@@ -415,7 +415,7 @@ model Task {
 
   assigned_to User         @relation("TaskAssignee", fields: [assigned_to_id], references: [id])
   created_by  User         @relation("TaskCreator",  fields: [created_by_id],  references: [id])
-  lead        Lead?        @relation(fields: [lead_id],        references: [id])
+  lead        Lead?        @relation(fields: [lead_id],        references: [id], onDelete: SetNull)
   opportunity Opportunity? @relation(fields: [opportunity_id], references: [id])
   client      Client?      @relation(fields: [client_id],      references: [id])
   followups   FollowUp[]
@@ -446,7 +446,7 @@ model LeadStageHistory {
   changed_at    DateTime    @default(now())
   notes         String?
 
-  lead       Lead @relation(fields: [lead_id],       references: [id])
+  lead       Lead @relation(fields: [lead_id],       references: [id], onDelete: Cascade)
   changed_by User @relation(fields: [changed_by_id], references: [id])
 
   @@index([lead_id])
@@ -554,7 +554,7 @@ model FollowUp {
   created_at     DateTime         @default(now())
   updated_at     DateTime         @default(now()) @updatedAt
 
-  lead        Lead?        @relation(fields: [lead_id],        references: [id])
+  lead        Lead?        @relation(fields: [lead_id],        references: [id], onDelete: SetNull)
   opportunity Opportunity? @relation(fields: [opportunity_id], references: [id])
   task        Task?        @relation(fields: [task_id],        references: [id])
   assigned_to User?        @relation("FollowUpAssignee", fields: [assigned_to_id], references: [id])
