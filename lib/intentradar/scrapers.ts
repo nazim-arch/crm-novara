@@ -32,6 +32,18 @@ export interface ScraperConfig {
   intentMode?: 'BUYER' | 'SELLER';
 }
 
+// ─── AGE CUTOFFS ──────────────────────────────────────────────────────────────
+const BUYER_MAX_AGE_MS  = 90 * 24 * 60 * 60 * 1000; // 3 months
+const SELLER_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+function maxAgeMs(config: ScraperConfig): number {
+  return config.intentMode === 'SELLER' ? SELLER_MAX_AGE_MS : BUYER_MAX_AGE_MS;
+}
+
+function isWithinAge(date: Date, limitMs: number): boolean {
+  return Date.now() - date.getTime() <= limitMs;
+}
+
 // ─── SHARED HELPERS ────────────────────────────────────────────────────────────
 
 function getQueries(config: ScraperConfig): string[] {
@@ -61,11 +73,12 @@ export async function scrapeYouTube(config: ScraperConfig): Promise<RawSignal[]>
 
   const signals: RawSignal[] = [];
   const queries = getQueries(config).slice(0, 5); // limit API calls
+  const publishedAfter = new Date(Date.now() - maxAgeMs(config)).toISOString();
 
   for (const query of queries) {
     try {
       const searchRes = await fetch(
-        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=8&order=date&key=${apiKey}`
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=8&order=date&publishedAfter=${encodeURIComponent(publishedAfter)}&key=${apiKey}`
       );
       if (!searchRes.ok) continue;
       const searchData = await searchRes.json();
@@ -87,6 +100,8 @@ export async function scrapeYouTube(config: ScraperConfig): Promise<RawSignal[]>
             const content = snippet.textOriginal || snippet.textDisplay || '';
             if (content.length < 15) continue;
             if (!isRelevantSignal(content, config)) continue;
+            const commentDate = new Date(snippet.publishedAt);
+            if (!isWithinAge(commentDate, maxAgeMs(config))) continue;
 
             signals.push({
               platform: 'youtube',
@@ -160,6 +175,8 @@ export async function scrapeReddit(config: ScraperConfig): Promise<RawSignal[]> 
           const content = `${d.title || ''} ${d.selftext || ''}`.trim();
           if (content.length < 20) continue;
           if (!isRelevantSignal(content, config)) continue;
+          const postDate = new Date((d.created_utc || 0) * 1000);
+          if (!isWithinAge(postDate, maxAgeMs(config))) continue;
 
           signals.push({
             platform: 'reddit',
@@ -203,6 +220,8 @@ export async function scrapeGoogleMaps(config: ScraperConfig): Promise<RawSignal
         for (const review of detailData.result?.reviews || []) {
           if (!review.text || review.text.length < 30) continue;
           if (!isRelevantSignal(review.text, config)) continue;
+          const reviewDate = new Date((review.time || 0) * 1000);
+          if (!isWithinAge(reviewDate, maxAgeMs(config))) continue;
           signals.push({
             platform: 'google_maps',
             authorHandle: review.author_name,
@@ -223,8 +242,10 @@ export async function scrapeGoogleMaps(config: ScraperConfig): Promise<RawSignal
 // ─── SHARED SERP HELPER ───────────────────────────────────────────────────────
 async function serpSearch(query: string, platform: string, config: ScraperConfig, apiKey: string): Promise<RawSignal[]> {
   const signals: RawSignal[] = [];
+  // tbs=qdr:m3 = past 3 months (buyer), tbs=qdr:m = past month (seller)
+  const tbs = config.intentMode === 'SELLER' ? 'qdr:m' : 'qdr:m3';
   try {
-    const params = new URLSearchParams({ engine: 'google', q: query, api_key: apiKey, num: '20', gl: 'in', hl: 'en' });
+    const params = new URLSearchParams({ engine: 'google', q: query, api_key: apiKey, num: '20', gl: 'in', hl: 'en', tbs });
     const res = await fetch(`https://serpapi.com/search?${params}`);
     if (!res.ok) return [];
     const data = await res.json();
@@ -369,6 +390,8 @@ export async function scrapeTelegram(config: ScraperConfig): Promise<RawSignal[]
       const message = update.message || update.channel_post;
       if (!message?.text || message.text.length < 20) continue;
       if (!isRelevantSignal(message.text, config)) continue;
+      const msgDate = new Date((message.date || 0) * 1000);
+      if (!isWithinAge(msgDate, maxAgeMs(config))) continue;
 
       const authorName = message.from
         ? `${message.from.first_name || ''} ${message.from.last_name || ''}`.trim()
@@ -573,8 +596,12 @@ export async function runAllScrapers(config: ScraperConfig, sources: string[]): 
     return true;
   });
 
-  console.log(`[IntentRadar] Total unique signals: ${unique.length}`);
-  return unique;
+  // Final age gate — drop anything older than mode cutoff (catches any scraper that set capturedAt from external timestamp)
+  const limitMs = mode === 'SELLER' ? SELLER_MAX_AGE_MS : BUYER_MAX_AGE_MS;
+  const fresh = unique.filter(s => isWithinAge(s.capturedAt, limitMs));
+
+  console.log(`[IntentRadar] Total unique signals: ${unique.length} → after age filter: ${fresh.length}`);
+  return fresh;
 }
 
 export default runAllScrapers;
