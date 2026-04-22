@@ -4,6 +4,7 @@
 import { getApiKey } from './db';
 import { buildBuyerQueries, isBuyerSignal, BUYER_ALLOWED_SOURCES, BUYER_EXCLUDED_SOURCES } from './modes/buyer';
 import { buildSellerQueries, isSellerSignal, extractListingPrice, SELLER_ALLOWED_SOURCES, SELLER_EXCLUDED_SOURCES } from './modes/seller';
+import { extractCommentIntentSignals, extractEngagementCount, resolveLeadType } from './comment-intent';
 
 export interface RawSignal {
   platform: string;
@@ -15,6 +16,7 @@ export interface RawSignal {
   sourceType: string;
   rawData?: any;
   originType?: 'real' | 'synthetic';
+  leadType?: 'DIRECT' | 'SIGNAL';
   // Seller-specific
   listingPrice?: string;
 }
@@ -240,10 +242,15 @@ export async function scrapeGoogleMaps(config: ScraperConfig): Promise<RawSignal
 }
 
 // ─── SHARED SERP HELPER ───────────────────────────────────────────────────────
-async function serpSearch(query: string, platform: string, config: ScraperConfig, apiKey: string): Promise<RawSignal[]> {
+interface SerpOpts {
+  leadType?: 'DIRECT' | 'SIGNAL'; // SIGNAL = no user identity, manual outreach needed
+}
+
+async function serpSearch(query: string, platform: string, config: ScraperConfig, apiKey: string, opts: SerpOpts = {}): Promise<RawSignal[]> {
   const signals: RawSignal[] = [];
   // tbs=qdr:m3 = past 3 months (buyer), tbs=qdr:m = past month (seller)
   const tbs = config.intentMode === 'SELLER' ? 'qdr:m' : 'qdr:m3';
+  const leadType = opts.leadType ?? 'DIRECT';
   try {
     const params = new URLSearchParams({ engine: 'google', q: query, api_key: apiKey, num: '20', gl: 'in', hl: 'en', tbs });
     const res = await fetch(`https://serpapi.com/search?${params}`);
@@ -257,11 +264,13 @@ async function serpSearch(query: string, platform: string, config: ScraperConfig
 
       signals.push({
         platform,
-        authorHandle: result.displayed_link,
+        // SIGNAL sources: never set authorHandle — no user identity available
+        authorHandle: leadType === 'SIGNAL' ? undefined : result.displayed_link,
         content,
         sourceUrl: result.link,
         capturedAt: new Date(),
         sourceType: 'post',
+        leadType,
         rawData: { title: result.title, position: result.position },
         ...(config.intentMode === 'SELLER' ? { listingPrice: extractListingPrice(content) || undefined } : {}),
       });
@@ -270,9 +279,9 @@ async function serpSearch(query: string, platform: string, config: ScraperConfig
   return signals;
 }
 
-async function serpBatch(queries: string[], platform: string, config: ScraperConfig, apiKey: string): Promise<RawSignal[]> {
+async function serpBatch(queries: string[], platform: string, config: ScraperConfig, apiKey: string, opts: SerpOpts = {}): Promise<RawSignal[]> {
   const all: RawSignal[] = [];
-  for (const query of queries) all.push(...await serpSearch(query, platform, config, apiKey));
+  for (const query of queries) all.push(...await serpSearch(query, platform, config, apiKey, opts));
   return all;
 }
 
@@ -280,23 +289,55 @@ async function serpBatch(queries: string[], platform: string, config: ScraperCon
 export async function scrapeSerpInstagram(config: ScraperConfig): Promise<RawSignal[]> {
   const apiKey = await getApiKey('serp');
   if (!apiKey) { console.log('SerpAPI not configured — skipping Instagram'); return []; }
+
+  // Instagram is a SIGNAL source: post captions + engagement metadata only — no user identity
+  const market = config.microMarkets[0] || '';
   const queries = [
-    `site:instagram.com "${config.city}" ${config.propertyType} buy`,
-    `site:instagram.com "${config.city}" ${config.microMarkets[0] || ''} property`,
+    `site:instagram.com "${config.city}" "${config.propertyType}" buy`,
+    market ? `site:instagram.com "${config.city}" "${market}" property` : null,
     `site:instagram.com NRI "${config.city}" apartment`,
-  ].filter(Boolean);
-  return serpBatch(queries, 'instagram', config, apiKey);
+    `site:instagram.com "${config.city}" ${config.propertyType} interested buyers`,
+  ].filter(Boolean) as string[];
+
+  const raw = await serpBatch(queries, 'instagram', config, apiKey, { leadType: 'SIGNAL' });
+
+  // Enrich each signal with engagement counts + comment intent patterns
+  return raw.map(s => {
+    const engagement = extractEngagementCount(s.content);
+    const commentIntentPhrases = extractCommentIntentSignals(s.content);
+    return {
+      ...s,
+      authorHandle: undefined, // hard guarantee — never extract Instagram handles
+      rawData: {
+        ...s.rawData,
+        engagement,
+        commentIntentPhrases,
+        nextAction: 'Open post and manually engage with commenters via Instagram',
+        signalNote: 'Instagram signal — user identity not extracted. High-intent post detected.',
+      },
+    };
+  });
 }
 
 export async function scrapeSerpFacebook(config: ScraperConfig): Promise<RawSignal[]> {
   const apiKey = await getApiKey('serp');
   if (!apiKey) { console.log('SerpAPI not configured — skipping Facebook'); return []; }
+  // Facebook groups via SerpAPI = SIGNAL: post content available, member identity is not
   const queries = [
     `site:facebook.com/groups "${config.city}" ${config.propertyType} buy`,
     `site:facebook.com/groups NRI "${config.city}" property`,
     `site:facebook.com/groups "${config.city}" flat budget crore`,
   ].filter(Boolean);
-  return serpBatch(queries, 'facebook', config, apiKey);
+  const raw = await serpBatch(queries, 'facebook', config, apiKey, { leadType: 'SIGNAL' });
+  return raw.map(s => ({
+    ...s,
+    authorHandle: undefined,
+    rawData: {
+      ...s.rawData,
+      commentIntentPhrases: extractCommentIntentSignals(s.content),
+      nextAction: 'Open Facebook group post and manually engage with interested members',
+    },
+  }));
 }
 
 export async function scrapeSerpLinkedIn(config: ScraperConfig): Promise<RawSignal[]> {

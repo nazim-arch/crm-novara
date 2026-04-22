@@ -840,6 +840,9 @@ model ir_lead {
   listingPrice         String?  // SELLER mode: extracted listing price
   matchedSupply        Json?    // BUYER mode: shadow lead match {project, location, price}
 
+  // Lead type — DIRECT: identity available (YouTube, Reddit) | SIGNAL: intent detected, manual outreach needed (Instagram)
+  leadType             String   @default("DIRECT") // DIRECT | SIGNAL
+
   // Origin — real: scraped from live source | synthetic: AI-generated for demo/testing
   leadOriginType       String   @default("real") // real | synthetic
 

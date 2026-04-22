@@ -10,6 +10,7 @@ import { extractSnippet } from '@/lib/intentradar/snippet';
 import { classifyBuyerIntentType } from '@/lib/intentradar/modes/buyer';
 import { classifySellerType, extractListingPrice } from '@/lib/intentradar/modes/seller';
 import { detectNRI } from '@/lib/intentradar/scoring-helpers';
+import { resolveLeadType } from '@/lib/intentradar/comment-intent';
 
 export type GenerateLeadsEventData = {
   campaignId: string;
@@ -100,12 +101,15 @@ export const generateLeadsFunction = inngest.createFunction(
             ? classifySellerType(signal.content)
             : classifyBuyerIntentType(signal.content, nriResult.isNRI);
 
+          const leadType = signal.leadType ?? resolveLeadType(signal.platform, signal.authorHandle);
+
           return {
             ...scored,
             originType: (signal.originType ?? 'real') as 'real' | 'synthetic',
             evidenceSnippet: extractSnippet(signal.content),
             intentType,
             listingPrice: intentMode === 'SELLER' ? (signal.listingPrice || extractListingPrice(signal.content) || null) : null,
+            leadType,
           };
         })
         .sort((a, b) => b.totalScore - a.totalScore)
@@ -164,6 +168,7 @@ export const generateLeadsFunction = inngest.createFunction(
             intentMode,
             intentType: lead.intentType,
             listingPrice: lead.listingPrice ?? null,
+            leadType: lead.leadType ?? 'DIRECT',
             firstSeenAt: now,
             lastSeenAt: now,
             freshnessScore: lead.freshnessScore!,

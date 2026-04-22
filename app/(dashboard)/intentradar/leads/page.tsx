@@ -60,6 +60,8 @@ interface Lead {
   dedupeDecision: string | null;
   duplicateProbability: number | null;
   matchReasons: string[];
+  leadType: string;
+  rawData?: Record<string, unknown>;
   campaign?: { name: string; city: string };
 }
 
@@ -105,6 +107,11 @@ const DEDUPE_CONFIG: Record<string, { label: string; color: string; bg: string }
   probable_duplicate: { label: 'Probable duplicate',      color: '#7c3aed', bg: '#ede9fe' },
   possible_cluster:   { label: 'Same prospect cluster',   color: '#b45309', bg: '#fef3c7' },
   exact_duplicate:    { label: 'Exact duplicate',         color: '#dc2626', bg: '#fee2e2' },
+};
+
+const LEAD_TYPE_CONFIG = {
+  DIRECT: { label: '👤 Direct',  color: '#1d4ed8', bg: '#dbeafe', border: '#93c5fd', desc: 'Identity available — contactable directly' },
+  SIGNAL: { label: '📡 Signal',  color: '#b45309', bg: '#fef3c7', border: '#fcd34d', desc: 'High intent detected — requires manual outreach' },
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -254,6 +261,7 @@ function LeadsContent() {
   const [aiTab, setAiTab] = useState<Record<string, 'claude' | 'gpt'>>({});
   const [regenerating, setRegenerating] = useState<string | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
+  const [leadTypeFilter, setLeadTypeFilter] = useState<'ALL' | 'DIRECT' | 'SIGNAL'>('ALL');
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
@@ -328,7 +336,9 @@ function LeadsContent() {
   };
 
   const selectedCampaign = campaigns.find(c => c.id === selectedCampaignId);
-  const displayedLeads = modeFilter === 'ALL' ? leads : leads.filter(l => l.intentMode === modeFilter);
+  const displayedLeads = leads
+    .filter(l => modeFilter === 'ALL' || l.intentMode === modeFilter)
+    .filter(l => leadTypeFilter === 'ALL' || l.leadType === leadTypeFilter);
 
   const counts = {
     all: displayedLeads.length,
@@ -456,6 +466,23 @@ function LeadsContent() {
               }}>{m === 'ALL' ? 'All' : m === 'BUYER' ? '🔍 Buyers' : '🏷 Sellers'}</button>
             ))}
           </div>
+
+          {/* Lead type filter */}
+          <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid #e7e5e4', paddingLeft: 8 }}>
+            {(['ALL', 'DIRECT', 'SIGNAL'] as const).map(t => {
+              const cfg = t !== 'ALL' ? LEAD_TYPE_CONFIG[t] : null;
+              return (
+                <button key={t} onClick={() => setLeadTypeFilter(t)} style={{
+                  padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                  border: `1px solid ${leadTypeFilter === t ? (cfg?.border ?? '#4338ca') : '#e7e5e4'}`,
+                  background: leadTypeFilter === t ? (cfg?.bg ?? '#f5f5f4') : 'white',
+                  color: leadTypeFilter === t ? (cfg?.color ?? '#1c1917') : '#78716c',
+                }}>
+                  {t === 'ALL' ? 'All Types' : cfg?.label}
+                </button>
+              );
+            })}
+          </div>
           <button onClick={() => setShowSynthetic(s => !s)} style={{
             padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
             border: `1px solid ${showSynthetic ? '#7c3aed' : '#e7e5e4'}`,
@@ -503,6 +530,8 @@ function LeadsContent() {
             const sc = ENGAGEMENT_STATUS_CONFIG[lead.engagementStatus] || ENGAGEMENT_STATUS_CONFIG.new;
             const isSynthetic = lead.leadOriginType === 'synthetic';
             const isSeller = lead.intentMode === 'SELLER';
+            const isSignal = lead.leadType === 'SIGNAL';
+            const ltCfg = LEAD_TYPE_CONFIG[lead.leadType as 'DIRECT' | 'SIGNAL'] ?? LEAD_TYPE_CONFIG.DIRECT;
             const conf = getSourceConfidence(lead.sourcePlatform);
             const fresh = freshnessLabel(lead.freshnessScore ?? 1);
             const freshCol = freshnessColor(lead.freshnessScore ?? 1);
@@ -534,10 +563,12 @@ function LeadsContent() {
 
             return (
               <div key={lead.id} className="lead-card" style={{
-                background: isSynthetic ? '#fafaf9' : 'white',
+                background: isSynthetic ? '#fafaf9' : isSignal ? '#fffdf5' : 'white',
                 borderRadius: 12,
-                border: `1px solid ${isExpanded ? tc.color + '60' : '#e7e5e4'}`,
-                borderLeft: `4px solid ${isSynthetic ? '#d4d4d4' : tc.color}`,
+                border: `1px solid ${isExpanded ? tc.color + '60' : isSignal ? '#fcd34d60' : '#e7e5e4'}`,
+                borderLeft: `4px solid ${isSynthetic ? '#d4d4d4' : isSignal ? '#f59e0b' : tc.color}`,
+                borderStyle: isSignal ? 'dashed' : 'solid',
+                borderLeftStyle: 'solid',
                 marginBottom: 10,
                 boxShadow: isExpanded ? `0 4px 20px ${tc.color}18` : '0 1px 3px rgba(0,0,0,0.04)',
                 transition: 'all 0.15s',
@@ -579,6 +610,11 @@ function LeadsContent() {
                           {intentTypeCfg.label}
                         </span>
                       )}
+
+                      {/* Lead type badge */}
+                      <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, fontWeight: 800, background: ltCfg.bg, color: ltCfg.color, border: `1px solid ${ltCfg.border}` }}>
+                        {ltCfg.label}
+                      </span>
 
                       {isSynthetic && (
                         <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: '#ede9fe', color: '#7c3aed', fontWeight: 700 }}>🤖 AI</span>
@@ -678,18 +714,45 @@ function LeadsContent() {
                               {lead.behavioralPatterns?.map(p => (
                                 <span key={p} style={{ fontSize: 10, padding: '3px 7px', borderRadius: 4, background: '#fdf2f8', color: '#be185d', fontWeight: 600 }}>{p.replace(/_/g, ' ')}</span>
                               ))}
+                              {/* Comment intent phrases (SIGNAL leads) */}
+                              {isSignal && (lead.rawData?.commentIntentPhrases as string[] | undefined)?.map((p: string) => (
+                                <span key={p} style={{ fontSize: 10, padding: '3px 7px', borderRadius: 4, background: '#fef3c7', color: '#b45309', fontWeight: 600 }}>💬 &ldquo;{p}&rdquo;</span>
+                              ))}
                             </>
                           )}
                         </div>
 
-                        {/* Profile / listing link */}
+                        {/* Profile / listing link — or Next Action for SIGNAL leads */}
                         <div style={{ marginTop: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                          {lead.sourceUrl && (
-                            <a href={lead.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, background: isSeller ? '#fffbeb' : '#eef2ff', border: `1px solid ${isSeller ? '#fcd34d' : '#c7d2fe'}`, color: isSeller ? '#b45309' : '#4338ca', fontWeight: 700, textDecoration: 'none' }}>
-                              {isSeller ? '🔗 View Listing' : '👤 View Profile'}
-                            </a>
+                          {isSignal ? (
+                            <>
+                              {lead.sourceUrl && (
+                                <a href={lead.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, background: '#fffbeb', border: '1px solid #fcd34d', color: '#b45309', fontWeight: 700, textDecoration: 'none' }}>
+                                  📱 Open Post
+                                </a>
+                              )}
+                            </>
+                          ) : (
+                            lead.sourceUrl && (
+                              <a href={lead.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, background: isSeller ? '#fffbeb' : '#eef2ff', border: `1px solid ${isSeller ? '#fcd34d' : '#c7d2fe'}`, color: isSeller ? '#b45309' : '#4338ca', fontWeight: 700, textDecoration: 'none' }}>
+                                {isSeller ? '🔗 View Listing' : '👤 View Profile'}
+                              </a>
+                            )
                           )}
                         </div>
+
+                        {/* SIGNAL: Next Action block */}
+                        {isSignal && (
+                          <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 8, background: '#fffbeb', border: '1px solid #fcd34d' }}>
+                            <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.05em' }}>📋 Next Action</p>
+                            <p style={{ margin: '0 0 6px', fontSize: 12, color: '#78350f', lineHeight: 1.5 }}>
+                              Open this post and manually engage with commenters showing buying intent via {lead.sourcePlatform === 'instagram' ? 'Instagram' : 'the platform'}.
+                            </p>
+                            <p style={{ margin: 0, fontSize: 11, color: '#92400e', fontStyle: 'italic' }}>
+                              💡 User identity not extracted — this platform requires manual outreach.
+                            </p>
+                          </div>
+                        )}
                       </div>
 
                       {/* Right col: source + AI */}
