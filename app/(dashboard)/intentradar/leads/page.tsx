@@ -261,6 +261,8 @@ function LeadsContent() {
   const [aiTab, setAiTab] = useState<Record<string, 'claude' | 'gpt'>>({});
   const [regenerating, setRegenerating] = useState<string | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
+  const [deletingLead, setDeletingLead] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [leadTypeFilter, setLeadTypeFilter] = useState<'ALL' | 'DIRECT' | 'SIGNAL'>('ALL');
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -311,6 +313,18 @@ function LeadsContent() {
     });
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, engagementStatus: status } : l));
     setUpdatingStatus(null);
+  };
+
+  const deleteLead = async (leadId: string) => {
+    setDeletingLead(leadId);
+    await fetch('/api/intentradar/leads', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadId }),
+    });
+    setLeads(prev => prev.filter(l => l.id !== leadId));
+    setConfirmDelete(null);
+    setDeletingLead(null);
   };
 
   const regenerateInsights = async (leadId: string) => {
@@ -666,6 +680,22 @@ function LeadsContent() {
                       padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
                       border: '1px solid #e7e5e4', background: isExpanded ? '#eef2ff' : 'white', color: isExpanded ? '#4338ca' : '#78716c',
                     }}>{isExpanded ? '▲ Less' : '▼ More'}</button>
+
+                    {/* Delete */}
+                    {confirmDelete === lead.id ? (
+                      <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
+                        <button onClick={e => { e.stopPropagation(); deleteLead(lead.id); }} disabled={deletingLead === lead.id} style={{ padding: '4px 8px', borderRadius: 5, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: '1px solid #fca5a5', background: '#fee2e2', color: '#dc2626' }}>
+                          {deletingLead === lead.id ? '…' : 'Delete'}
+                        </button>
+                        <button onClick={e => { e.stopPropagation(); setConfirmDelete(null); }} style={{ padding: '4px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: '1px solid #e7e5e4', background: 'white', color: '#78716c' }}>
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button onClick={e => { e.stopPropagation(); setConfirmDelete(lead.id); }} style={{ padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: '1px solid #fca5a5', background: 'white', color: '#dc2626', marginTop: 2 }}>
+                        🗑 Delete
+                      </button>
+                    )}
                   </div>
                 </div>
 

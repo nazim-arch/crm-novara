@@ -47,6 +47,25 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// DELETE — permanently remove a lead
+export async function DELETE(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user || session.user.role !== 'Admin') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  try {
+    const { leadId } = await req.json();
+    if (!leadId) return NextResponse.json({ error: 'leadId required' }, { status: 400 });
+
+    await prisma.ir_lead.delete({ where: { id: leadId } });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Lead DELETE error:', error);
+    return NextResponse.json({ error: 'Failed to delete lead' }, { status: 500 });
+  }
+}
+
 // PATCH — update engagement status or notes
 export async function PATCH(req: NextRequest) {
   const session = await auth();
