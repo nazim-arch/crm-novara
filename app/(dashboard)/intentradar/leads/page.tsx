@@ -1,9 +1,26 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useState, useEffect, Suspense, useCallback } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { getSourceConfidence } from '@/lib/intentradar/confidence';
 import { freshnessLabel, freshnessColor } from '@/lib/intentradar/freshness';
+
+interface Campaign {
+  id: string;
+  name: string;
+  city: string;
+  status: string;
+  intentMode: string;
+  totalLeads: number | null;
+  hotLeads: number | null;
+  warmLeads: number | null;
+  coolLeads: number | null;
+  createdAt: string;
+  completedAt: string | null;
+  propertyType: string;
+  budgetMin: number;
+  budgetMax: number;
+}
 
 interface Lead {
   id: string;
@@ -80,35 +97,100 @@ const DEDUPE_CONFIG: Record<string, { label: string; color: string; bg: string }
 
 const STATUS_OPTIONS = ['new', 'contacted', 'responded', 'site_visit', 'converted', 'lost'];
 
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
 function snippet(content: string, max = 130): string {
   const clean = content.replace(/\s+/g, ' ').trim();
   return clean.length <= max ? clean : clean.slice(0, max - 1) + '…';
 }
 
+function StatusBadge({ status }: { status: string }) {
+  const cfg: Record<string, { color: string; bg: string; dot: string }> = {
+    completed: { color: '#15803d', bg: '#dcfce7', dot: '#22c55e' },
+    running:   { color: '#1d4ed8', bg: '#dbeafe', dot: '#3b82f6' },
+    queued:    { color: '#b45309', bg: '#fef3c7', dot: '#f59e0b' },
+    failed:    { color: '#dc2626', bg: '#fee2e2', dot: '#ef4444' },
+  };
+  const c = cfg[status] || { color: '#78716c', bg: '#f5f5f4', dot: '#a8a29e' };
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, padding: '2px 7px', borderRadius: 10, background: c.bg, color: c.color, fontWeight: 700 }}>
+      <span style={{ width: 5, height: 5, borderRadius: '50%', background: c.dot, ...(status === 'running' ? { animation: 'pulse 1.2s ease-in-out infinite' } : {}) }} />
+      {status.toUpperCase()}
+    </span>
+  );
+}
+
 function LeadsContent() {
   const searchParams = useSearchParams();
-  const campaignId = searchParams.get('campaignId');
+  const router = useRouter();
+  const initialCampaignId = searchParams.get('campaignId');
 
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(initialCampaignId);
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [leadsLoading, setLeadsLoading] = useState(false);
+  const [campaignsLoading, setCampaignsLoading] = useState(true);
   const [tierFilter, setTierFilter] = useState<string | null>(null);
   const [modeFilter, setModeFilter] = useState<'ALL' | 'BUYER' | 'SELLER'>('ALL');
   const [showSynthetic, setShowSynthetic] = useState(false);
   const [expandedLead, setExpandedLead] = useState<string | null>(null);
   const [aiTab, setAiTab] = useState<Record<string, 'claude' | 'gpt'>>({});
   const [regenerating, setRegenerating] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
+  // Load campaign list
   useEffect(() => {
-    setLoading(true);
+    fetch('/api/intentradar/campaigns')
+      .then(r => r.json())
+      .then(data => {
+        const list: Campaign[] = data.campaigns || [];
+        setCampaigns(list);
+        setCampaignsLoading(false);
+        // Auto-select most recent campaign if none specified
+        if (!selectedCampaignId && list.length > 0) {
+          setSelectedCampaignId(list[0].id);
+        }
+      })
+      .catch(() => setCampaignsLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Load leads for selected campaign
+  const loadLeads = useCallback((campaignId: string | null) => {
+    setLeadsLoading(true);
+    setLeads([]);
+    setExpandedLead(null);
     const params = new URLSearchParams();
     if (campaignId) params.set('campaignId', campaignId);
     if (tierFilter) params.set('tier', tierFilter);
     if (showSynthetic) params.set('showSynthetic', 'true');
     fetch(`/api/intentradar/leads?${params}`)
       .then(r => r.json())
-      .then(data => { setLeads(data.leads || []); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [campaignId, tierFilter, showSynthetic]);
+      .then(data => { setLeads(data.leads || []); setLeadsLoading(false); })
+      .catch(() => setLeadsLoading(false));
+  }, [tierFilter, showSynthetic]);
+
+  useEffect(() => {
+    loadLeads(selectedCampaignId);
+  }, [selectedCampaignId, tierFilter, showSynthetic, loadLeads]);
+
+  const selectCampaign = (id: string) => {
+    setSelectedCampaignId(id);
+    setTierFilter(null);
+    setModeFilter('ALL');
+    router.replace(`/intentradar/leads?campaignId=${id}`, { scroll: false });
+  };
 
   const regenerateInsights = async (leadId: string) => {
     setRegenerating(leadId);
@@ -141,6 +223,7 @@ function LeadsContent() {
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, engagementStatus: status } : l));
   };
 
+  const selectedCampaign = campaigns.find(c => c.id === selectedCampaignId);
   const displayedLeads = modeFilter === 'ALL' ? leads : leads.filter(l => l.intentMode === modeFilter);
 
   const counts = {
@@ -151,307 +234,408 @@ function LeadsContent() {
     watching: displayedLeads.filter(l => l.tier === 'watching').length,
   };
 
+  // Group campaigns by date bucket
+  const grouped: { label: string; items: Campaign[] }[] = [];
+  const today = new Date(); today.setHours(0,0,0,0);
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  const week = new Date(today); week.setDate(today.getDate() - 7);
+
+  const buckets: { label: string; items: Campaign[] }[] = [
+    { label: 'Today', items: [] },
+    { label: 'Yesterday', items: [] },
+    { label: 'This Week', items: [] },
+    { label: 'Older', items: [] },
+  ];
+  for (const c of campaigns) {
+    const d = new Date(c.createdAt); d.setHours(0,0,0,0);
+    if (d >= today) buckets[0].items.push(c);
+    else if (d >= yesterday) buckets[1].items.push(c);
+    else if (d >= week) buckets[2].items.push(c);
+    else buckets[3].items.push(c);
+  }
+  for (const b of buckets) {
+    if (b.items.length > 0) grouped.push(b);
+  }
+
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: '32px 20px 60px' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 44, height: 44, borderRadius: 11, background: 'linear-gradient(135deg,#4338ca,#6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 800, fontSize: 18 }}>IR</div>
-          <div>
-            <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, color: '#1c1917' }}>AI Leads</h1>
-            <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>
-              {leads.length} leads{leads[0]?.campaign ? ` — ${leads[0].campaign.name}` : ''}
-              {!showSynthetic && ' · Real signals only'}
-            </p>
+    <div style={{ display: 'flex', height: 'calc(100vh - 60px)', overflow: 'hidden', background: '#f8f7f6' }}>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg) } }
+        @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.4 } }
+      `}</style>
+
+      {/* ── Sidebar: Campaign Timeline ── */}
+      <div style={{
+        width: sidebarOpen ? 280 : 0,
+        minWidth: sidebarOpen ? 280 : 0,
+        transition: 'width 0.2s, min-width 0.2s',
+        overflow: 'hidden',
+        background: 'white',
+        borderRight: '1px solid #e7e5e4',
+        display: 'flex',
+        flexDirection: 'column',
+      }}>
+        {/* Sidebar header */}
+        <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid #f0efee' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#1c1917' }}>Campaigns</span>
+            <a href="/intentradar/generate" style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: '#4338ca', color: 'white', fontWeight: 600, textDecoration: 'none' }}>+ New</a>
           </div>
+          <p style={{ margin: 0, fontSize: 11, color: '#a8a29e' }}>{campaigns.length} total · newest first</p>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* Mode filter */}
-          {(['ALL', 'BUYER', 'SELLER'] as const).map(m => (
-            <button key={m} onClick={() => setModeFilter(m)} style={{
-              padding: '7px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-              border: `1px solid ${modeFilter === m ? (m === 'SELLER' ? '#f59e0b' : m === 'BUYER' ? '#6366f1' : '#4338ca') : '#e7e5e4'}`,
-              background: modeFilter === m ? (m === 'SELLER' ? '#fffbeb' : m === 'BUYER' ? '#eef2ff' : '#f5f5f4') : 'white',
-              color: modeFilter === m ? (m === 'SELLER' ? '#b45309' : m === 'BUYER' ? '#4338ca' : '#1c1917') : '#78716c',
-            }}>
-              {m === 'ALL' ? 'All Modes' : m === 'BUYER' ? '🔍 Buyers' : '🏷 Sellers'}
-            </button>
+
+        {/* Campaign list */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+          {campaignsLoading && (
+            <div style={{ padding: 24, textAlign: 'center' }}>
+              <div style={{ width: 24, height: 24, margin: '0 auto', border: '2px solid #eef2ff', borderTopColor: '#4338ca', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            </div>
+          )}
+
+          {!campaignsLoading && campaigns.length === 0 && (
+            <div style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 12 }}>
+              No campaigns yet.<br />
+              <a href="/intentradar/generate" style={{ color: '#4338ca', fontWeight: 600 }}>Generate your first</a>
+            </div>
+          )}
+
+          {grouped.map(group => (
+            <div key={group.label}>
+              <div style={{ padding: '8px 16px 4px', fontSize: 10, fontWeight: 700, color: '#a8a29e', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                {group.label}
+              </div>
+              {group.items.map(c => {
+                const isSelected = c.id === selectedCampaignId;
+                const isSeller = c.intentMode === 'SELLER';
+                return (
+                  <div
+                    key={c.id}
+                    onClick={() => selectCampaign(c.id)}
+                    style={{
+                      padding: '10px 16px',
+                      cursor: 'pointer',
+                      background: isSelected ? '#eef2ff' : 'transparent',
+                      borderLeft: isSelected ? '3px solid #4338ca' : '3px solid transparent',
+                      transition: 'background 0.12s',
+                    }}
+                  >
+                    {/* Mode + status row */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+                      <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, fontWeight: 800,
+                        background: isSeller ? '#fffbeb' : '#eef2ff',
+                        color: isSeller ? '#b45309' : '#4338ca',
+                      }}>
+                        {isSeller ? '🏷' : '🔍'} {c.intentMode}
+                      </span>
+                      <StatusBadge status={c.status} />
+                      <span style={{ marginLeft: 'auto', fontSize: 10, color: '#a8a29e' }}>{timeAgo(c.createdAt)}</span>
+                    </div>
+
+                    {/* Campaign name */}
+                    <div style={{ fontSize: 12, fontWeight: isSelected ? 700 : 600, color: isSelected ? '#1c1917' : '#57534e', lineHeight: 1.3, marginBottom: 5, wordBreak: 'break-word' }}>
+                      {c.name.replace(/^(🏷 Seller \| |🔍 Buyer \| )/, '')}
+                    </div>
+
+                    {/* Lead count pills */}
+                    {(c.totalLeads ?? 0) > 0 && (
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                        {(c.hotLeads ?? 0) > 0 && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: '#fee2e2', color: '#dc2626', fontWeight: 700 }}>🔥 {c.hotLeads}</span>}
+                        {(c.warmLeads ?? 0) > 0 && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: '#fef3c7', color: '#d97706', fontWeight: 700 }}>🟡 {c.warmLeads}</span>}
+                        {(c.coolLeads ?? 0) > 0 && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>🟢 {c.coolLeads}</span>}
+                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: '#f5f5f4', color: '#78716c', fontWeight: 600 }}>{c.totalLeads} total</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           ))}
+        </div>
+      </div>
+
+      {/* ── Main panel: Leads ── */}
+      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+        {/* Top bar */}
+        <div style={{ padding: '14px 20px', background: 'white', borderBottom: '1px solid #e7e5e4', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', position: 'sticky', top: 0, zIndex: 10 }}>
+          {/* Sidebar toggle */}
+          <button onClick={() => setSidebarOpen(s => !s)} title="Toggle campaign list" style={{ padding: '6px 8px', borderRadius: 7, border: '1px solid #e7e5e4', background: 'white', cursor: 'pointer', fontSize: 14, color: '#78716c' }}>
+            {sidebarOpen ? '◀' : '▶'}
+          </button>
+
+          {/* Campaign title */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {selectedCampaign ? (
+              <>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#1c1917', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {selectedCampaign.name.replace(/^(🏷 Seller \| |🔍 Buyer \| )/, '')}
+                </div>
+                <div style={{ fontSize: 11, color: '#a8a29e' }}>
+                  {selectedCampaign.city} · {timeAgo(selectedCampaign.createdAt)}
+                  {selectedCampaign.completedAt && ` · took ${Math.round((new Date(selectedCampaign.completedAt).getTime() - new Date(selectedCampaign.createdAt).getTime()) / 60000)}m`}
+                </div>
+              </>
+            ) : (
+              <span style={{ fontSize: 15, fontWeight: 700, color: '#a8a29e' }}>Select a campaign</span>
+            )}
+          </div>
+
+          {/* Mode filter */}
+          <div style={{ display: 'flex', gap: 4 }}>
+            {(['ALL', 'BUYER', 'SELLER'] as const).map(m => (
+              <button key={m} onClick={() => setModeFilter(m)} style={{
+                padding: '5px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                border: `1px solid ${modeFilter === m ? (m === 'SELLER' ? '#f59e0b' : m === 'BUYER' ? '#6366f1' : '#4338ca') : '#e7e5e4'}`,
+                background: modeFilter === m ? (m === 'SELLER' ? '#fffbeb' : m === 'BUYER' ? '#eef2ff' : '#f5f5f4') : 'white',
+                color: modeFilter === m ? (m === 'SELLER' ? '#b45309' : m === 'BUYER' ? '#4338ca' : '#1c1917') : '#78716c',
+              }}>
+                {m === 'ALL' ? 'All' : m === 'BUYER' ? '🔍 Buyers' : '🏷 Sellers'}
+              </button>
+            ))}
+          </div>
+
           <button onClick={() => setShowSynthetic(s => !s)} style={{
-            padding: '7px 12px', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+            padding: '5px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: 'pointer',
             border: `1px solid ${showSynthetic ? '#7c3aed' : '#e7e5e4'}`,
             background: showSynthetic ? '#ede9fe' : 'white',
             color: showSynthetic ? '#7c3aed' : '#78716c',
           }}>
-            🤖 {showSynthetic ? 'Hide' : 'Show'} Synthetic
+            🤖 {showSynthetic ? 'Hide' : 'Show'} AI
           </button>
-          <a href="/intentradar/generate" style={{ padding: '8px 16px', borderRadius: 8, background: '#4338ca', color: 'white', fontWeight: 600, fontSize: 12, textDecoration: 'none' }}>
-            + New Search
-          </a>
         </div>
-      </div>
 
-      {/* Tier tabs */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-        <FilterTab active={!tierFilter} onClick={() => setTierFilter(null)} label={`All (${counts.all})`} />
-        <FilterTab active={tierFilter === 'hot'}      onClick={() => setTierFilter('hot')}      label={`🔥 Hot (${counts.hot})`}      color="#ef4444" />
-        <FilterTab active={tierFilter === 'warm'}     onClick={() => setTierFilter('warm')}     label={`🟡 Warm (${counts.warm})`}     color="#f59e0b" />
-        <FilterTab active={tierFilter === 'cool'}     onClick={() => setTierFilter('cool')}     label={`🟢 Cool (${counts.cool})`}     color="#22c55e" />
-        <FilterTab active={tierFilter === 'watching'} onClick={() => setTierFilter('watching')} label={`⚪ Watch (${counts.watching})`} color="#94a3b8" />
-      </div>
-
-      {loading && (
-        <div style={{ textAlign: 'center', padding: 60 }}>
-          <div style={{ width: 40, height: 40, margin: '0 auto 12px', border: '3px solid #eef2ff', borderTopColor: '#4338ca', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-          <p style={{ color: '#78716c', fontSize: 14 }}>Loading leads…</p>
-          <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        {/* Tier tabs */}
+        <div style={{ padding: '10px 20px 0', display: 'flex', gap: 6, flexWrap: 'wrap', background: 'white', borderBottom: '1px solid #e7e5e4' }}>
+          <FilterTab active={!tierFilter} onClick={() => setTierFilter(null)} label={`All (${counts.all})`} />
+          <FilterTab active={tierFilter === 'hot'}      onClick={() => setTierFilter('hot')}      label={`🔥 Hot (${counts.hot})`}      color="#ef4444" />
+          <FilterTab active={tierFilter === 'warm'}     onClick={() => setTierFilter('warm')}     label={`🟡 Warm (${counts.warm})`}     color="#f59e0b" />
+          <FilterTab active={tierFilter === 'cool'}     onClick={() => setTierFilter('cool')}     label={`🟢 Cool (${counts.cool})`}     color="#22c55e" />
+          <FilterTab active={tierFilter === 'watching'} onClick={() => setTierFilter('watching')} label={`⚪ Watch (${counts.watching})`} color="#94a3b8" />
         </div>
-      )}
 
-      {!loading && leads.length === 0 && (
-        <div style={{ textAlign: 'center', padding: 60, color: '#a8a29e' }}>
-          <p style={{ fontSize: 16, fontWeight: 600 }}>No leads found</p>
-          <p style={{ fontSize: 13 }}>
-            {!showSynthetic ? 'Showing real signals only. Toggle "Show Synthetic" to include AI-generated leads.' : 'Try adjusting filters or running a new search.'}
-          </p>
-        </div>
-      )}
-
-      {!loading && displayedLeads.map(lead => {
-        const isExpanded = expandedLead === lead.id;
-        const tc = TIER_CONFIG[lead.tier] || TIER_CONFIG.watching;
-        const isSynthetic = lead.leadOriginType === 'synthetic';
-        const isSeller = lead.intentMode === 'SELLER';
-        const conf = getSourceConfidence(lead.sourcePlatform);
-        const fresh = freshnessLabel(lead.freshnessScore ?? 1);
-        const freshCol = freshnessColor(lead.freshnessScore ?? 1);
-        const dedupe = lead.dedupeDecision ? DEDUPE_CONFIG[lead.dedupeDecision] : null;
-        const currentAiTab = aiTab[lead.id] || 'claude';
-        const intentTypeCfg = lead.intentType ? INTENT_TYPE_CONFIG[lead.intentType] : null;
-
-        return (
-          <div key={lead.id} style={{
-            background: isSynthetic ? '#fafaf9' : 'white',
-            borderRadius: 14,
-            border: `1px solid ${isExpanded ? tc.color : isSynthetic ? '#d4d4d4' : '#e7e5e4'}`,
-            borderLeft: `4px solid ${isSynthetic ? '#a8a29e' : tc.color}`,
-            marginBottom: 12,
-            boxShadow: isExpanded ? `0 4px 20px ${tc.color}20` : 'none',
-            transition: 'all 0.2s',
-            opacity: isSynthetic ? 0.88 : 1,
-          }}>
-            {/* Card header */}
-            <div onClick={() => setExpandedLead(isExpanded ? null : lead.id)} style={{ padding: '14px 18px', cursor: 'pointer' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  {/* Row 1: mode badge + identity + tier + meta badges */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 16 }}>{PLATFORM_ICONS[lead.sourcePlatform] || '📌'}</span>
-
-                    {/* Mode pill */}
-                    <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, fontWeight: 800, letterSpacing: '0.05em',
-                      background: isSeller ? '#fffbeb' : '#eef2ff',
-                      color: isSeller ? '#b45309' : '#4338ca',
-                      border: `1px solid ${isSeller ? '#fcd34d' : '#c7d2fe'}`,
-                    }}>
-                      {isSeller ? '🏷 SELLER' : '🔍 BUYER'}
-                    </span>
-
-                    <span style={{ fontWeight: 700, fontSize: 14, color: isSynthetic ? '#78716c' : '#1c1917' }}>
-                      {lead.profileName || lead.profileHandle || (isSeller ? 'Property Listing' : 'Anonymous')}
-                    </span>
-
-                    {/* Intent type */}
-                    {intentTypeCfg && (
-                      <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: intentTypeCfg.bg, color: intentTypeCfg.color, fontWeight: 700 }}>
-                        {intentTypeCfg.label}
-                      </span>
-                    )}
-
-                    {/* Tier / synthetic label */}
-                    {isSynthetic ? (
-                      <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, background: '#ede9fe', color: '#7c3aed', fontWeight: 700, border: '1px solid #c4b5fd' }}>
-                        🤖 AI Generated · {isSeller ? 'not a real listing' : 'not a real buyer'}
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, background: tc.bg, color: tc.color, fontWeight: 700 }}>{tc.label}</span>
-                    )}
-
-                    {/* Seller: listing price */}
-                    {isSeller && lead.listingPrice && (
-                      <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>
-                        {lead.listingPrice}
-                      </span>
-                    )}
-
-                    {/* Buyer: NRI + budget */}
-                    {!isSeller && lead.isNRI && (
-                      <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#eef2ff', color: '#4338ca', fontWeight: 700 }}>
-                        NRI{lead.nriCountry ? ` · ${lead.nriCountry}` : ''}
-                      </span>
-                    )}
-                    {!isSeller && lead.inferredBudget && (
-                      <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#f0fdf4', color: '#15803d', fontWeight: 600 }}>
-                        Budget: {lead.inferredBudget}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Row 2: confidence + freshness + dedupe badges */}
-                  <div style={{ display: 'flex', gap: 6, marginBottom: 7, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: conf.bg, color: conf.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      {conf.label}
-                    </span>
-                    {(lead.freshnessScore ?? 1) < 0.9 && (
-                      <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: '#f5f5f4', color: freshCol, fontWeight: 700, textTransform: 'uppercase' }}>
-                        {fresh}
-                      </span>
-                    )}
-                    {dedupe && (
-                      <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: dedupe.bg, color: dedupe.color, fontWeight: 700 }}>
-                        ⚠ {dedupe.label}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Row 3: evidence snippet */}
-                  <p style={{ fontSize: 12, color: '#6b7280', margin: 0, lineHeight: 1.5, fontStyle: 'italic' }}>
-                    "{snippet(lead.sourceContent)}"
-                  </p>
-                </div>
-
-                <div style={{ textAlign: 'center', flexShrink: 0 }}>
-                  <div style={{ fontSize: 26, fontWeight: 800, color: isSynthetic ? '#a8a29e' : tc.color, fontFamily: 'monospace', lineHeight: 1 }}>{lead.totalScore}</div>
-                  <div style={{ fontSize: 9, color: '#a8a29e', fontWeight: 600 }}>/100</div>
-                </div>
-              </div>
+        {/* Lead cards */}
+        <div style={{ padding: '16px 20px 60px' }}>
+          {leadsLoading && (
+            <div style={{ textAlign: 'center', padding: 60 }}>
+              <div style={{ width: 36, height: 36, margin: '0 auto 12px', border: '3px solid #eef2ff', borderTopColor: '#4338ca', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+              <p style={{ color: '#78716c', fontSize: 13 }}>Loading leads…</p>
             </div>
+          )}
 
-            {/* Expanded detail */}
-            {isExpanded && (
-              <div style={{ padding: '0 18px 18px', borderTop: '1px solid #f5f5f4' }}>
+          {!leadsLoading && !selectedCampaignId && (
+            <div style={{ textAlign: 'center', padding: 60, color: '#a8a29e' }}>
+              <p style={{ fontSize: 32, marginBottom: 8 }}>👈</p>
+              <p style={{ fontSize: 15, fontWeight: 600, color: '#78716c' }}>Select a campaign from the left</p>
+              <p style={{ fontSize: 13 }}>Pick any past generation run to view its leads</p>
+            </div>
+          )}
 
-                {isSynthetic && (
-                  <div style={{ marginTop: 14, padding: '10px 14px', borderRadius: 8, background: '#ede9fe', border: '1px solid #c4b5fd' }}>
-                    <p style={{ margin: 0, fontSize: 12, color: '#6d28d9', fontWeight: 600 }}>
-                      🤖 AI-generated signal — not sourced from a real platform. For demo/testing only. Do not treat as a genuine buyer.
-                    </p>
-                  </div>
-                )}
+          {!leadsLoading && selectedCampaignId && displayedLeads.length === 0 && (
+            <div style={{ textAlign: 'center', padding: 60, color: '#a8a29e' }}>
+              <p style={{ fontSize: 15, fontWeight: 600 }}>No leads found</p>
+              <p style={{ fontSize: 13 }}>
+                {!showSynthetic ? 'Toggle "Show AI" to include synthetic leads.' : 'Try adjusting filters.'}
+              </p>
+            </div>
+          )}
 
-                {dedupe && lead.matchReasons.length > 0 && (
-                  <div style={{ marginTop: 14, padding: '10px 14px', borderRadius: 8, background: dedupe.bg, border: `1px solid ${dedupe.color}30` }}>
-                    <p style={{ margin: '0 0 4px', fontSize: 11, fontWeight: 700, color: dedupe.color }}>⚠ {dedupe.label}</p>
-                    <p style={{ margin: 0, fontSize: 11, color: '#57534e' }}>Match reasons: {lead.matchReasons.join(' · ')}</p>
-                  </div>
-                )}
+          {!leadsLoading && displayedLeads.map(lead => {
+            const isExpanded = expandedLead === lead.id;
+            const tc = TIER_CONFIG[lead.tier] || TIER_CONFIG.watching;
+            const isSynthetic = lead.leadOriginType === 'synthetic';
+            const isSeller = lead.intentMode === 'SELLER';
+            const conf = getSourceConfidence(lead.sourcePlatform);
+            const fresh = freshnessLabel(lead.freshnessScore ?? 1);
+            const freshCol = freshnessColor(lead.freshnessScore ?? 1);
+            const dedupe = lead.dedupeDecision ? DEDUPE_CONFIG[lead.dedupeDecision] : null;
+            const currentAiTab = aiTab[lead.id] || 'claude';
+            const intentTypeCfg = lead.intentType ? INTENT_TYPE_CONFIG[lead.intentType] : null;
 
-                {/* Score grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px,1fr))', gap: 8, marginTop: 14, marginBottom: 14 }}>
-                  {([['Specificity', lead.scoreSpecificity, 15], ['Budget', lead.scoreBudgetClarity, 12], ['Urgency', lead.scoreUrgency, 12], ['Velocity', lead.scoreEngagementVelocity, 14], ['Financial', lead.scoreFinancialReady, 10], ['Location', lead.scoreLocationLock, 8]] as [string, number, number][]).map(([l, s, m]) => (
-                    <div key={l} style={{ textAlign: 'center', padding: '8px 4px', background: '#fafaf9', borderRadius: 8 }}>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: '#4338ca', fontFamily: 'monospace' }}>{s}</div>
-                      <div style={{ fontSize: 9, color: '#a8a29e' }}>{l} /{m}</div>
+            return (
+              <div key={lead.id} style={{
+                background: isSynthetic ? '#fafaf9' : 'white',
+                borderRadius: 12,
+                border: `1px solid ${isExpanded ? tc.color : isSynthetic ? '#d4d4d4' : '#e7e5e4'}`,
+                borderLeft: `4px solid ${isSynthetic ? '#a8a29e' : tc.color}`,
+                marginBottom: 10,
+                boxShadow: isExpanded ? `0 4px 16px ${tc.color}20` : 'none',
+                transition: 'all 0.15s',
+                opacity: isSynthetic ? 0.88 : 1,
+              }}>
+                {/* Card header */}
+                <div onClick={() => setExpandedLead(isExpanded ? null : lead.id)} style={{ padding: '13px 16px', cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {/* Row 1 */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 5, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 15 }}>{PLATFORM_ICONS[lead.sourcePlatform] || '📌'}</span>
+                        <span style={{ fontSize: 9, padding: '2px 5px', borderRadius: 3, fontWeight: 800,
+                          background: isSeller ? '#fffbeb' : '#eef2ff',
+                          color: isSeller ? '#b45309' : '#4338ca',
+                          border: `1px solid ${isSeller ? '#fcd34d' : '#c7d2fe'}`,
+                        }}>
+                          {isSeller ? '🏷 SELLER' : '🔍 BUYER'}
+                        </span>
+                        <span style={{ fontWeight: 700, fontSize: 13, color: isSynthetic ? '#78716c' : '#1c1917' }}>
+                          {lead.profileName || lead.profileHandle || (isSeller ? 'Property Listing' : 'Anonymous')}
+                        </span>
+                        {intentTypeCfg && (
+                          <span style={{ fontSize: 10, padding: '2px 5px', borderRadius: 3, background: intentTypeCfg.bg, color: intentTypeCfg.color, fontWeight: 700 }}>
+                            {intentTypeCfg.label}
+                          </span>
+                        )}
+                        {isSynthetic ? (
+                          <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: '#ede9fe', color: '#7c3aed', fontWeight: 700 }}>🤖 AI Generated</span>
+                        ) : (
+                          <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 3, background: tc.bg, color: tc.color, fontWeight: 700 }}>{tc.label}</span>
+                        )}
+                        {isSeller && lead.listingPrice && (
+                          <span style={{ fontSize: 10, padding: '2px 5px', borderRadius: 3, background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>{lead.listingPrice}</span>
+                        )}
+                        {!isSeller && lead.isNRI && (
+                          <span style={{ fontSize: 10, padding: '2px 5px', borderRadius: 3, background: '#eef2ff', color: '#4338ca', fontWeight: 700 }}>NRI{lead.nriCountry ? ` · ${lead.nriCountry}` : ''}</span>
+                        )}
+                        {!isSeller && lead.inferredBudget && (
+                          <span style={{ fontSize: 10, padding: '2px 5px', borderRadius: 3, background: '#f0fdf4', color: '#15803d', fontWeight: 600 }}>Budget: {lead.inferredBudget}</span>
+                        )}
+                      </div>
+                      {/* Row 2: confidence + freshness */}
+                      <div style={{ display: 'flex', gap: 5, marginBottom: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <span style={{ fontSize: 9, padding: '2px 5px', borderRadius: 3, background: conf.bg, color: conf.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{conf.label}</span>
+                        {(lead.freshnessScore ?? 1) < 0.9 && (
+                          <span style={{ fontSize: 9, padding: '2px 5px', borderRadius: 3, background: '#f5f5f4', color: freshCol, fontWeight: 700, textTransform: 'uppercase' }}>{fresh}</span>
+                        )}
+                        {dedupe && (
+                          <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: dedupe.bg, color: dedupe.color, fontWeight: 700 }}>⚠ {dedupe.label}</span>
+                        )}
+                      </div>
+                      {/* Snippet */}
+                      <p style={{ fontSize: 12, color: '#6b7280', margin: 0, lineHeight: 1.5, fontStyle: 'italic' }}>"{snippet(lead.sourceContent)}"</p>
                     </div>
-                  ))}
+
+                    <div style={{ textAlign: 'center', flexShrink: 0 }}>
+                      <div style={{ fontSize: 24, fontWeight: 800, color: isSynthetic ? '#a8a29e' : tc.color, fontFamily: 'monospace', lineHeight: 1 }}>{lead.totalScore}</div>
+                      <div style={{ fontSize: 9, color: '#a8a29e', fontWeight: 600 }}>/100</div>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Attributes — mode-aware */}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-                  {isSeller ? (
-                    <>
-                      {lead.inferredBuyerType && <Tag label="Seller type" value={lead.inferredBuyerType} />}
-                      {lead.listingPrice && <Tag label="Price" value={lead.listingPrice} />}
-                      {lead.inferredLocation && <Tag label="Location" value={lead.inferredLocation} />}
-                      {lead.inferredTimeline && <Tag label="Status" value={lead.inferredTimeline} />}
-                      {lead.sourceUrl && (
-                        <a href={lead.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: '#fffbeb', border: '1px solid #fcd34d', color: '#b45309', fontWeight: 700, textDecoration: 'none' }}>
-                          🔗 View Listing
-                        </a>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      {lead.intentType && <Tag label="Intent" value={lead.intentType} />}
-                      {lead.inferredBuyerType && <Tag label="Buyer type" value={lead.inferredBuyerType} />}
-                      {lead.inferredBudget && <Tag label="Budget" value={lead.inferredBudget} />}
-                      {lead.inferredLocation && <Tag label="Area" value={lead.inferredLocation} />}
-                      {lead.inferredTimeline && <Tag label="Timeline" value={lead.inferredTimeline} />}
-                      {lead.profileHandle && (
-                        <a href={lead.sourceUrl || '#'} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: '#eef2ff', border: '1px solid #c7d2fe', color: '#4338ca', fontWeight: 700, textDecoration: 'none' }}>
-                          👤 {lead.profileHandle}
-                        </a>
-                      )}
-                      {lead.behavioralPatterns?.map(p => (
-                        <span key={p} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: '#fdf2f8', color: '#be185d', fontWeight: 600 }}>{p.replace(/_/g, ' ')}</span>
+                {/* Expanded detail */}
+                {isExpanded && (
+                  <div style={{ padding: '0 16px 16px', borderTop: '1px solid #f5f5f4' }}>
+                    {isSynthetic && (
+                      <div style={{ marginTop: 12, padding: '9px 12px', borderRadius: 7, background: '#ede9fe', border: '1px solid #c4b5fd' }}>
+                        <p style={{ margin: 0, fontSize: 12, color: '#6d28d9', fontWeight: 600 }}>🤖 AI-generated signal — not a real buyer/seller. For demo/testing only.</p>
+                      </div>
+                    )}
+                    {dedupe && lead.matchReasons.length > 0 && (
+                      <div style={{ marginTop: 12, padding: '9px 12px', borderRadius: 7, background: dedupe.bg, border: `1px solid ${dedupe.color}30` }}>
+                        <p style={{ margin: '0 0 3px', fontSize: 11, fontWeight: 700, color: dedupe.color }}>⚠ {dedupe.label}</p>
+                        <p style={{ margin: 0, fontSize: 11, color: '#57534e' }}>Match reasons: {lead.matchReasons.join(' · ')}</p>
+                      </div>
+                    )}
+
+                    {/* Score grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(80px,1fr))', gap: 7, marginTop: 12, marginBottom: 12 }}>
+                      {([['Specificity', lead.scoreSpecificity, 15], ['Budget', lead.scoreBudgetClarity, 12], ['Urgency', lead.scoreUrgency, 12], ['Velocity', lead.scoreEngagementVelocity, 14], ['Financial', lead.scoreFinancialReady, 10], ['Location', lead.scoreLocationLock, 8]] as [string, number, number][]).map(([l, s, m]) => (
+                        <div key={l} style={{ textAlign: 'center', padding: '7px 4px', background: '#fafaf9', borderRadius: 7 }}>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: '#4338ca', fontFamily: 'monospace' }}>{s}</div>
+                          <div style={{ fontSize: 9, color: '#a8a29e' }}>{l} /{m}</div>
+                        </div>
                       ))}
-                    </>
-                  )}
-                </div>
-
-                {/* Full source signal */}
-                <div style={{ background: '#fafaf9', borderRadius: 10, border: '1px solid #e7e5e4', padding: '12px 14px', marginBottom: 14 }}>
-                  <p style={{ margin: '0 0 6px', fontSize: 10, fontWeight: 700, color: '#a8a29e', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    {PLATFORM_ICONS[lead.sourcePlatform] || '📌'} Source · {conf.label}
-                  </p>
-                  <p style={{ margin: 0, fontSize: 13, color: '#374151', lineHeight: 1.6 }}>{lead.sourceContent}</p>
-                </div>
-
-                {/* AI Insights */}
-                <div style={{ background: '#fafaf9', borderRadius: 12, border: '1px solid #e7e5e4', overflow: 'hidden', marginBottom: 14 }}>
-                  <div style={{ display: 'flex', borderBottom: '1px solid #e7e5e4' }}>
-                    {(['claude', 'gpt'] as const).map(tab => (
-                      <button key={tab} onClick={() => setAiTab(p => ({ ...p, [lead.id]: tab }))} style={{
-                        flex: 1, padding: '10px 16px', border: 'none', cursor: 'pointer',
-                        background: currentAiTab === tab ? '#eef2ff' : 'transparent',
-                        color: currentAiTab === tab ? '#4338ca' : '#78716c',
-                        fontWeight: currentAiTab === tab ? 700 : 500, fontSize: 13,
-                        borderBottom: currentAiTab === tab ? '2px solid #4338ca' : 'none',
-                      }}>{tab === 'claude' ? 'Claude Insight' : 'GPT-4o Insight'}</button>
-                    ))}
-                  </div>
-                  <div style={{ padding: 16 }}>
-                    <pre style={{ fontSize: 12, lineHeight: 1.6, color: '#374151', whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: 'inherit' }}>
-                      {currentAiTab === 'claude' ? (lead.aiInsightClaude || 'No Claude insight. Add Anthropic API key in Settings.') : (lead.aiInsightGPT || 'No GPT insight. Add OpenAI API key in Settings.')}
-                    </pre>
-                  </div>
-                </div>
-
-                {lead.aiRecommendedAction && (
-                  <div style={{ background: '#eef2ff', borderRadius: 10, padding: 14, border: '1px solid #c7d2fe', marginBottom: 14 }}>
-                    <p style={{ margin: '0 0 6px', fontSize: 10, fontWeight: 700, color: '#4338ca', textTransform: 'uppercase', letterSpacing: 1 }}>Recommended Action</p>
-                    <p style={{ fontSize: 13, color: '#312e81', margin: 0, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{lead.aiRecommendedAction}</p>
-                  </div>
-                )}
-
-                {lead.aiResponseDraft && (
-                  <div style={{ background: '#f0fdf4', borderRadius: 10, padding: 14, border: '1px solid #bbf7d0', marginBottom: 14 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', textTransform: 'uppercase', letterSpacing: 1 }}>Suggested Response</span>
-                      <button onClick={() => navigator.clipboard.writeText(lead.aiResponseDraft || '')} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid #bbf7d0', background: 'white', color: '#16a34a', cursor: 'pointer', fontWeight: 600 }}>Copy</button>
                     </div>
-                    <p style={{ fontSize: 13, color: '#14532d', margin: 0, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{lead.aiResponseDraft}</p>
+
+                    {/* Attributes */}
+                    <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 12 }}>
+                      {isSeller ? (
+                        <>
+                          {lead.inferredBuyerType && <Tag label="Seller type" value={lead.inferredBuyerType} />}
+                          {lead.listingPrice && <Tag label="Price" value={lead.listingPrice} />}
+                          {lead.inferredLocation && <Tag label="Location" value={lead.inferredLocation} />}
+                          {lead.inferredTimeline && <Tag label="Status" value={lead.inferredTimeline} />}
+                          {lead.sourceUrl && (
+                            <a href={lead.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, padding: '4px 10px', borderRadius: 5, background: '#fffbeb', border: '1px solid #fcd34d', color: '#b45309', fontWeight: 700, textDecoration: 'none' }}>🔗 View Listing</a>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {lead.intentType && <Tag label="Intent" value={lead.intentType} />}
+                          {lead.inferredBuyerType && <Tag label="Buyer type" value={lead.inferredBuyerType} />}
+                          {lead.inferredBudget && <Tag label="Budget" value={lead.inferredBudget} />}
+                          {lead.inferredLocation && <Tag label="Area" value={lead.inferredLocation} />}
+                          {lead.inferredTimeline && <Tag label="Timeline" value={lead.inferredTimeline} />}
+                          {lead.profileHandle && (
+                            <a href={lead.sourceUrl || '#'} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, padding: '4px 10px', borderRadius: 5, background: '#eef2ff', border: '1px solid #c7d2fe', color: '#4338ca', fontWeight: 700, textDecoration: 'none' }}>👤 {lead.profileHandle}</a>
+                          )}
+                          {lead.behavioralPatterns?.map(p => (
+                            <span key={p} style={{ fontSize: 10, padding: '3px 7px', borderRadius: 4, background: '#fdf2f8', color: '#be185d', fontWeight: 600 }}>{p.replace(/_/g, ' ')}</span>
+                          ))}
+                        </>
+                      )}
+                    </div>
+
+                    {/* Source */}
+                    <div style={{ background: '#fafaf9', borderRadius: 8, border: '1px solid #e7e5e4', padding: '10px 12px', marginBottom: 12 }}>
+                      <p style={{ margin: '0 0 5px', fontSize: 10, fontWeight: 700, color: '#a8a29e', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        {PLATFORM_ICONS[lead.sourcePlatform] || '📌'} Source · {conf.label}
+                      </p>
+                      <p style={{ margin: 0, fontSize: 12, color: '#374151', lineHeight: 1.6 }}>{lead.sourceContent}</p>
+                    </div>
+
+                    {/* AI Insights */}
+                    <div style={{ background: '#fafaf9', borderRadius: 10, border: '1px solid #e7e5e4', overflow: 'hidden', marginBottom: 12 }}>
+                      <div style={{ display: 'flex', borderBottom: '1px solid #e7e5e4' }}>
+                        {(['claude', 'gpt'] as const).map(tab => (
+                          <button key={tab} onClick={() => setAiTab(p => ({ ...p, [lead.id]: tab }))} style={{
+                            flex: 1, padding: '9px 14px', border: 'none', cursor: 'pointer',
+                            background: currentAiTab === tab ? '#eef2ff' : 'transparent',
+                            color: currentAiTab === tab ? '#4338ca' : '#78716c',
+                            fontWeight: currentAiTab === tab ? 700 : 500, fontSize: 12,
+                            borderBottom: currentAiTab === tab ? '2px solid #4338ca' : 'none',
+                          }}>{tab === 'claude' ? 'Claude Insight' : 'GPT-4o Insight'}</button>
+                        ))}
+                      </div>
+                      <div style={{ padding: 14 }}>
+                        <pre style={{ fontSize: 12, lineHeight: 1.6, color: '#374151', whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: 'inherit' }}>
+                          {currentAiTab === 'claude' ? (lead.aiInsightClaude || 'No Claude insight. Add Anthropic API key in Settings.') : (lead.aiInsightGPT || 'No GPT insight. Add OpenAI API key in Settings.')}
+                        </pre>
+                      </div>
+                    </div>
+
+                    {lead.aiRecommendedAction && (
+                      <div style={{ background: '#eef2ff', borderRadius: 8, padding: 12, border: '1px solid #c7d2fe', marginBottom: 12 }}>
+                        <p style={{ margin: '0 0 5px', fontSize: 10, fontWeight: 700, color: '#4338ca', textTransform: 'uppercase', letterSpacing: 1 }}>Recommended Action</p>
+                        <p style={{ fontSize: 12, color: '#312e81', margin: 0, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{lead.aiRecommendedAction}</p>
+                      </div>
+                    )}
+
+                    {lead.aiResponseDraft && (
+                      <div style={{ background: '#f0fdf4', borderRadius: 8, padding: 12, border: '1px solid #bbf7d0', marginBottom: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', textTransform: 'uppercase', letterSpacing: 1 }}>Suggested Response</span>
+                          <button onClick={() => navigator.clipboard.writeText(lead.aiResponseDraft || '')} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 5, border: '1px solid #bbf7d0', background: 'white', color: '#16a34a', cursor: 'pointer', fontWeight: 600 }}>Copy</button>
+                        </div>
+                        <p style={{ fontSize: 12, color: '#14532d', margin: 0, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{lead.aiResponseDraft}</p>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <select value={lead.engagementStatus} onChange={e => updateStatus(lead.id, e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, border: '1px solid #e7e5e4', fontSize: 12, fontWeight: 600, background: 'white', cursor: 'pointer' }}>
+                        {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ').toUpperCase()}</option>)}
+                      </select>
+                      <button onClick={() => regenerateInsights(lead.id)} disabled={regenerating === lead.id} style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid #e7e5e4', background: 'white', color: '#4338ca', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                        {regenerating === lead.id ? 'Regenerating…' : '🔄 Regenerate AI'}
+                      </button>
+                      {lead.sourceUrl && (
+                        <a href={lead.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid #e7e5e4', background: 'white', color: '#57534e', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>🔗 View Source</a>
+                      )}
+                    </div>
                   </div>
                 )}
-
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <select value={lead.engagementStatus} onChange={e => updateStatus(lead.id, e.target.value)} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e7e5e4', fontSize: 12, fontWeight: 600, background: 'white', cursor: 'pointer' }}>
-                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ').toUpperCase()}</option>)}
-                  </select>
-                  <button onClick={() => regenerateInsights(lead.id)} disabled={regenerating === lead.id} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e7e5e4', background: 'white', color: '#4338ca', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                    {regenerating === lead.id ? 'Regenerating…' : '🔄 Regenerate AI'}
-                  </button>
-                  {lead.sourceUrl && (
-                    <a href={lead.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e7e5e4', background: 'white', color: '#57534e', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>
-                      🔗 View Source
-                    </a>
-                  )}
-                </div>
               </div>
-            )}
-          </div>
-        );
-      })}
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -459,18 +643,18 @@ function LeadsContent() {
 function FilterTab({ active, onClick, label, color }: { active: boolean; onClick: () => void; label: string; color?: string }) {
   return (
     <button onClick={onClick} style={{
-      padding: '8px 16px', borderRadius: 8,
+      padding: '7px 14px', borderRadius: 7, marginBottom: 10,
       border: `1px solid ${active ? (color || '#4338ca') : '#e7e5e4'}`,
       background: active ? (color ? `${color}15` : '#eef2ff') : 'white',
       color: active ? (color || '#4338ca') : '#78716c',
-      fontSize: 13, fontWeight: active ? 700 : 500, cursor: 'pointer',
+      fontSize: 12, fontWeight: active ? 700 : 500, cursor: 'pointer',
     }}>{label}</button>
   );
 }
 
 function Tag({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: '#f5f5f4', border: '1px solid #e7e5e4' }}>
+    <div style={{ fontSize: 11, padding: '4px 9px', borderRadius: 5, background: '#f5f5f4', border: '1px solid #e7e5e4' }}>
       <span style={{ color: '#a8a29e' }}>{label}: </span>
       <span style={{ color: '#1c1917', fontWeight: 600 }}>{value}</span>
     </div>
