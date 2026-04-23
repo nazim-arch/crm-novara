@@ -59,6 +59,18 @@ const BUYER_DEMAND_SIGNALS = [
 ];
 
 const IRRELEVANT_SIGNALS = [
+  // Job postings / career posts — relocating for a job ≠ buying property
+  /\bhiring\b/i,
+  /\bwe are hiring\b/i,
+  /\bjob opening\b/i,
+  /\bopen (position|role|vacancy)\b/i,
+  /\bapply now\b/i,
+  /\bsenior (software|data|product|bi|qa|devops|cloud|frontend|backend|full.?stack)/i,
+  /\b(software|power bi|data) (engineer|developer|analyst|architect|manager)\b/i,
+  /\b(years of experience|yoe|yrs? exp)\b/i,
+  /\b(ctc|lpa|package|notice period|immediate joiner)\b/i,
+  /\bjob (description|role|requirement|opportunity)\b/i,
+  /\blinkedin (post|activity).*(engineer|developer|manager|analyst)/i,
   // Generic lifestyle
   /interior design tips/i,
   /\bdiy\b.*(home|decor)/i,
@@ -99,6 +111,9 @@ export const DISCARD_URL_PATTERNS = [
   /\/resources?\//i,
   /\/magazine\//i,
   /\/press\//i,
+  // LinkedIn job/career posts — URL slug contains job titles
+  /linkedin\.com\/posts\/.*-(engineer|developer|analyst|manager|architect|designer|consultant|executive|officer|specialist|recruiter|intern|associate)-/i,
+  /linkedin\.com\/jobs\//i,
 ];
 
 export function classifySourceIntent(content: string): SourceIntentType {

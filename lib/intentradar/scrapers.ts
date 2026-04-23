@@ -554,10 +554,13 @@ export async function scrapeSerpFacebook(config: ScraperConfig): Promise<RawSign
 export async function scrapeSerpLinkedIn(config: ScraperConfig): Promise<RawSignal[]> {
   const apiKey = await getApiKey('serp');
   if (!apiKey) { console.log('SerpAPI not configured — skipping LinkedIn'); return []; }
+  // All queries must include property/real estate terms — prevents career relocation posts matching
   const queries = [
-    `site:linkedin.com "relocating to ${config.city}"`,
-    `site:linkedin.com "moving to ${config.city}" property`,
-    `site:linkedin.com NRI "${config.city}" real estate`,
+    `site:linkedin.com "relocating to ${config.city}" property`,
+    `site:linkedin.com "relocating to ${config.city}" "looking to buy"`,
+    `site:linkedin.com "moving to ${config.city}" "buy flat"`,
+    `site:linkedin.com NRI "${config.city}" real estate property`,
+    `site:linkedin.com "${config.city}" "looking to buy" ${config.propertyType}`,
   ];
   return serpBatch(queries, 'linkedin', config, apiKey);
 }
