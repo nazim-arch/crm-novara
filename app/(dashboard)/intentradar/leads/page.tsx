@@ -63,6 +63,15 @@ interface Lead {
   leadType: string;
   rawData?: Record<string, unknown>;
   campaign?: { name: string; city: string };
+  // Engagement-validated buyer pipeline
+  engagementScore?: number | null;
+  buyerEngDensity?: number | null;
+  isHotCluster?: boolean;
+  buyerPersona?: string | null;
+  sourceIntentType?: string | null;
+  engagementIntentType?: string | null;
+  exactComment?: string | null;
+  whyFlagged?: string | null;
 }
 
 // ── Config ─────────────────────────────────────────────────────────────────────
@@ -112,6 +121,32 @@ const DEDUPE_CONFIG: Record<string, { label: string; color: string; bg: string }
 const LEAD_TYPE_CONFIG = {
   DIRECT: { label: '👤 Direct',  color: '#1d4ed8', bg: '#dbeafe', border: '#93c5fd', desc: 'Identity available — contactable directly' },
   SIGNAL: { label: '📡 Signal',  color: '#b45309', bg: '#fef3c7', border: '#fcd34d', desc: 'High intent detected — requires manual outreach' },
+};
+
+const BUYER_PERSONA_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  end_user:          { label: '🏠 End User',       color: '#1d4ed8', bg: '#dbeafe' },
+  investor:          { label: '📈 Investor',        color: '#0e7490', bg: '#cffafe' },
+  nri:               { label: '✈️ NRI',             color: '#7c3aed', bg: '#ede9fe' },
+  first_time:        { label: '🌱 First-Time',      color: '#15803d', bg: '#dcfce7' },
+  upgrade:           { label: '⬆️ Upgrade',         color: '#b45309', bg: '#fef3c7' },
+  rental_frustrated: { label: '🔑 Rental Exit',     color: '#dc2626', bg: '#fee2e2' },
+  broker:            { label: '🤝 Broker',          color: '#78716c', bg: '#f5f5f4' },
+  unclear:           { label: '❓ Unclear',          color: '#a8a29e', bg: '#f5f5f4' },
+};
+
+const SOURCE_INTENT_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  buyer:     { label: 'Demand post',   color: '#1d4ed8', bg: '#dbeafe' },
+  seller:    { label: 'Listing post',  color: '#15803d', bg: '#dcfce7' },
+  mixed:     { label: 'Mixed post',    color: '#b45309', bg: '#fef3c7' },
+  irrelevant:{ label: 'Off-topic',     color: '#78716c', bg: '#f5f5f4' },
+};
+
+const ENG_INTENT_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  strong_buyer:  { label: '💪 Strong Buyer',  color: '#15803d', bg: '#dcfce7' },
+  medium_buyer:  { label: '👀 Medium Buyer',  color: '#1d4ed8', bg: '#dbeafe' },
+  seller_broker: { label: '🏷 Seller/Broker', color: '#78716c', bg: '#f5f5f4' },
+  noise:         { label: 'Noise',            color: '#a8a29e', bg: '#f5f5f4' },
+  spam:          { label: 'Spam',             color: '#dc2626', bg: '#fee2e2' },
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -665,6 +700,27 @@ function LeadsContent() {
                         {ltCfg.label}
                       </span>
 
+                      {/* Buyer persona */}
+                      {lead.buyerPersona && BUYER_PERSONA_CONFIG[lead.buyerPersona] && (
+                        <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, fontWeight: 700, background: BUYER_PERSONA_CONFIG[lead.buyerPersona].bg, color: BUYER_PERSONA_CONFIG[lead.buyerPersona].color }}>
+                          {BUYER_PERSONA_CONFIG[lead.buyerPersona].label}
+                        </span>
+                      )}
+
+                      {/* Hot cluster */}
+                      {lead.isHotCluster && (
+                        <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, fontWeight: 800, background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5' }}>
+                          🔥 HOT CLUSTER
+                        </span>
+                      )}
+
+                      {/* Engagement intent */}
+                      {lead.engagementIntentType && ENG_INTENT_CONFIG[lead.engagementIntentType] && (
+                        <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, fontWeight: 700, background: ENG_INTENT_CONFIG[lead.engagementIntentType].bg, color: ENG_INTENT_CONFIG[lead.engagementIntentType].color }}>
+                          {ENG_INTENT_CONFIG[lead.engagementIntentType].label}
+                        </span>
+                      )}
+
                       {isSynthetic && (
                         <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: '#ede9fe', color: '#7c3aed', fontWeight: 700 }}>🤖 AI</span>
                       )}
@@ -687,6 +743,18 @@ function LeadsContent() {
                         </>
                       )}
 
+                      {/* Engagement score */}
+                      {lead.engagementScore != null && (
+                        <span style={{ fontSize: 9, padding: '2px 5px', borderRadius: 3, background: '#f0fdf4', color: '#15803d', fontWeight: 700 }}>
+                          📊 Eng {lead.engagementScore}
+                        </span>
+                      )}
+                      {/* Buyer density */}
+                      {lead.buyerEngDensity != null && lead.buyerEngDensity > 0 && (
+                        <span style={{ fontSize: 9, padding: '2px 5px', borderRadius: 3, background: '#dbeafe', color: '#1d4ed8', fontWeight: 700 }}>
+                          👥 {Math.round(lead.buyerEngDensity * 100)}% buyer density
+                        </span>
+                      )}
                       {/* Confidence + freshness */}
                       <span style={{ fontSize: 9, padding: '2px 5px', borderRadius: 3, background: conf.bg, color: conf.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{conf.label}</span>
                       {(lead.freshnessScore ?? 1) < 0.85 && (
@@ -786,6 +854,50 @@ function LeadsContent() {
                             </>
                           )}
                         </div>
+
+                        {/* Exact comment that triggered this lead */}
+                        {lead.exactComment && (
+                          <div style={{ marginTop: 12 }}>
+                            <p style={{ margin: '0 0 5px', fontSize: 10, fontWeight: 700, color: '#a8a29e', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Triggering Comment</p>
+                            <div style={{ padding: '8px 12px', borderRadius: 7, background: '#f0fdf4', border: '1px solid #86efac', fontSize: 12, color: '#166534', lineHeight: 1.5, fontStyle: 'italic' }}>
+                              "{lead.exactComment}"
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Why flagged */}
+                        {lead.whyFlagged && (
+                          <div style={{ marginTop: 10 }}>
+                            <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 700, color: '#a8a29e', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Why Flagged</p>
+                            <p style={{ margin: 0, fontSize: 11, color: '#57534e', lineHeight: 1.5 }}>{lead.whyFlagged}</p>
+                          </div>
+                        )}
+
+                        {/* Source intent + engagement metrics */}
+                        {(lead.sourceIntentType || lead.engagementScore != null) && (
+                          <div style={{ marginTop: 10, display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
+                            {lead.sourceIntentType && SOURCE_INTENT_CONFIG[lead.sourceIntentType] && (
+                              <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, background: SOURCE_INTENT_CONFIG[lead.sourceIntentType].bg, color: SOURCE_INTENT_CONFIG[lead.sourceIntentType].color, fontWeight: 700 }}>
+                                Source: {SOURCE_INTENT_CONFIG[lead.sourceIntentType].label}
+                              </span>
+                            )}
+                            {lead.engagementScore != null && (
+                              <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, background: '#f0fdf4', color: '#15803d', fontWeight: 700 }}>
+                                Eng Score: {lead.engagementScore}/100
+                              </span>
+                            )}
+                            {lead.buyerEngDensity != null && lead.buyerEngDensity > 0 && (
+                              <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, background: '#dbeafe', color: '#1d4ed8', fontWeight: 700 }}>
+                                Buyer Density: {Math.round(lead.buyerEngDensity * 100)}%
+                              </span>
+                            )}
+                            {lead.isHotCluster && (
+                              <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, background: '#fee2e2', color: '#dc2626', fontWeight: 800 }}>
+                                🔥 Hot Cluster (3+ distinct buyers)
+                              </span>
+                            )}
+                          </div>
+                        )}
 
                         {/* Profile / listing link — or Next Action for SIGNAL leads */}
                         <div style={{ marginTop: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>

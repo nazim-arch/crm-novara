@@ -846,6 +846,16 @@ model ir_lead {
   // Origin — real: scraped from live source | synthetic: AI-generated for demo/testing
   leadOriginType       String   @default("real") // real | synthetic
 
+  // Engagement-validated buyer pipeline fields
+  engagementScore      Float?                    // 0-100 post engagement score (weighted likes/comments/shares/views)
+  buyerEngDensity      Float?                    // 0.0–1.0 = buyer_intent_comments / total_comments
+  isHotCluster         Boolean  @default(false)  // true when 3+ distinct buyer-intent users on same post
+  buyerPersona         String?                   // end_user | investor | nri | first_time | upgrade | rental_frustrated | broker | unclear
+  sourceIntentType     String?                   // buyer | seller | mixed | irrelevant (classifies the source POST)
+  engagementIntentType String?                   // strong_buyer | medium_buyer | seller_broker | noise | spam (classifies the COMMENTER)
+  exactComment         String?  @db.Text          // the exact buyer comment that created this lead
+  whyFlagged           String?  @db.Text          // human-readable explanation of why this was flagged as a lead
+
   // Freshness tracking
   firstSeenAt          DateTime @default(now())
   lastSeenAt           DateTime @default(now())

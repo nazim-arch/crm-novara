@@ -11,6 +11,7 @@ import { classifyBuyerIntentType } from '@/lib/intentradar/modes/buyer';
 import { classifySellerType, extractListingPrice } from '@/lib/intentradar/modes/seller';
 import { detectNRI } from '@/lib/intentradar/scoring-helpers';
 import { resolveLeadType } from '@/lib/intentradar/comment-intent';
+import { classifySourceIntent, inferBuyerPersona, buildWhyFlagged } from '@/lib/intentradar/buyer-classifier';
 
 export type GenerateLeadsEventData = {
   campaignId: string;
@@ -103,6 +104,12 @@ export const generateLeadsFunction = inngest.createFunction(
 
           const leadType = signal.leadType ?? resolveLeadType(signal.platform, signal.authorHandle);
 
+          // Carry through engagement-validated buyer pipeline fields
+          const sourceIntentType = signal.sourceIntentType
+            ?? (intentMode === 'BUYER' ? classifySourceIntent(signal.content) : undefined);
+          const buyerPersona = signal.buyerPersona
+            ?? (intentMode === 'BUYER' ? inferBuyerPersona(signal.content) : undefined);
+
           return {
             ...scored,
             originType: (signal.originType ?? 'real') as 'real' | 'synthetic',
@@ -110,6 +117,14 @@ export const generateLeadsFunction = inngest.createFunction(
             intentType,
             listingPrice: intentMode === 'SELLER' ? (signal.listingPrice || extractListingPrice(signal.content) || null) : null,
             leadType,
+            engagementScore: signal.engagementScore ?? null,
+            buyerEngDensity: signal.buyerEngDensity ?? null,
+            isHotCluster: signal.isHotCluster ?? false,
+            buyerPersona: buyerPersona ?? null,
+            sourceIntentType: sourceIntentType ?? null,
+            engagementIntentType: signal.engagementIntentType ?? null,
+            exactComment: signal.exactComment ?? null,
+            whyFlagged: signal.whyFlagged ?? null,
           };
         })
         .sort((a, b) => b.totalScore - a.totalScore)
@@ -169,6 +184,14 @@ export const generateLeadsFunction = inngest.createFunction(
             intentType: lead.intentType,
             listingPrice: lead.listingPrice ?? null,
             leadType: lead.leadType ?? 'DIRECT',
+            engagementScore: lead.engagementScore ?? null,
+            buyerEngDensity: lead.buyerEngDensity ?? null,
+            isHotCluster: lead.isHotCluster ?? false,
+            buyerPersona: lead.buyerPersona ?? null,
+            sourceIntentType: lead.sourceIntentType ?? null,
+            engagementIntentType: lead.engagementIntentType ?? null,
+            exactComment: lead.exactComment ?? null,
+            whyFlagged: lead.whyFlagged ?? null,
             firstSeenAt: now,
             lastSeenAt: now,
             freshnessScore: lead.freshnessScore!,

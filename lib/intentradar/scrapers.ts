@@ -5,6 +5,8 @@ import { getApiKey } from './db';
 import { buildBuyerQueries, isBuyerSignal, BUYER_ALLOWED_SOURCES, BUYER_EXCLUDED_SOURCES } from './modes/buyer';
 import { buildSellerQueries, isSellerSignal, extractListingPrice, SELLER_ALLOWED_SOURCES, SELLER_EXCLUDED_SOURCES } from './modes/seller';
 import { extractCommentIntentSignals, extractEngagementCount, resolveLeadType } from './comment-intent';
+import { classifyCommentIntent, analyzePostEngagement, gatePost } from './engagement';
+import { classifySourceIntent, inferBuyerPersona, buildWhyFlagged, buildDualBuyerQueries } from './buyer-classifier';
 
 export interface RawSignal {
   platform: string;
@@ -19,6 +21,15 @@ export interface RawSignal {
   leadType?: 'DIRECT' | 'SIGNAL';
   // Seller-specific
   listingPrice?: string;
+  // Engagement-validated buyer pipeline fields
+  engagementScore?: number;
+  buyerEngDensity?: number;
+  isHotCluster?: boolean;
+  buyerPersona?: string;
+  sourceIntentType?: string;
+  engagementIntentType?: string;
+  exactComment?: string;
+  whyFlagged?: string;
 }
 
 export interface ScraperConfig {
@@ -35,7 +46,7 @@ export interface ScraperConfig {
 }
 
 // ─── AGE CUTOFFS ──────────────────────────────────────────────────────────────
-const BUYER_MAX_AGE_MS  = 90 * 24 * 60 * 60 * 1000; // 3 months
+const BUYER_MAX_AGE_MS  = 7 * 24 * 60 * 60 * 1000;  // 7 days — active buyer intent only
 const SELLER_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 function maxAgeMs(config: ScraperConfig): number {
@@ -69,12 +80,13 @@ function isRelevantSignal(content: string, config: ScraperConfig): boolean {
 }
 
 // ─── YOUTUBE ──────────────────────────────────────────────────────────────────
+// Each commenter showing buyer intent becomes a separate lead (not the video/post author)
 export async function scrapeYouTube(config: ScraperConfig): Promise<RawSignal[]> {
   const apiKey = await getApiKey('youtube');
   if (!apiKey) { console.log('YouTube API key not configured, skipping...'); return []; }
 
   const signals: RawSignal[] = [];
-  const queries = getQueries(config).slice(0, 5); // limit API calls
+  const queries = getQueries(config).slice(0, 5);
   const publishedAfter = new Date(Date.now() - maxAgeMs(config)).toISOString();
 
   for (const query of queries) {
@@ -88,32 +100,78 @@ export async function scrapeYouTube(config: ScraperConfig): Promise<RawSignal[]>
       for (const item of searchData.items || []) {
         const videoId = item.id?.videoId;
         if (!videoId) continue;
+        const videoTitle = item.snippet?.title || '';
 
         try {
+          // Fetch video stats to gate by engagement
+          const statsRes = await fetch(
+            `https://www.googleapis.com/youtube/v3/videos?part=statistics&id=${videoId}&key=${apiKey}`
+          );
+          const statsData = statsRes.ok ? await statsRes.json() : null;
+          const stats = statsData?.items?.[0]?.statistics ?? {};
+          const likes    = parseInt(stats.likeCount    || '0', 10);
+          const viewCount = parseInt(stats.viewCount   || '0', 10);
+          const commentCount = parseInt(stats.commentCount || '0', 10);
+
+          // Gate: skip low-engagement videos (weak signal quality)
+          if (!gatePost({ likes, comments: commentCount, views: viewCount })) continue;
+
+          const sourceIntentType = classifySourceIntent(videoTitle);
+          if (sourceIntentType === 'irrelevant') continue;
+
           const commentsRes = await fetch(
             `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${videoId}&maxResults=50&order=relevance&key=${apiKey}`
           );
           if (!commentsRes.ok) continue;
           const commentsData = await commentsRes.json();
 
-          for (const comment of commentsData.items || []) {
-            const snippet = comment.snippet?.topLevelComment?.snippet;
-            if (!snippet) continue;
-            const content = snippet.textOriginal || snippet.textDisplay || '';
-            if (content.length < 15) continue;
-            if (!isRelevantSignal(content, config)) continue;
-            const commentDate = new Date(snippet.publishedAt);
+          // Build comment array for engagement analysis
+          const rawComments = (commentsData.items || []).map((c: any) => {
+            const s = c.snippet?.topLevelComment?.snippet;
+            return {
+              authorHandle: s?.authorChannelId?.value || s?.authorDisplayName,
+              authorName: s?.authorDisplayName,
+              text: s?.textOriginal || s?.textDisplay || '',
+              profileUrl: s?.authorProfileImageUrl,
+            };
+          }).filter((c: any) => c.text.length >= 10);
+
+          const analysis = analyzePostEngagement({ likes, comments: rawComments.length, views: viewCount }, rawComments);
+
+          if (!analysis.passesGate) continue;
+
+          // Create one lead per buyer-intent commenter (not per video)
+          for (const buyerComment of analysis.buyerIntentComments) {
+            const commentDate = new Date();
             if (!isWithinAge(commentDate, maxAgeMs(config))) continue;
+
+            const buyerPersona = inferBuyerPersona(buyerComment.comment);
+            const whyFlagged = buildWhyFlagged({
+              sourceIntentType,
+              engagementIntentType: buyerComment.intentType,
+              buyerEngDensity: analysis.buyerEngDensity,
+              isHotCluster: analysis.isHotCluster,
+              matchedPhrases: extractCommentIntentSignals(buyerComment.comment),
+            });
 
             signals.push({
               platform: 'youtube',
-              authorHandle: snippet.authorChannelId?.value || snippet.authorDisplayName,
-              authorName: snippet.authorDisplayName,
-              content,
-              sourceUrl: `https://youtube.com/watch?v=${videoId}&lc=${comment.id}`,
-              capturedAt: new Date(snippet.publishedAt),
+              authorHandle: buyerComment.authorHandle,
+              authorName: buyerComment.authorName,
+              content: `[Video: ${videoTitle}] ${buyerComment.comment}`,
+              sourceUrl: `https://youtube.com/watch?v=${videoId}`,
+              capturedAt: commentDate,
               sourceType: 'comment',
-              rawData: { videoTitle: item.snippet?.title, videoId, commentId: comment.id, channelId: snippet.authorChannelId?.value },
+              leadType: 'DIRECT',
+              sourceIntentType,
+              engagementIntentType: buyerComment.intentType,
+              engagementScore: analysis.engagementScore,
+              buyerEngDensity: analysis.buyerEngDensity,
+              isHotCluster: analysis.isHotCluster,
+              buyerPersona,
+              exactComment: buyerComment.comment,
+              whyFlagged,
+              rawData: { videoTitle, videoId, channelId: buyerComment.authorHandle, likes, viewCount, commentCount },
             });
           }
         } catch (e) { console.error(`YouTube comments error ${videoId}:`, e); }
@@ -125,6 +183,7 @@ export async function scrapeYouTube(config: ScraperConfig): Promise<RawSignal[]>
 }
 
 // ─── REDDIT ───────────────────────────────────────────────────────────────────
+// Creates one lead per buyer-intent commenter, not per post
 export async function scrapeReddit(config: ScraperConfig): Promise<RawSignal[]> {
   const clientId = await getApiKey('reddit_client_id');
   const clientSecret = await getApiKey('reddit_client_secret');
@@ -160,12 +219,14 @@ export async function scrapeReddit(config: ScraperConfig): Promise<RawSignal[]> 
   const baseUrl = accessToken ? 'https://oauth.reddit.com' : 'https://www.reddit.com';
   const signals: RawSignal[] = [];
   const queries = getQueries(config).slice(0, 4);
+  // Track seen user+post combos to avoid duplicates
+  const seenKeys = new Set<string>();
 
   for (const sub of subreddits) {
     for (const query of queries) {
       try {
         const res = await fetch(
-          `${baseUrl}/r/${sub}/search.json?q=${encodeURIComponent(query)}&sort=new&t=month&limit=25&restrict_sr=on`,
+          `${baseUrl}/r/${sub}/search.json?q=${encodeURIComponent(query)}&sort=new&t=week&limit=25&restrict_sr=on`,
           { headers }
         );
         if (!res.ok) continue;
@@ -174,22 +235,113 @@ export async function scrapeReddit(config: ScraperConfig): Promise<RawSignal[]> 
         for (const post of data.data?.children || []) {
           const d = post.data;
           if (!d) continue;
-          const content = `${d.title || ''} ${d.selftext || ''}`.trim();
-          if (content.length < 20) continue;
-          if (!isRelevantSignal(content, config)) continue;
+          const postContent = `${d.title || ''} ${d.selftext || ''}`.trim();
+          if (postContent.length < 20) continue;
+          if (!isRelevantSignal(postContent, config)) continue;
           const postDate = new Date((d.created_utc || 0) * 1000);
           if (!isWithinAge(postDate, maxAgeMs(config))) continue;
 
-          signals.push({
-            platform: 'reddit',
-            authorHandle: `u/${d.author}`,
-            authorName: d.author,
-            content,
-            sourceUrl: `https://reddit.com${d.permalink}`,
-            capturedAt: new Date((d.created_utc || Date.now() / 1000) * 1000),
-            sourceType: d.selftext ? 'post' : 'comment',
-            rawData: { subreddit: sub, score: d.score, numComments: d.num_comments, author: d.author },
-          });
+          const sourceIntentType = classifySourceIntent(postContent);
+          if (sourceIntentType === 'irrelevant') continue;
+
+          // Gate by post engagement
+          const postEng = { likes: Math.max(d.score || 0, 0), comments: d.num_comments || 0 };
+          const postAuthorIsIntent = classifyCommentIntent(postContent);
+
+          // If the POST AUTHOR shows buyer intent, create a lead for them directly
+          if (postAuthorIsIntent === 'strong_buyer' || postAuthorIsIntent === 'medium_buyer') {
+            const key = `${d.author}::${d.id}`;
+            if (!seenKeys.has(key)) {
+              seenKeys.add(key);
+              const buyerPersona = inferBuyerPersona(postContent);
+              const whyFlagged = buildWhyFlagged({
+                sourceIntentType,
+                engagementIntentType: postAuthorIsIntent,
+                buyerEngDensity: 1,
+                isHotCluster: false,
+                matchedPhrases: extractCommentIntentSignals(postContent),
+              });
+              signals.push({
+                platform: 'reddit',
+                authorHandle: `u/${d.author}`,
+                authorName: d.author,
+                content: postContent,
+                sourceUrl: `https://reddit.com${d.permalink}`,
+                capturedAt: postDate,
+                sourceType: 'post',
+                leadType: 'DIRECT',
+                sourceIntentType,
+                engagementIntentType: postAuthorIsIntent,
+                engagementScore: Math.min(postEng.likes + postEng.comments * 3, 100),
+                buyerEngDensity: 1,
+                isHotCluster: false,
+                buyerPersona,
+                exactComment: postContent.slice(0, 500),
+                whyFlagged,
+                rawData: { subreddit: sub, score: d.score, numComments: d.num_comments },
+              });
+            }
+          }
+
+          // If post has enough engagement, fetch comments and create commenter-level leads
+          if (gatePost(postEng) && d.permalink) {
+            try {
+              const commentsRes = await fetch(
+                `${baseUrl}${d.permalink}.json?limit=50&sort=top`,
+                { headers }
+              );
+              if (!commentsRes.ok) continue;
+              const commentsJson = await commentsRes.json();
+              const commentListing = commentsJson?.[1]?.data?.children || [];
+
+              const rawComments = commentListing
+                .filter((c: any) => c.kind === 't1')
+                .map((c: any) => ({
+                  authorHandle: c.data?.author ? `u/${c.data.author}` : undefined,
+                  authorName: c.data?.author,
+                  text: c.data?.body || '',
+                }))
+                .filter((c: any) => c.text.length >= 10 && c.authorName !== '[deleted]');
+
+              const analysis = analyzePostEngagement(postEng, rawComments);
+              if (!analysis.passesGate) continue;
+
+              for (const buyerComment of analysis.buyerIntentComments) {
+                const key = `${buyerComment.authorHandle}::${d.id}`;
+                if (seenKeys.has(key)) continue;
+                seenKeys.add(key);
+
+                const buyerPersona = inferBuyerPersona(buyerComment.comment);
+                const whyFlagged = buildWhyFlagged({
+                  sourceIntentType,
+                  engagementIntentType: buyerComment.intentType,
+                  buyerEngDensity: analysis.buyerEngDensity,
+                  isHotCluster: analysis.isHotCluster,
+                  matchedPhrases: extractCommentIntentSignals(buyerComment.comment),
+                });
+
+                signals.push({
+                  platform: 'reddit',
+                  authorHandle: buyerComment.authorHandle,
+                  authorName: buyerComment.authorName,
+                  content: `[r/${sub}: ${d.title}] ${buyerComment.comment}`,
+                  sourceUrl: `https://reddit.com${d.permalink}`,
+                  capturedAt: postDate,
+                  sourceType: 'comment',
+                  leadType: 'DIRECT',
+                  sourceIntentType,
+                  engagementIntentType: buyerComment.intentType,
+                  engagementScore: analysis.engagementScore,
+                  buyerEngDensity: analysis.buyerEngDensity,
+                  isHotCluster: analysis.isHotCluster,
+                  buyerPersona,
+                  exactComment: buyerComment.comment,
+                  whyFlagged,
+                  rawData: { subreddit: sub, postTitle: d.title, postScore: d.score, postComments: d.num_comments },
+                });
+              }
+            } catch (e) { console.error(`Reddit comments fetch error:`, e); }
+          }
         }
       } catch (e) { console.error(`Reddit error r/${sub}:`, e); }
     }
@@ -248,8 +400,8 @@ interface SerpOpts {
 
 async function serpSearch(query: string, platform: string, config: ScraperConfig, apiKey: string, opts: SerpOpts = {}): Promise<RawSignal[]> {
   const signals: RawSignal[] = [];
-  // tbs=qdr:m3 = past 3 months (buyer), tbs=qdr:m = past month (seller)
-  const tbs = config.intentMode === 'SELLER' ? 'qdr:m' : 'qdr:m3';
+  // tbs=qdr:w = past week (buyer — active intent only), tbs=qdr:m = past month (seller)
+  const tbs = config.intentMode === 'SELLER' ? 'qdr:m' : 'qdr:w';
   const leadType = opts.leadType ?? 'DIRECT';
   try {
     const params = new URLSearchParams({ engine: 'google', q: query, api_key: apiKey, num: '20', gl: 'in', hl: 'en', tbs });
@@ -262,6 +414,12 @@ async function serpSearch(query: string, platform: string, config: ScraperConfig
       if (content.length < 20) continue;
       if (!isRelevantSignal(content, config)) continue;
 
+      const sourceIntentType = config.intentMode === 'BUYER' ? classifySourceIntent(content) : undefined;
+      // Discard clearly irrelevant posts in buyer mode
+      if (config.intentMode === 'BUYER' && sourceIntentType === 'irrelevant') continue;
+
+      const buyerPersona = config.intentMode === 'BUYER' ? inferBuyerPersona(content) : undefined;
+
       signals.push({
         platform,
         // SIGNAL sources: never set authorHandle — no user identity available
@@ -271,6 +429,8 @@ async function serpSearch(query: string, platform: string, config: ScraperConfig
         capturedAt: new Date(),
         sourceType: 'post',
         leadType,
+        sourceIntentType,
+        buyerPersona,
         rawData: { title: result.title, position: result.position },
         ...(config.intentMode === 'SELLER' ? { listingPrice: extractListingPrice(content) || undefined } : {}),
       });
@@ -290,54 +450,101 @@ export async function scrapeSerpInstagram(config: ScraperConfig): Promise<RawSig
   const apiKey = await getApiKey('serp');
   if (!apiKey) { console.log('SerpAPI not configured — skipping Instagram'); return []; }
 
-  // Instagram is a SIGNAL source: post captions + engagement metadata only — no user identity
-  const market = config.microMarkets[0] || '';
-  const queries = [
-    `site:instagram.com "${config.city}" "${config.propertyType}" buy`,
-    market ? `site:instagram.com "${config.city}" "${market}" property` : null,
-    `site:instagram.com NRI "${config.city}" apartment`,
-    `site:instagram.com "${config.city}" ${config.propertyType} interested buyers`,
-  ].filter(Boolean) as string[];
+  // Instagram is SIGNAL: no user identity. Use dual queries (buyer + listing language)
+  const { buyerQueries, listingQueries } = buildDualBuyerQueries(config);
+  const igBuyerQueries = buyerQueries.slice(0, 3).map(q => `site:instagram.com ${q}`);
+  const igListingQueries = listingQueries.slice(0, 3).map(q => `site:instagram.com ${q}`);
+  const queries = [...igBuyerQueries, ...igListingQueries];
 
   const raw = await serpBatch(queries, 'instagram', config, apiKey, { leadType: 'SIGNAL' });
 
-  // Enrich each signal with engagement counts + comment intent patterns
-  return raw.map(s => {
-    const engagement = extractEngagementCount(s.content);
-    const commentIntentPhrases = extractCommentIntentSignals(s.content);
-    return {
-      ...s,
-      authorHandle: undefined, // hard guarantee — never extract Instagram handles
-      rawData: {
-        ...s.rawData,
-        engagement,
-        commentIntentPhrases,
-        nextAction: 'Open post and manually engage with commenters via Instagram',
-        signalNote: 'Instagram signal — user identity not extracted. High-intent post detected.',
-      },
-    };
-  });
+  return raw
+    .map(s => {
+      const engagement = extractEngagementCount(s.content);
+      const commentIntentPhrases = extractCommentIntentSignals(s.content);
+      const sourceIntentType = classifySourceIntent(s.content);
+      if (sourceIntentType === 'irrelevant') return null;
+
+      // Gate: snippet must show at least some engagement signals or buyer phrases
+      const engPasses = (engagement.likes ?? 0) >= 5 || (engagement.comments ?? 0) >= 2 || commentIntentPhrases.length >= 1;
+      if (!engPasses) return null;
+
+      const engScore = Math.min((engagement.likes ?? 0) * 2 + (engagement.comments ?? 0) * 5, 100);
+      const buyerPersona = inferBuyerPersona(s.content);
+      const whyFlagged = buildWhyFlagged({
+        sourceIntentType,
+        engagementIntentType: commentIntentPhrases.length > 0 ? 'medium_buyer' : 'noise',
+        buyerEngDensity: 0,
+        isHotCluster: false,
+        matchedPhrases: commentIntentPhrases,
+      });
+
+      return {
+        ...s,
+        authorHandle: undefined,
+        sourceIntentType,
+        engagementScore: engScore,
+        buyerPersona,
+        whyFlagged,
+        rawData: {
+          ...s.rawData,
+          engagement,
+          commentIntentPhrases,
+          nextAction: 'Open post and manually engage with commenters via Instagram',
+          signalNote: 'Instagram signal — user identity not extracted. High-intent post detected.',
+        },
+      };
+    })
+    .filter(Boolean) as RawSignal[];
 }
 
 export async function scrapeSerpFacebook(config: ScraperConfig): Promise<RawSignal[]> {
   const apiKey = await getApiKey('serp');
   if (!apiKey) { console.log('SerpAPI not configured — skipping Facebook'); return []; }
-  // Facebook groups via SerpAPI = SIGNAL: post content available, member identity is not
+
+  const { listingQueries } = buildDualBuyerQueries(config);
   const queries = [
     `site:facebook.com/groups "${config.city}" ${config.propertyType} buy`,
     `site:facebook.com/groups NRI "${config.city}" property`,
     `site:facebook.com/groups "${config.city}" flat budget crore`,
+    ...listingQueries.slice(0, 2).map(q => `site:facebook.com/groups ${q}`),
   ].filter(Boolean);
+
   const raw = await serpBatch(queries, 'facebook', config, apiKey, { leadType: 'SIGNAL' });
-  return raw.map(s => ({
-    ...s,
-    authorHandle: undefined,
-    rawData: {
-      ...s.rawData,
-      commentIntentPhrases: extractCommentIntentSignals(s.content),
-      nextAction: 'Open Facebook group post and manually engage with interested members',
-    },
-  }));
+
+  return raw
+    .map(s => {
+      const commentIntentPhrases = extractCommentIntentSignals(s.content);
+      const sourceIntentType = classifySourceIntent(s.content);
+      if (sourceIntentType === 'irrelevant') return null;
+
+      const engagement = extractEngagementCount(s.content);
+      const engPasses = (engagement.likes ?? 0) >= 5 || (engagement.comments ?? 0) >= 2 || commentIntentPhrases.length >= 1;
+      if (!engPasses) return null;
+
+      const buyerPersona = inferBuyerPersona(s.content);
+      const whyFlagged = buildWhyFlagged({
+        sourceIntentType,
+        engagementIntentType: commentIntentPhrases.length > 0 ? 'medium_buyer' : 'noise',
+        buyerEngDensity: 0,
+        isHotCluster: false,
+        matchedPhrases: commentIntentPhrases,
+      });
+
+      return {
+        ...s,
+        authorHandle: undefined,
+        sourceIntentType,
+        buyerPersona,
+        whyFlagged,
+        rawData: {
+          ...s.rawData,
+          commentIntentPhrases,
+          nextAction: 'Open Facebook group post and manually engage with interested members',
+        },
+      };
+    })
+    .filter(Boolean) as RawSignal[];
 }
 
 export async function scrapeSerpLinkedIn(config: ScraperConfig): Promise<RawSignal[]> {
