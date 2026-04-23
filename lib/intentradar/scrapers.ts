@@ -6,7 +6,7 @@ import { buildBuyerQueries, isBuyerSignal, BUYER_ALLOWED_SOURCES, BUYER_EXCLUDED
 import { buildSellerQueries, isSellerSignal, extractListingPrice, SELLER_ALLOWED_SOURCES, SELLER_EXCLUDED_SOURCES } from './modes/seller';
 import { extractCommentIntentSignals, extractEngagementCount, resolveLeadType } from './comment-intent';
 import { classifyCommentIntent, analyzePostEngagement, gatePost } from './engagement';
-import { classifySourceIntent, inferBuyerPersona, buildWhyFlagged, buildDualBuyerQueries } from './buyer-classifier';
+import { classifySourceIntent, inferBuyerPersona, buildWhyFlagged, buildDualBuyerQueries, DISCARD_URL_PATTERNS } from './buyer-classifier';
 
 export interface RawSignal {
   platform: string;
@@ -410,6 +410,10 @@ async function serpSearch(query: string, platform: string, config: ScraperConfig
     const data = await res.json();
 
     for (const result of data.organic_results || []) {
+      // URL-level discard — holiday pages, blog posts, news articles, editorial content
+      const url: string = result.link || '';
+      if (DISCARD_URL_PATTERNS.some(re => re.test(url))) continue;
+
       const content = `${result.title || ''} ${result.snippet || ''}`.trim();
       if (content.length < 20) continue;
       if (!isRelevantSignal(content, config)) continue;
@@ -584,10 +588,13 @@ export async function scrapeSerpNews(config: ScraperConfig): Promise<RawSignal[]
 export async function scrapeSerpFinancial(config: ScraperConfig): Promise<RawSignal[]> {
   const apiKey = await getApiKey('serp');
   if (!apiKey) return [];
+  // Avoid portal domains that return blog/holiday pages — use Q&A and forum queries instead
   const queries = [
-    `site:bankbazaar.com "home loan" "${config.city}"`,
-    `site:paisabazaar.com "home loan" "${config.city}"`,
-    `"home loan" NRI "${config.city}" ${config.propertyType} crore`,
+    `"home loan" "looking to buy" "${config.city}" ${config.propertyType} forum`,
+    `"home loan eligibility" "${config.city}" property buyer forum`,
+    `NRI "home loan" "${config.city}" buying property forum`,
+    `site:quora.com "home loan" "${config.city}" ${config.propertyType} buy`,
+    `site:reddit.com "home loan" "${config.city}" property`,
   ];
   return serpBatch(queries, 'financial_forums', config, apiKey);
 }

@@ -43,37 +43,73 @@ const BUYER_DEMAND_SIGNALS = [
   /should I buy/i,
   /is it (good|right) time to buy/i,
   /best area to buy/i,
-  /which (builder|project|area)/i,
-  /\bhome loan\b/i,
-  /\bemi\b/i,
+  /which (builder|project|area) (is|to|should)/i,
+  /home loan (for|in|amount|emi|eligibility)/i,  // specific, not just "home loan"
+  /\bemi (calculation|calculator|amount|per month)\b/i,
   /\bnri buying\b/i,
   /relocating to/i,
   /moving to.+property/i,
   /rent vs buy/i,
   /first (time |home |flat )(buyer|purchase)/i,
-  /investment property/i,
+  /investment (property|flat|apartment)/i,
   /rental yield/i,
-  /\brecommendation\b/i,
-  /\badvice\b/i,
+  /property (advice|recommendation) for/i,  // specific, not just "advice"
+  /tired of (paying )?rent/i,
+  /planning to (buy|purchase|invest)/i,
 ];
 
 const IRRELEVANT_SIGNALS = [
+  // Generic lifestyle
   /interior design tips/i,
   /\bdiy\b.*(home|decor)/i,
   /renovation ideas/i,
   /\brecipe\b/i,
   /\bcooking\b/i,
   /\bfashion\b/i,
+  // News/editorial — price debates, market reports, news articles are NOT buyer intent
+  /sparks (housing|property|price) debate/i,
+  /housing price debate/i,
+  /realestate (debate|discussion|news)/i,
+  /property (market|prices) (debate|report|news|analysis)/i,
+  /\bbank holidays?\b/i,
+  /public holidays?/i,
+  /\bholiday list\b/i,
+  /\bholiday calendar\b/i,
+  // Blog/editorial markers in snippet
+  /\btop \d+ (luxury|affordable|premium) (projects?|apartments?|homes?)\b/i,
+  /here('s| are) (the |a )?(list of|top|best) (luxury|premium|affordable)/i,
+  /\bblog\b.*(luxury|project|property)/i,
+  // News Karnataka / news pages
+  /news karnataka/i,
+  /\bnews (report|article|update)\b/i,
+];
+
+// URL path patterns that indicate non-user-generated content — discard immediately
+export const DISCARD_URL_PATTERNS = [
+  /\/holiday\//i,
+  /\/holidays\//i,
+  /\/bank-holiday/i,
+  /\/public-holiday/i,
+  /\/news\//i,
+  /\/article\//i,
+  /newskarnataka/i,
+  /\/blog\//i,          // blog posts are editorial, not buyer intent
+  /\/guides?\//i,
+  /\/learn\//i,
+  /\/resources?\//i,
+  /\/magazine\//i,
+  /\/press\//i,
 ];
 
 export function classifySourceIntent(content: string): SourceIntentType {
+  // Hard irrelevant first — prevents false positives from generic phrases
+  if (IRRELEVANT_SIGNALS.some(re => re.test(content))) return 'irrelevant';
+
   const isSeller = SELLER_LISTING_SIGNALS.some(re => re.test(content));
   const isBuyer  = BUYER_DEMAND_SIGNALS.some(re => re.test(content));
-  const isIrrelevant = !isSeller && !isBuyer && IRRELEVANT_SIGNALS.some(re => re.test(content));
 
-  if (isIrrelevant) return 'irrelevant';
   if (isBuyer && isSeller) return 'mixed';
-  if (isSeller) return 'seller';  // listing post — buyers comment on these
+  if (isSeller) return 'seller';
   if (isBuyer) return 'buyer';
   return 'irrelevant';
 }
