@@ -151,6 +151,32 @@ const ENG_INTENT_CONFIG: Record<string, { label: string; color: string; bg: stri
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+function formatCount(n: number): string {
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return String(n);
+}
+
+function extractEngagementDisplay(platform: string, rawData?: Record<string, unknown>): { likes?: number; comments?: number; views?: number } | null {
+  if (!rawData) return null;
+  if (platform === 'youtube') {
+    const likes = rawData.likes as number | undefined;
+    const views = rawData.viewCount as number | undefined;
+    const comments = rawData.commentCount as number | undefined;
+    if (likes != null || views != null || comments != null) return { likes, views, comments };
+  }
+  if (platform === 'reddit') {
+    const likes = rawData.postScore as number | undefined ?? rawData.score as number | undefined;
+    const comments = rawData.postComments as number | undefined ?? rawData.numComments as number | undefined;
+    if (likes != null || comments != null) return { likes, comments };
+  }
+  if (platform === 'instagram' || platform === 'facebook') {
+    const eng = rawData.engagement as { likes?: number; comments?: number } | undefined;
+    if (eng?.likes != null || eng?.comments != null) return { likes: eng?.likes, comments: eng?.comments };
+  }
+  return null;
+}
+
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -743,12 +769,18 @@ function LeadsContent() {
                         </>
                       )}
 
-                      {/* Engagement score */}
-                      {lead.engagementScore != null && (
-                        <span style={{ fontSize: 9, padding: '2px 5px', borderRadius: 3, background: '#f0fdf4', color: '#15803d', fontWeight: 700 }}>
-                          📊 Eng {lead.engagementScore}
-                        </span>
-                      )}
+                      {/* Raw engagement numbers */}
+                      {(() => {
+                        const eng = extractEngagementDisplay(lead.sourcePlatform, lead.rawData);
+                        if (!eng) return null;
+                        return (
+                          <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: '#f5f5f4', color: '#57534e', fontWeight: 600, display: 'inline-flex', gap: 5 }}>
+                            {eng.likes  != null && <span>👍 {formatCount(eng.likes)}</span>}
+                            {eng.comments != null && <span>💬 {formatCount(eng.comments)}</span>}
+                            {eng.views  != null && <span>👁 {formatCount(eng.views)}</span>}
+                          </span>
+                        );
+                      })()}
                       {/* Buyer density */}
                       {lead.buyerEngDensity != null && lead.buyerEngDensity > 0 && (
                         <span style={{ fontSize: 9, padding: '2px 5px', borderRadius: 3, background: '#dbeafe', color: '#1d4ed8', fontWeight: 700 }}>
