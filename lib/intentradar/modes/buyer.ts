@@ -1,15 +1,24 @@
 // lib/intentradar/modes/buyer.ts
 // BUYER mode: query generation, intent signals, source rules
 
+// Sources that reliably produce real user-generated buyer intent.
+// instagram/facebook removed — SerpAPI can't access real engagement data.
+// news/financial_forums removed — return editorial/commercial pages, not buyer voices.
 export const BUYER_ALLOWED_SOURCES = new Set([
-  'youtube', 'reddit', 'openai_generate',
-  'instagram', 'facebook', 'linkedin',
-  'quora', 'financial_forums', 'telegram',
+  'youtube',        // direct API — real comments with identity
+  'reddit',         // direct API — real posts and comments
+  'quora',          // SerpAPI — Q&A content IS user questions
+  'linkedin',       // SerpAPI — strict phrases required
+  'telegram',       // direct API — real messages
+  'openai_generate',// synthetic — for demo/testing
+  // opt-in only (no real engagement data via SerpAPI):
+  'instagram', 'facebook', 'portal_forums',
 ]);
 
 export const BUYER_EXCLUDED_SOURCES = new Set([
-  'portal_forums', '99acres', 'magicbricks', 'housing', 'nobroker',
-  'squareyards', 'news', 'openai_generate_seller',
+  '99acres', 'magicbricks', 'housing', 'nobroker', 'squareyards',
+  'news', 'financial_forums',
+  'openai_generate_seller',
 ]);
 
 // 100+ buyer intent signals — used in query building and filtering

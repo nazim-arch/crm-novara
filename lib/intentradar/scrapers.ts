@@ -2,7 +2,7 @@
 // Signal collection from multiple sources — mode-aware (BUYER | SELLER)
 
 import { getApiKey } from './db';
-import { buildBuyerQueries, isBuyerSignal, BUYER_ALLOWED_SOURCES, BUYER_EXCLUDED_SOURCES } from './modes/buyer';
+import { buildBuyerQueries, isBuyerSignal, BUYER_INTENT_PHRASES, BUYER_ALLOWED_SOURCES, BUYER_EXCLUDED_SOURCES } from './modes/buyer';
 import { buildSellerQueries, isSellerSignal, extractListingPrice, SELLER_ALLOWED_SOURCES, SELLER_EXCLUDED_SOURCES } from './modes/seller';
 import { extractCommentIntentSignals, extractEngagementCount, resolveLeadType } from './comment-intent';
 import { classifyCommentIntent, analyzePostEngagement, gatePost } from './engagement';
@@ -416,10 +416,14 @@ async function serpSearch(query: string, platform: string, config: ScraperConfig
 
       const content = `${result.title || ''} ${result.snippet || ''}`.trim();
       if (content.length < 20) continue;
+
+      // BUYER mode: content MUST contain at least one explicit buyer-intent phrase.
+      // Location alone is not enough — this eliminates news, blogs, and editorial results.
+      if (config.intentMode === 'BUYER' && !isBuyerSignal(content)) continue;
+
       if (!isRelevantSignal(content, config)) continue;
 
       const sourceIntentType = config.intentMode === 'BUYER' ? classifySourceIntent(content) : undefined;
-      // Discard clearly irrelevant posts in buyer mode
       if (config.intentMode === 'BUYER' && sourceIntentType === 'irrelevant') continue;
 
       const buyerPersona = config.intentMode === 'BUYER' ? inferBuyerPersona(content) : undefined;
@@ -450,105 +454,55 @@ async function serpBatch(queries: string[], platform: string, config: ScraperCon
 }
 
 // ─── SERP SCRAPERS (BUYER MODE) ───────────────────────────────────────────────
+// NOTE: Instagram and Facebook via SerpAPI only return Google-indexed page snapshots.
+// Actual likes/comments are NOT available — Google does not index Instagram engagement.
+// These scrapers are kept for SIGNAL discovery only (finding posts to manually outreach).
+// They are NOT enabled by default in BUYER_ALLOWED_SOURCES.
+
 export async function scrapeSerpInstagram(config: ScraperConfig): Promise<RawSignal[]> {
   const apiKey = await getApiKey('serp');
-  if (!apiKey) { console.log('SerpAPI not configured — skipping Instagram'); return []; }
+  if (!apiKey) return [];
 
-  // Instagram is SIGNAL: no user identity. Use dual queries (buyer + listing language)
-  const { buyerQueries, listingQueries } = buildDualBuyerQueries(config);
-  const igBuyerQueries = buyerQueries.slice(0, 3).map(q => `site:instagram.com ${q}`);
-  const igListingQueries = listingQueries.slice(0, 3).map(q => `site:instagram.com ${q}`);
-  const queries = [...igBuyerQueries, ...igListingQueries];
+  const queries = [
+    `site:instagram.com "${config.city}" "looking to buy" ${config.propertyType}`,
+    `site:instagram.com "${config.city}" "want to buy" flat`,
+    `site:instagram.com NRI "${config.city}" property buying`,
+  ];
 
   const raw = await serpBatch(queries, 'instagram', config, apiKey, { leadType: 'SIGNAL' });
 
-  return raw
-    .map(s => {
-      const engagement = extractEngagementCount(s.content);
-      const commentIntentPhrases = extractCommentIntentSignals(s.content);
-      const sourceIntentType = classifySourceIntent(s.content);
-      if (sourceIntentType === 'irrelevant') return null;
-
-      // Gate: snippet must show at least some engagement signals or buyer phrases
-      const engPasses = (engagement.likes ?? 0) >= 5 || (engagement.comments ?? 0) >= 2 || commentIntentPhrases.length >= 1;
-      if (!engPasses) return null;
-
-      const engScore = Math.min((engagement.likes ?? 0) * 2 + (engagement.comments ?? 0) * 5, 100);
-      const buyerPersona = inferBuyerPersona(s.content);
-      const whyFlagged = buildWhyFlagged({
-        sourceIntentType,
-        engagementIntentType: commentIntentPhrases.length > 0 ? 'medium_buyer' : 'noise',
-        buyerEngDensity: 0,
-        isHotCluster: false,
-        matchedPhrases: commentIntentPhrases,
-      });
-
-      return {
-        ...s,
-        authorHandle: undefined,
-        sourceIntentType,
-        engagementScore: engScore,
-        buyerPersona,
-        whyFlagged,
-        rawData: {
-          ...s.rawData,
-          engagement,
-          commentIntentPhrases,
-          nextAction: 'Open post and manually engage with commenters via Instagram',
-          signalNote: 'Instagram signal — user identity not extracted. High-intent post detected.',
-        },
-      };
-    })
-    .filter(Boolean) as RawSignal[];
+  return raw.map(s => ({
+    ...s,
+    authorHandle: undefined,
+    rawData: {
+      ...s.rawData,
+      engagementNote: 'Engagement data unavailable via Google index — open post directly to view likes/comments',
+      nextAction: 'Open post and manually engage with commenters showing buyer intent',
+    },
+  }));
 }
 
 export async function scrapeSerpFacebook(config: ScraperConfig): Promise<RawSignal[]> {
   const apiKey = await getApiKey('serp');
-  if (!apiKey) { console.log('SerpAPI not configured — skipping Facebook'); return []; }
+  if (!apiKey) return [];
 
-  const { listingQueries } = buildDualBuyerQueries(config);
   const queries = [
-    `site:facebook.com/groups "${config.city}" ${config.propertyType} buy`,
+    `site:facebook.com/groups "${config.city}" "looking to buy" ${config.propertyType}`,
+    `site:facebook.com/groups "${config.city}" "want to buy" flat`,
     `site:facebook.com/groups NRI "${config.city}" property`,
-    `site:facebook.com/groups "${config.city}" flat budget crore`,
-    ...listingQueries.slice(0, 2).map(q => `site:facebook.com/groups ${q}`),
   ].filter(Boolean);
 
   const raw = await serpBatch(queries, 'facebook', config, apiKey, { leadType: 'SIGNAL' });
 
-  return raw
-    .map(s => {
-      const commentIntentPhrases = extractCommentIntentSignals(s.content);
-      const sourceIntentType = classifySourceIntent(s.content);
-      if (sourceIntentType === 'irrelevant') return null;
-
-      const engagement = extractEngagementCount(s.content);
-      const engPasses = (engagement.likes ?? 0) >= 5 || (engagement.comments ?? 0) >= 2 || commentIntentPhrases.length >= 1;
-      if (!engPasses) return null;
-
-      const buyerPersona = inferBuyerPersona(s.content);
-      const whyFlagged = buildWhyFlagged({
-        sourceIntentType,
-        engagementIntentType: commentIntentPhrases.length > 0 ? 'medium_buyer' : 'noise',
-        buyerEngDensity: 0,
-        isHotCluster: false,
-        matchedPhrases: commentIntentPhrases,
-      });
-
-      return {
-        ...s,
-        authorHandle: undefined,
-        sourceIntentType,
-        buyerPersona,
-        whyFlagged,
-        rawData: {
-          ...s.rawData,
-          commentIntentPhrases,
-          nextAction: 'Open Facebook group post and manually engage with interested members',
-        },
-      };
-    })
-    .filter(Boolean) as RawSignal[];
+  return raw.map(s => ({
+    ...s,
+    authorHandle: undefined,
+    rawData: {
+      ...s.rawData,
+      engagementNote: 'Engagement data unavailable — open group post directly',
+      nextAction: 'Open Facebook group post and manually engage with interested members',
+    },
+  }));
 }
 
 export async function scrapeSerpLinkedIn(config: ScraperConfig): Promise<RawSignal[]> {
@@ -568,48 +522,34 @@ export async function scrapeSerpLinkedIn(config: ScraperConfig): Promise<RawSign
 export async function scrapeSerpQuora(config: ScraperConfig): Promise<RawSignal[]> {
   const apiKey = await getApiKey('serp');
   if (!apiKey) { console.log('SerpAPI not configured — skipping Quora'); return []; }
+  // Quora is safe — every result IS a user question. Queries still require buy-intent phrases.
+  const bhk = config.bhkConfig || '';
   const queries = [
-    `site:quora.com "${config.city}" ${config.propertyType} buy`,
+    `site:quora.com "should I buy" ${config.propertyType} "${config.city}"`,
     `site:quora.com "best area to buy" "${config.city}"`,
-    `site:quora.com NRI property "${config.city}"`,
-    ...config.microMarkets.slice(0, 2).map(m => `site:quora.com "${m}" "${config.city}" property`),
+    `site:quora.com "looking to buy" "${config.city}" ${bhk}`.trim(),
+    `site:quora.com NRI "buy property" "${config.city}"`,
+    `site:quora.com "is it good time to buy" "${config.city}"`,
+    ...config.microMarkets.slice(0, 2).map(m =>
+      `site:quora.com "buy" "${m}" "${config.city}" ${config.propertyType}`
+    ),
   ].filter(Boolean);
   return serpBatch(queries, 'quora', config, apiKey);
 }
 
-export async function scrapeSerpNews(config: ScraperConfig): Promise<RawSignal[]> {
-  const apiKey = await getApiKey('serp');
-  if (!apiKey) return [];
-  const queries = [
-    `site:economictimes.indiatimes.com "${config.city}" property buyers`,
-    `site:moneycontrol.com real estate "${config.city}" apartment`,
-    `site:livemint.com property "${config.city}" buy`,
-  ];
-  return serpBatch(queries, 'news', config, apiKey);
-}
-
-export async function scrapeSerpFinancial(config: ScraperConfig): Promise<RawSignal[]> {
-  const apiKey = await getApiKey('serp');
-  if (!apiKey) return [];
-  // Avoid portal domains that return blog/holiday pages — use Q&A and forum queries instead
-  const queries = [
-    `"home loan" "looking to buy" "${config.city}" ${config.propertyType} forum`,
-    `"home loan eligibility" "${config.city}" property buyer forum`,
-    `NRI "home loan" "${config.city}" buying property forum`,
-    `site:quora.com "home loan" "${config.city}" ${config.propertyType} buy`,
-    `site:reddit.com "home loan" "${config.city}" property`,
-  ];
-  return serpBatch(queries, 'financial_forums', config, apiKey);
-}
+// scrapeSerpNews and scrapeSerpFinancial removed — news sites (ET, Moneycontrol, BankBazaar)
+// return editorial/commercial pages, not user-generated buyer intent.
 
 export async function scrapeSerpPortalForums(config: ScraperConfig): Promise<RawSignal[]> {
   const apiKey = await getApiKey('serp');
   if (!apiKey) return [];
+  // Only use forum/discussion sections of portals, not listing or blog pages
   const queries = [
-    `site:99acres.com "looking to buy" "${config.city}"`,
-    `site:nobroker.in "want to buy" "${config.city}"`,
-    `site:housing.com "looking for" "${config.city}" ${config.propertyType}`,
-    ...config.microMarkets.slice(0, 2).map(m => `site:99acres.com "${m}" "${config.city}" buyer`),
+    `site:99acres.com/discussions "looking to buy" "${config.city}"`,
+    `site:magicbricks.com/advice "want to buy" "${config.city}"`,
+    ...config.microMarkets.slice(0, 2).map(m =>
+      `site:99acres.com "looking to buy" "${m}" "${config.city}"`
+    ),
   ].filter(Boolean);
   return serpBatch(queries, 'portal_forums', config, apiKey);
 }
@@ -815,8 +755,6 @@ export async function runAllScrapers(config: ScraperConfig, sources: string[]): 
     linkedin: scrapeSerpLinkedIn,
     telegram: scrapeTelegram,
     quora: scrapeSerpQuora,
-    news: scrapeSerpNews,
-    financial_forums: scrapeSerpFinancial,
     portal_forums: scrapeSerpPortalForums,
     // SELLER sources
     openai_generate_seller: scrapeOpenAISeller,
