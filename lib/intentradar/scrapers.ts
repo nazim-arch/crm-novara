@@ -46,7 +46,7 @@ export interface ScraperConfig {
 }
 
 // ─── AGE CUTOFFS ──────────────────────────────────────────────────────────────
-const BUYER_MAX_AGE_MS  = 7 * 24 * 60 * 60 * 1000;  // 7 days — active buyer intent only
+const BUYER_MAX_AGE_MS  = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SELLER_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 function maxAgeMs(config: ScraperConfig): number {
@@ -400,8 +400,8 @@ interface SerpOpts {
 
 async function serpSearch(query: string, platform: string, config: ScraperConfig, apiKey: string, opts: SerpOpts = {}): Promise<RawSignal[]> {
   const signals: RawSignal[] = [];
-  // tbs=qdr:w = past week (buyer — active intent only), tbs=qdr:m = past month (seller)
-  const tbs = config.intentMode === 'SELLER' ? 'qdr:m' : 'qdr:w';
+  // tbs=qdr:m = past month (both buyer and seller)
+  const tbs = 'qdr:m';
   const leadType = opts.leadType ?? 'DIRECT';
   try {
     const params = new URLSearchParams({ engine: 'google', q: query, api_key: apiKey, num: '20', gl: 'in', hl: 'en', tbs });
