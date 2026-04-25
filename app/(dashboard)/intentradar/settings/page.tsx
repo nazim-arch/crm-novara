@@ -12,6 +12,18 @@ interface ApiKeyField {
   note?: string;
 }
 
+// Actor config fields — stored as plain text, not encrypted
+const ACTOR_FIELDS: ApiKeyField[] = [
+  {
+    key: 'actor_instagram_comments',
+    label: 'Instagram Comment Scraper Actor ID',
+    category: 'actors',
+    placeholder: 'apify/instagram-comment-scraper',
+    required: false,
+    note: 'Apify actor used to extract commenters. Find alternatives at apify.com/store — search "instagram comments". Default: apify/instagram-comment-scraper',
+  },
+];
+
 const API_KEY_GROUPS: { group: string; desc: string; fields: ApiKeyField[] }[] = [
   {
     group: 'AI & NLP',
@@ -91,7 +103,7 @@ const API_KEY_GROUPS: { group: string; desc: string; fields: ApiKeyField[] }[] =
   },
 ];
 
-const ALL_FIELDS = API_KEY_GROUPS.flatMap(g => g.fields);
+const ALL_FIELDS = [...API_KEY_GROUPS.flatMap(g => g.fields), ...ACTOR_FIELDS];
 
 export default function IntentRadarSettings() {
   const [values, setValues] = useState<Record<string, string>>({});
@@ -127,7 +139,7 @@ export default function IntentRadarSettings() {
         key: f.key,
         value: values[f.key] || '',
         category: f.category,
-        encrypted: true,
+        encrypted: f.category === 'api_keys',
       }));
 
       const res = await fetch('/api/intentradar/settings', {
@@ -220,6 +232,41 @@ export default function IntentRadarSettings() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Apify Actor Configuration */}
+      <div style={{ marginTop: 24 }}>
+        <div style={{ marginBottom: 10 }}>
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: '#1c1917', margin: 0 }}>Apify Actor Configuration</h2>
+          <p style={{ fontSize: 12, color: '#78716c', margin: '2px 0 0' }}>Customize which Apify actors are used for scraping — find alternatives at apify.com/store</p>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {ACTOR_FIELDS.map(field => (
+            <div key={field.key} style={{ background: 'white', borderRadius: 12, border: '1px solid #e7e5e4', padding: '14px 18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#1c1917' }}>{field.label}</label>
+                {values[field.key] && values[field.key].length > 3 && !values[field.key].startsWith('***') && (
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: '#f0fdf4', color: '#22c55e' }}>SET</span>
+                )}
+              </div>
+              <input
+                type="text"
+                value={values[field.key] || ''}
+                onChange={e => setValues(v => ({ ...v, [field.key]: e.target.value }))}
+                placeholder={field.placeholder}
+                style={{
+                  width: '100%', padding: '10px 14px', borderRadius: 8,
+                  border: '1px solid #e7e5e4', fontSize: 13,
+                  fontFamily: 'monospace', background: '#fafaf9',
+                  outline: 'none', boxSizing: 'border-box',
+                }}
+              />
+              {field.note && (
+                <p style={{ fontSize: 11, color: '#a8a29e', margin: '6px 0 0', lineHeight: 1.5 }}>{field.note}</p>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Save Button */}

@@ -1,6 +1,6 @@
 // app/api/intentradar/instagram/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiKey } from '@/lib/intentradar/db';
+import { getApiKey, getSetting } from '@/lib/intentradar/db';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface InstagramResult {
@@ -140,6 +140,26 @@ async function fetchApifyDataset(datasetId: string, apiKey: string): Promise<unk
   return res.json();
 }
 
+// ─── Post Scoring ─────────────────────────────────────────────────────────────
+// Ranks posts by commentsCount × recency so we mine the freshest, most-engaged posts.
+function scorePost(item: Record<string, unknown>): number {
+  const comments = Number(item.commentsCount ?? item.commentCount ?? 0);
+  const ts = item.timestamp as string | undefined;
+  const ageHours = ts ? (Date.now() - new Date(ts).getTime()) / 3_600_000 : Infinity;
+
+  const recency =
+    ageHours < 24  ? 1.0 :
+    ageHours < 72  ? 0.85 :
+    ageHours < 168 ? 0.65 :
+    ageHours < 720 ? 0.40 :
+                     0.15;
+
+  // Boost posts that have meaningful comment activity (>10 comments)
+  const engagementBoost = comments > 10 ? 1.2 : 1.0;
+
+  return comments * recency * engagementBoost;
+}
+
 // ─── POST Handler ─────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
@@ -163,6 +183,10 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Dedicated comment scraper — configurable in Settings, falls back to standard actor
+    const commentActorId = (await getSetting('actor_instagram_comments'))?.trim()
+      || 'apify/instagram-comment-scraper';
 
     const hasHashtagInputs = !!city?.trim();
     const hasManualUrls = manualPostUrls.length > 0;
@@ -191,9 +215,13 @@ export async function POST(req: NextRequest) {
       const listingDatasetId = await waitForApifyRun(listingRunId, apifyKey);
       const listingItems = await fetchApifyDataset(listingDatasetId, apifyKey) as Record<string, unknown>[];
 
-      for (const item of listingItems) {
-        if (item.url) hashtagPostUrls.push(item.url as string);
-      }
+      // Score by commentsCount × recency — pick the most-engaged recent posts
+      const scored = listingItems
+        .filter(item => item.url)
+        .map(item => ({ url: item.url as string, score: scorePost(item) }))
+        .sort((a, b) => b.score - a.score);
+
+      for (const p of scored) hashtagPostUrls.push(p.url);
     }
 
     // ── Step 1b: Buyer-intent hashtag posts (only when city provided) ─────────
@@ -236,8 +264,9 @@ export async function POST(req: NextRequest) {
     const scrapeComments = async (urls: string[], perUrlLimit: number, tag: string) => {
       if (urls.length === 0) return 0;
       const commentRunId = await runApifyActor(
-        'apify~instagram-scraper',
-        { directUrls: urls, resultsType: 'comments', resultsLimit: perUrlLimit },
+        commentActorId,
+        // directUrls works for most Apify Instagram actors; some use postUrls
+        { directUrls: urls, postUrls: urls, resultsLimit: perUrlLimit },
         apifyKey
       );
       const datasetId = await waitForApifyRun(commentRunId, apifyKey);
@@ -308,6 +337,7 @@ export async function POST(req: NextRequest) {
       postsScraped: totalPostsScraped,
       commentCount: finalResults.filter(r => r.interactionType === 'comment').length,
       buyerPostCount: finalResults.filter(r => r.hashtag === 'buyer-intent').length,
+      commentActorId,
     });
 
   } catch (error: unknown) {
