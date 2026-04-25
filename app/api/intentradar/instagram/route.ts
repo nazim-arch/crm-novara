@@ -14,7 +14,10 @@ interface InstagramResult {
 }
 
 // ─── Hashtag Generator ───────────────────────────────────────────────────────
-function generateHashtags(inputs: {
+// Returns two pools:
+//   listingTags — agents post these; good for mining comments from buyers
+//   buyerTags   — buyers post these; captures direct buying-intent signals
+export function generateHashtags(inputs: {
   city: string;
   microMarkets: string[];
   budgetMin: number;
@@ -22,58 +25,81 @@ function generateHashtags(inputs: {
   propertyType: string;
   bhkConfig?: string;
   customHashtags?: string[];
-}): string[] {
+}): { listingTags: string[]; buyerTags: string[]; all: string[] } {
   const { city, microMarkets, budgetMin, budgetMax, propertyType, bhkConfig, customHashtags } = inputs;
   const citySlug = city.toLowerCase().replace(/[^a-z0-9]/g, '');
   const propSlug = propertyType.toLowerCase().replace(/[^a-z]/g, '');
 
-  const hashtags = new Set<string>();
+  const listing = new Set<string>();
+  const buyer = new Set<string>();
 
-  hashtags.add(`${citySlug}realestate`);
-  hashtags.add(`${citySlug}properties`);
-  hashtags.add(`${citySlug}flats`);
-  hashtags.add(`${citySlug}homes`);
-  hashtags.add(`${citySlug}${propSlug}`);
+  // ── Listing tags (agents post these — comment sections have buyers) ──────
+  listing.add(`${citySlug}realestate`);
+  listing.add(`${citySlug}properties`);
+  listing.add(`${citySlug}flats`);
+  listing.add(`${citySlug}homes`);
+  listing.add(`${citySlug}${propSlug}`);
+  listing.add('indianrealestate');
+  listing.add('readytomovein');
+  listing.add(`newlaunch${citySlug}`);
+  listing.add('reraapproved');
 
-  for (const market of microMarkets.slice(0, 5)) {
+  for (const market of microMarkets.slice(0, 4)) {
     const mSlug = market.toLowerCase().replace(/[^a-z0-9]/g, '');
-    hashtags.add(mSlug);
-    hashtags.add(`${mSlug}${propSlug}`);
-    hashtags.add(`${citySlug}${mSlug}`);
+    listing.add(`${mSlug}${propSlug}`);
+    listing.add(`${citySlug}${mSlug}`);
   }
 
   if (bhkConfig) {
     const bhkSlug = bhkConfig.toLowerCase().replace(/\s/g, '');
-    hashtags.add(`${bhkSlug}${citySlug}`);
-    hashtags.add(`${bhkSlug}forsale`);
-    hashtags.add(`${bhkSlug}apartment`);
+    listing.add(`${bhkSlug}${citySlug}`);
+    listing.add(`${bhkSlug}forsale`);
   }
 
   if (budgetMin && budgetMax) {
-    hashtags.add('budgethomes');
-    hashtags.add('affordablehousing');
     if (budgetMin < 100) {
-      hashtags.add(`under${Math.round(budgetMax)}lakhs`);
+      listing.add('affordablehousing');
+      listing.add(`under${Math.round(budgetMax)}lakhs`);
     } else {
-      hashtags.add('luxuryproperties');
-      hashtags.add('premiumhomes');
+      listing.add('luxuryproperties');
+      listing.add('premiumhomes');
     }
   }
 
-  hashtags.add('indianrealestate');
-  hashtags.add('readytomovein');
-  hashtags.add(`newlaunch${citySlug}`);
-  hashtags.add('homesearch');
-  hashtags.add('propertyinvesting');
-  hashtags.add('reraapproved');
+  // ── Buyer-intent tags (buyers post these — direct buying signals) ────────
+  buyer.add('homehunting');
+  buyer.add('househunting');
+  buyer.add('lookingforhome');
+  buyer.add('propertysearch');
+  buyer.add('dreamhomesearch');
+  buyer.add('firsthomebuyer');
+  buyer.add('newhomesearch');
+  buyer.add(`lookingfor${citySlug}home`);
+  buyer.add(`wanttobuy${citySlug}`);
+  buyer.add(`${citySlug}homesearch`);
+  buyer.add(`${citySlug}propertysearch`);
+  buyer.add('homeshopping');
+  buyer.add('buyingahome');
+  buyer.add(`${citySlug}firsthome`);
 
+  if (bhkConfig) {
+    const bhkSlug = bhkConfig.toLowerCase().replace(/\s/g, '');
+    buyer.add(`looking${bhkSlug}${citySlug}`);
+  }
+
+  // ── Custom tags go into both pools ───────────────────────────────────────
   if (customHashtags) {
     for (const tag of customHashtags) {
-      hashtags.add(tag.replace(/^#/, '').replace(/\s/g, '').toLowerCase());
+      const slug = tag.replace(/^#/, '').replace(/\s/g, '').toLowerCase();
+      listing.add(slug);
     }
   }
 
-  return Array.from(hashtags).filter(Boolean).slice(0, 15);
+  const listingTags = Array.from(listing).filter(Boolean).slice(0, 12);
+  const buyerTags = Array.from(buyer).filter(Boolean).slice(0, 12);
+  const all = [...new Set([...listingTags, ...buyerTags])];
+
+  return { listingTags, buyerTags, all };
 }
 
 // ─── Apify Helpers ────────────────────────────────────────────────────────────
@@ -138,51 +164,71 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const hashtags = generateHashtags({ city, microMarkets, budgetMin, budgetMax, propertyType, bhkConfig, customHashtags });
+    const { listingTags, buyerTags, all: allHashtags } = generateHashtags({
+      city, microMarkets, budgetMin, budgetMax, propertyType, bhkConfig, customHashtags,
+    });
 
     const allResults: InstagramResult[] = [];
 
-    // ── Step 1: Scrape posts via hashtag URLs (apify/instagram-scraper) ───────
-    // Build Instagram hashtag explore URLs — actor accepts these as directUrls
-    const hashtagUrls = hashtags.map(tag => `https://www.instagram.com/explore/tags/${tag}/`);
-    const postsPerHashtag = Math.max(5, Math.ceil(resultsLimit / hashtags.length));
+    // ── Step 1a: Scrape listing-hashtag posts — mine their comments for buyers
+    const listingHashtagUrls = listingTags.map(tag => `https://www.instagram.com/explore/tags/${tag}/`);
 
-    const hashtagRunId = await runApifyActor(
+    const listingRunId = await runApifyActor(
       'apify~instagram-scraper',
       {
-        directUrls: hashtagUrls,
+        directUrls: listingHashtagUrls,
         resultsType: 'posts',
-        resultsLimit: Math.min(postsPerHashtag, 20),
+        resultsLimit: Math.min(Math.max(5, Math.ceil(resultsLimit / listingTags.length)), 15),
       },
       apifyKey
     );
 
-    const hashtagDatasetId = await waitForApifyRun(hashtagRunId, apifyKey);
-    const hashtagItems = await fetchApifyDataset(hashtagDatasetId, apifyKey) as Record<string, unknown>[];
+    const listingDatasetId = await waitForApifyRun(listingRunId, apifyKey);
+    const listingItems = await fetchApifyDataset(listingDatasetId, apifyKey) as Record<string, unknown>[];
 
-    // Collect post URLs + capture post owners as signals
+    // Collect post URLs to mine comments from
     const postUrls: string[] = [...manualPostUrls];
 
-    for (const item of hashtagItems) {
+    for (const item of listingItems) {
       if (item.url) postUrls.push(item.url as string);
+    }
 
-      if (item.ownerUsername && item.url) {
+    // ── Step 1b: Scrape buyer-intent hashtag posts — these ARE the buyers ─────
+    const buyerHashtagUrls = buyerTags.map(tag => `https://www.instagram.com/explore/tags/${tag}/`);
+
+    const buyerRunId = await runApifyActor(
+      'apify~instagram-scraper',
+      {
+        directUrls: buyerHashtagUrls,
+        resultsType: 'posts',
+        resultsLimit: Math.min(Math.max(5, Math.ceil(resultsLimit / buyerTags.length)), 15),
+      },
+      apifyKey
+    );
+
+    const buyerDatasetId = await waitForApifyRun(buyerRunId, apifyKey);
+    const buyerItems = await fetchApifyDataset(buyerDatasetId, apifyKey) as Record<string, unknown>[];
+
+    // Buyer-intent posts: the poster is the potential buyer
+    for (const item of buyerItems) {
+      const username = (item.ownerUsername || item.username || item.authorUsername) as string | undefined;
+      if (username && item.url) {
         const caption = (item.caption as string) || '';
         allResults.push({
-          username: item.ownerUsername as string,
+          username,
           interaction: caption
-            ? `📸 Posted: "${caption.slice(0, 80)}${caption.length > 80 ? '...' : ''}"`
-            : '📸 Posted this',
+            ? `🔍 Buyer post: "${caption.slice(0, 100)}${caption.length > 100 ? '...' : ''}"`
+            : '🔍 Posted buyer-intent content',
           interactionType: 'post_owner',
           postUrl: item.url as string,
           postCaption: caption,
-          hashtag: '', // derived from explore URL, not returned directly
+          hashtag: 'buyer-intent',
           timestamp: (item.timestamp as string) || new Date().toISOString(),
         });
       }
     }
 
-    // ── Step 2: Scrape comments from collected post URLs ──────────────────────
+    // ── Step 2: Scrape comments from listing posts — buyers ask questions here ─
     const urlsToScrape = [...new Set(postUrls)].slice(0, 20);
 
     if (urlsToScrape.length > 0) {
@@ -191,7 +237,7 @@ export async function POST(req: NextRequest) {
         {
           directUrls: urlsToScrape,
           resultsType: 'comments',
-          resultsLimit: Math.ceil(resultsLimit / urlsToScrape.length),
+          resultsLimit: Math.max(10, Math.ceil(resultsLimit / urlsToScrape.length)),
         },
         apifyKey
       );
@@ -200,40 +246,54 @@ export async function POST(req: NextRequest) {
       const commentItems = await fetchApifyDataset(commentDatasetId, apifyKey) as Record<string, unknown>[];
 
       for (const comment of commentItems) {
-        if (comment.ownerUsername) {
+        // Apify comment items may use ownerUsername, username, or authorUsername
+        const username = (comment.ownerUsername || comment.username || comment.authorUsername) as string | undefined;
+        if (username) {
+          const text = (comment.text || comment.comment || '') as string;
           allResults.push({
-            username: comment.ownerUsername as string,
-            interaction: (comment.text as string) || '💬 Commented',
+            username,
+            interaction: text ? `💬 Commented: "${text.slice(0, 120)}${text.length > 120 ? '...' : ''}"` : '💬 Commented',
             interactionType: 'comment',
-            postUrl: (comment.postUrl as string) || (comment.url as string) || '',
+            postUrl: (comment.postUrl || comment.url || comment.postShortCode
+              ? `https://www.instagram.com/p/${comment.postShortCode}/`
+              : '') as string,
             postCaption: '',
-            hashtag: '',
+            hashtag: 'listing-comment',
             timestamp: (comment.timestamp as string) || new Date().toISOString(),
           });
         }
       }
     }
 
-    // ── Deduplicate (prefer comment over post_owner) ──────────────────────────
+    // ── Deduplicate (comments > buyer posts > listing posts) ─────────────────
+    const priority = (r: InstagramResult) =>
+      r.interactionType === 'comment' ? 0 : r.hashtag === 'buyer-intent' ? 1 : 2;
+
     const deduped = new Map<string, InstagramResult>();
     for (const r of allResults) {
       const existing = deduped.get(r.username);
-      if (!existing) {
-        deduped.set(r.username, r);
-      } else if (r.interactionType === 'comment' && existing.interactionType !== 'comment') {
+      if (!existing || priority(r) < priority(existing)) {
         deduped.set(r.username, r);
       }
     }
 
     const finalResults = Array.from(deduped.values())
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .sort((a, b) => {
+        const pa = priority(a), pb = priority(b);
+        if (pa !== pb) return pa - pb;
+        return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      })
       .slice(0, resultsLimit);
 
     return NextResponse.json({
       results: finalResults,
-      hashtags,
+      hashtags: allHashtags,
+      listingTags,
+      buyerTags,
       totalFound: finalResults.length,
       postsScraped: urlsToScrape.length,
+      commentCount: finalResults.filter(r => r.interactionType === 'comment').length,
+      buyerPostCount: finalResults.filter(r => r.hashtag === 'buyer-intent').length,
     });
 
   } catch (error: unknown) {

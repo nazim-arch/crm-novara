@@ -18,8 +18,12 @@ interface InstagramResult {
 interface MineResponse {
   results: InstagramResult[];
   hashtags: string[];
+  listingTags: string[];
+  buyerTags: string[];
   totalFound: number;
   postsScraped: number;
+  commentCount: number;
+  buyerPostCount: number;
   error?: string;
 }
 
@@ -32,57 +36,76 @@ function generateHashtags(inputs: {
   propertyType: string;
   bhkConfig?: string;
   customHashtags?: string[];
-}): string[] {
+}): { listingTags: string[]; buyerTags: string[] } {
   const { city, microMarkets, budgetMin, budgetMax, propertyType, bhkConfig, customHashtags } = inputs;
   const citySlug = city.toLowerCase().replace(/[^a-z0-9]/g, '');
   const propSlug = propertyType.toLowerCase().replace(/[^a-z]/g, '');
-  const hashtags = new Set<string>();
 
-  hashtags.add(`${citySlug}realestate`);
-  hashtags.add(`${citySlug}properties`);
-  hashtags.add(`${citySlug}flats`);
-  hashtags.add(`${citySlug}homes`);
-  hashtags.add(`${citySlug}${propSlug}`);
+  const listing = new Set<string>();
+  const buyer = new Set<string>();
 
-  for (const market of microMarkets.slice(0, 5)) {
+  listing.add(`${citySlug}realestate`);
+  listing.add(`${citySlug}properties`);
+  listing.add(`${citySlug}flats`);
+  listing.add(`${citySlug}homes`);
+  listing.add(`${citySlug}${propSlug}`);
+  listing.add('indianrealestate');
+  listing.add('readytomovein');
+  listing.add(`newlaunch${citySlug}`);
+  listing.add('reraapproved');
+
+  for (const market of microMarkets.slice(0, 4)) {
     const mSlug = market.toLowerCase().replace(/[^a-z0-9]/g, '');
-    hashtags.add(mSlug);
-    hashtags.add(`${mSlug}${propSlug}`);
-    hashtags.add(`${citySlug}${mSlug}`);
+    listing.add(`${mSlug}${propSlug}`);
+    listing.add(`${citySlug}${mSlug}`);
   }
 
   if (bhkConfig) {
     const bhkSlug = bhkConfig.toLowerCase().replace(/\s/g, '');
-    hashtags.add(`${bhkSlug}${citySlug}`);
-    hashtags.add(`${bhkSlug}forsale`);
-    hashtags.add(`${bhkSlug}apartment`);
+    listing.add(`${bhkSlug}${citySlug}`);
+    listing.add(`${bhkSlug}forsale`);
   }
 
   if (budgetMin && budgetMax) {
-    hashtags.add('budgethomes');
-    hashtags.add('affordablehousing');
     if (budgetMin < 100) {
-      hashtags.add(`under${Math.round(budgetMax)}lakhs`);
+      listing.add('affordablehousing');
+      listing.add(`under${Math.round(budgetMax)}lakhs`);
     } else {
-      hashtags.add('luxuryproperties');
-      hashtags.add('premiumhomes');
+      listing.add('luxuryproperties');
+      listing.add('premiumhomes');
     }
   }
 
-  hashtags.add('indianrealestate');
-  hashtags.add('readytomovein');
-  hashtags.add(`newlaunch${citySlug}`);
-  hashtags.add('homesearch');
-  hashtags.add('propertyinvesting');
-  hashtags.add('reraapproved');
+  buyer.add('homehunting');
+  buyer.add('househunting');
+  buyer.add('lookingforhome');
+  buyer.add('propertysearch');
+  buyer.add('dreamhomesearch');
+  buyer.add('firsthomebuyer');
+  buyer.add('newhomesearch');
+  buyer.add(`lookingfor${citySlug}home`);
+  buyer.add(`wanttobuy${citySlug}`);
+  buyer.add(`${citySlug}homesearch`);
+  buyer.add(`${citySlug}propertysearch`);
+  buyer.add('homeshopping');
+  buyer.add('buyingahome');
+  buyer.add(`${citySlug}firsthome`);
+
+  if (bhkConfig) {
+    const bhkSlug = bhkConfig.toLowerCase().replace(/\s/g, '');
+    buyer.add(`looking${bhkSlug}${citySlug}`);
+  }
 
   if (customHashtags) {
     for (const tag of customHashtags) {
-      hashtags.add(tag.replace(/^#/, '').replace(/\s/g, '').toLowerCase());
+      listing.add(tag.replace(/^#/, '').replace(/\s/g, '').toLowerCase());
     }
   }
 
-  return Array.from(hashtags).filter(Boolean).slice(0, 15);
+  return {
+    listingTags: Array.from(listing).filter(Boolean).slice(0, 12),
+    buyerTags: Array.from(buyer).filter(Boolean).slice(0, 12),
+  };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -109,10 +132,11 @@ const PROPERTY_TYPES = ['Apartment', 'Villa', 'Plot', 'Penthouse', 'Row House', 
 const BHK_OPTIONS = ['1 BHK', '2 BHK', '3 BHK', '4 BHK', '4+ BHK'];
 const RESULTS_LIMITS = [50, 100, 200, 500];
 const STEPS = [
-  '🔍 Generating smart hashtags from your inputs...',
-  '📡 Searching Instagram posts via Apify...',
-  '💬 Extracting commenter usernames...',
-  '🧹 Deduplicating and ranking results...',
+  '🔍 Generating listing + buyer-intent hashtags...',
+  '📡 Scanning listing hashtags for posts to mine comments from...',
+  '🛒 Scanning buyer-intent hashtags for direct buying signals...',
+  '💬 Mining comments from listing posts — finding buyers...',
+  '🧹 Deduplicating and ranking results by signal strength...',
 ];
 
 // ─── Tag Input ────────────────────────────────────────────────────────────────
@@ -194,15 +218,18 @@ export default function InstagramMinerPage() {
   const [loading, setLoading] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [results, setResults] = useState<InstagramResult[] | null>(null);
-  const [generatedHashtags, setGeneratedHashtags] = useState<string[]>([]);
+  const [generatedListingTags, setGeneratedListingTags] = useState<string[]>([]);
+  const [generatedBuyerTags, setGeneratedBuyerTags] = useState<string[]>([]);
   const [postsScraped, setPostsScraped] = useState(0);
+  const [commentCount, setCommentCount] = useState(0);
+  const [buyerPostCount, setBuyerPostCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const stepTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Live hashtag preview
-  const previewHashtags = useMemo(() => {
-    if (!city.trim()) return [];
+  const { listingTags: previewListingTags, buyerTags: previewBuyerTags } = useMemo(() => {
+    if (!city.trim()) return { listingTags: [], buyerTags: [] };
     return generateHashtags({
       city, microMarkets,
       budgetMin: Number(budgetMin) || 0,
@@ -248,8 +275,11 @@ export default function InstagramMinerPage() {
       if (!res.ok || data.error) throw new Error(data.error || 'Mining failed');
 
       setResults(data.results);
-      setGeneratedHashtags(data.hashtags);
+      setGeneratedListingTags(data.listingTags || []);
+      setGeneratedBuyerTags(data.buyerTags || []);
       setPostsScraped(data.postsScraped);
+      setCommentCount(data.commentCount || 0);
+      setBuyerPostCount(data.buyerPostCount || 0);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Mining failed');
     } finally {
@@ -438,18 +468,36 @@ export default function InstagramMinerPage() {
           </div>
 
           {/* Hashtag Preview */}
-          {previewHashtags.length > 0 && (
-            <div style={{ marginTop: 24, padding: '16px 20px', borderRadius: 10, background: 'rgba(131,58,180,0.12)', border: '1px solid rgba(131,58,180,0.3)' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#a855f7', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 }}>
-                Auto-generated Hashtags ({previewHashtags.length}) — will be searched
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {previewHashtags.map(tag => (
-                  <span key={tag} style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 12, background: 'rgba(131,58,180,0.22)', color: '#c084fc' }}>
-                    #{tag}
-                  </span>
-                ))}
-              </div>
+          {(previewListingTags.length > 0 || previewBuyerTags.length > 0) && (
+            <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {previewListingTags.length > 0 && (
+                <div style={{ padding: '14px 18px', borderRadius: 10, background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#818cf8', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>
+                    📋 Listing Tags ({previewListingTags.length}) — mine comments from these posts
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                    {previewListingTags.map(tag => (
+                      <span key={tag} style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 12, background: 'rgba(99,102,241,0.18)', color: '#a5b4fc' }}>
+                        #{tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {previewBuyerTags.length > 0 && (
+                <div style={{ padding: '14px 18px', borderRadius: 10, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#4ade80', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>
+                    🛒 Buyer-Intent Tags ({previewBuyerTags.length}) — these posters ARE buyers
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                    {previewBuyerTags.map(tag => (
+                      <span key={tag} style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 12, background: 'rgba(34,197,94,0.15)', color: '#86efac' }}>
+                        #{tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -543,7 +591,19 @@ export default function InstagramMinerPage() {
                   {filter && ` matching "${filter}"`}
                 </div>
                 <div style={{ fontSize: 12, color: '#475569', marginTop: 3 }}>
-                  {results.length} total found · {postsScraped} posts scraped · {generatedHashtags.length} hashtags searched
+                  {results.length} total · {commentCount} commenters · {buyerPostCount} buyer posts · {postsScraped} posts scraped
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                  {generatedListingTags.length > 0 && (
+                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'rgba(99,102,241,0.15)', color: '#818cf8', fontWeight: 600 }}>
+                      📋 {generatedListingTags.length} listing tags
+                    </span>
+                  )}
+                  {generatedBuyerTags.length > 0 && (
+                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'rgba(34,197,94,0.15)', color: '#4ade80', fontWeight: 600 }}>
+                      🛒 {generatedBuyerTags.length} buyer tags
+                    </span>
+                  )}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -623,11 +683,15 @@ export default function InstagramMinerPage() {
                         <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
                           {r.interactionType === 'comment' ? (
                             <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 12, background: 'rgba(34,197,94,0.12)', color: '#4ade80' }}>
-                              💬 Comment
+                              💬 Commenter
+                            </span>
+                          ) : r.hashtag === 'buyer-intent' ? (
+                            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 12, background: 'rgba(251,191,36,0.12)', color: '#fbbf24' }}>
+                              🛒 Buyer Post
                             </span>
                           ) : (
-                            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 12, background: 'rgba(59,130,246,0.12)', color: '#60a5fa' }}>
-                              📸 Posted
+                            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 12, background: 'rgba(100,116,139,0.15)', color: '#94a3b8' }}>
+                              📋 Listing
                             </span>
                           )}
                         </td>
