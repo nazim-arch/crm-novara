@@ -240,7 +240,9 @@ export default function InstagramMinerPage() {
     });
   }, [city, microMarkets, budgetMin, budgetMax, propertyType, bhk, customHashtags]);
 
-  const canStart = !!city.trim() && microMarkets.length > 0 && !!budgetMin && !!budgetMax;
+  const hasManualUrls = manualUrls.split('\n').map(u => u.trim()).some(Boolean);
+  const hasHashtagInputs = !!city.trim() && microMarkets.length > 0 && !!budgetMin && !!budgetMax;
+  const canStart = hasManualUrls || hasHashtagInputs;
 
   const handleMine = async () => {
     setLoading(true);
@@ -453,17 +455,24 @@ export default function InstagramMinerPage() {
 
             {/* Manual Post URLs */}
             <div style={{ gridColumn: '1 / -1' }}>
-              <Label hint="— one per line (optional)">Manual Post URLs</Label>
+              <Label hint="— paste reels/posts with lots of comments to extract ALL commenters">
+                Target Posts / Reels
+              </Label>
               <textarea
                 value={manualUrls}
                 onChange={e => setManualUrls(e.target.value)}
-                placeholder={'https://www.instagram.com/p/ABC123/\nhttps://www.instagram.com/reel/XYZ789/'}
-                rows={3}
+                placeholder={'https://www.instagram.com/reel/ABC123/\nhttps://www.instagram.com/p/XYZ789/\n\nOne URL per line. All commenters will be extracted.'}
+                rows={4}
                 style={{
                   ...inputStyle, resize: 'vertical',
-                  fontFamily: 'monospace', fontSize: 12, lineHeight: 1.6,
+                  fontFamily: 'monospace', fontSize: 12, lineHeight: 1.7,
                 }}
               />
+              {hasManualUrls && (
+                <div style={{ marginTop: 6, fontSize: 11, color: '#4ade80', fontWeight: 600 }}>
+                  ✓ Will extract up to {resultsLimit} commenters per post — no city input needed
+                </div>
+              )}
             </div>
           </div>
 
@@ -520,7 +529,7 @@ export default function InstagramMinerPage() {
             </button>
             {!canStart && !loading && (
               <p style={{ fontSize: 12, color: '#475569', textAlign: 'center', marginTop: 8, margin: '8px 0 0' }}>
-                City, at least one Micro-Market, and Budget range are required
+                Paste post/reel URLs below — or fill in City + Micro-Markets + Budget to search by hashtag
               </p>
             )}
           </div>

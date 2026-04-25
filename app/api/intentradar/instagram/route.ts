@@ -164,106 +164,120 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { listingTags, buyerTags, all: allHashtags } = generateHashtags({
-      city, microMarkets, budgetMin, budgetMax, propertyType, bhkConfig, customHashtags,
-    });
+    const hasHashtagInputs = !!city?.trim();
+    const hasManualUrls = manualPostUrls.length > 0;
+
+    const { listingTags, buyerTags, all: allHashtags } = hasHashtagInputs
+      ? generateHashtags({ city, microMarkets, budgetMin, budgetMax, propertyType, bhkConfig, customHashtags })
+      : { listingTags: [], buyerTags: [], all: [] };
 
     const allResults: InstagramResult[] = [];
+    const hashtagPostUrls: string[] = [];
 
-    // ── Step 1a: Scrape listing-hashtag posts — mine their comments for buyers
-    const listingHashtagUrls = listingTags.map(tag => `https://www.instagram.com/explore/tags/${tag}/`);
+    // ── Step 1a: Listing-hashtag posts (only when city provided) ─────────────
+    if (hasHashtagInputs && listingTags.length > 0) {
+      const listingHashtagUrls = listingTags.map(tag => `https://www.instagram.com/explore/tags/${tag}/`);
 
-    const listingRunId = await runApifyActor(
-      'apify~instagram-scraper',
-      {
-        directUrls: listingHashtagUrls,
-        resultsType: 'posts',
-        resultsLimit: Math.min(Math.max(5, Math.ceil(resultsLimit / listingTags.length)), 15),
-      },
-      apifyKey
-    );
-
-    const listingDatasetId = await waitForApifyRun(listingRunId, apifyKey);
-    const listingItems = await fetchApifyDataset(listingDatasetId, apifyKey) as Record<string, unknown>[];
-
-    // Collect post URLs to mine comments from
-    const postUrls: string[] = [...manualPostUrls];
-
-    for (const item of listingItems) {
-      if (item.url) postUrls.push(item.url as string);
-    }
-
-    // ── Step 1b: Scrape buyer-intent hashtag posts — these ARE the buyers ─────
-    const buyerHashtagUrls = buyerTags.map(tag => `https://www.instagram.com/explore/tags/${tag}/`);
-
-    const buyerRunId = await runApifyActor(
-      'apify~instagram-scraper',
-      {
-        directUrls: buyerHashtagUrls,
-        resultsType: 'posts',
-        resultsLimit: Math.min(Math.max(5, Math.ceil(resultsLimit / buyerTags.length)), 15),
-      },
-      apifyKey
-    );
-
-    const buyerDatasetId = await waitForApifyRun(buyerRunId, apifyKey);
-    const buyerItems = await fetchApifyDataset(buyerDatasetId, apifyKey) as Record<string, unknown>[];
-
-    // Buyer-intent posts: the poster is the potential buyer
-    for (const item of buyerItems) {
-      const username = (item.ownerUsername || item.username || item.authorUsername) as string | undefined;
-      if (username && item.url) {
-        const caption = (item.caption as string) || '';
-        allResults.push({
-          username,
-          interaction: caption
-            ? `🔍 Buyer post: "${caption.slice(0, 100)}${caption.length > 100 ? '...' : ''}"`
-            : '🔍 Posted buyer-intent content',
-          interactionType: 'post_owner',
-          postUrl: item.url as string,
-          postCaption: caption,
-          hashtag: 'buyer-intent',
-          timestamp: (item.timestamp as string) || new Date().toISOString(),
-        });
-      }
-    }
-
-    // ── Step 2: Scrape comments from listing posts — buyers ask questions here ─
-    const urlsToScrape = [...new Set(postUrls)].slice(0, 20);
-
-    if (urlsToScrape.length > 0) {
-      const commentRunId = await runApifyActor(
+      const listingRunId = await runApifyActor(
         'apify~instagram-scraper',
         {
-          directUrls: urlsToScrape,
-          resultsType: 'comments',
-          resultsLimit: Math.max(10, Math.ceil(resultsLimit / urlsToScrape.length)),
+          directUrls: listingHashtagUrls,
+          resultsType: 'posts',
+          resultsLimit: Math.min(Math.max(5, Math.ceil(resultsLimit / listingTags.length)), 15),
         },
         apifyKey
       );
 
-      const commentDatasetId = await waitForApifyRun(commentRunId, apifyKey);
-      const commentItems = await fetchApifyDataset(commentDatasetId, apifyKey) as Record<string, unknown>[];
+      const listingDatasetId = await waitForApifyRun(listingRunId, apifyKey);
+      const listingItems = await fetchApifyDataset(listingDatasetId, apifyKey) as Record<string, unknown>[];
 
-      for (const comment of commentItems) {
-        // Apify comment items may use ownerUsername, username, or authorUsername
-        const username = (comment.ownerUsername || comment.username || comment.authorUsername) as string | undefined;
-        if (username) {
-          const text = (comment.text || comment.comment || '') as string;
+      for (const item of listingItems) {
+        if (item.url) hashtagPostUrls.push(item.url as string);
+      }
+    }
+
+    // ── Step 1b: Buyer-intent hashtag posts (only when city provided) ─────────
+    if (hasHashtagInputs && buyerTags.length > 0) {
+      const buyerHashtagUrls = buyerTags.map(tag => `https://www.instagram.com/explore/tags/${tag}/`);
+
+      const buyerRunId = await runApifyActor(
+        'apify~instagram-scraper',
+        {
+          directUrls: buyerHashtagUrls,
+          resultsType: 'posts',
+          resultsLimit: Math.min(Math.max(5, Math.ceil(resultsLimit / buyerTags.length)), 15),
+        },
+        apifyKey
+      );
+
+      const buyerDatasetId = await waitForApifyRun(buyerRunId, apifyKey);
+      const buyerItems = await fetchApifyDataset(buyerDatasetId, apifyKey) as Record<string, unknown>[];
+
+      for (const item of buyerItems) {
+        const username = (item.ownerUsername || item.username || item.authorUsername) as string | undefined;
+        if (username && item.url) {
+          const caption = (item.caption as string) || '';
           allResults.push({
             username,
-            interaction: text ? `💬 Commented: "${text.slice(0, 120)}${text.length > 120 ? '...' : ''}"` : '💬 Commented',
-            interactionType: 'comment',
-            postUrl: (comment.postUrl || comment.url || comment.postShortCode
-              ? `https://www.instagram.com/p/${comment.postShortCode}/`
-              : '') as string,
-            postCaption: '',
-            hashtag: 'listing-comment',
-            timestamp: (comment.timestamp as string) || new Date().toISOString(),
+            interaction: caption
+              ? `🔍 Buyer post: "${caption.slice(0, 100)}${caption.length > 100 ? '...' : ''}"`
+              : '🔍 Posted buyer-intent content',
+            interactionType: 'post_owner',
+            postUrl: item.url as string,
+            postCaption: caption,
+            hashtag: 'buyer-intent',
+            timestamp: (item.timestamp as string) || new Date().toISOString(),
           });
         }
       }
     }
+
+    // ── Helper: extract comments and push to allResults ───────────────────────
+    const scrapeComments = async (urls: string[], perUrlLimit: number, tag: string) => {
+      if (urls.length === 0) return 0;
+      const commentRunId = await runApifyActor(
+        'apify~instagram-scraper',
+        { directUrls: urls, resultsType: 'comments', resultsLimit: perUrlLimit },
+        apifyKey
+      );
+      const datasetId = await waitForApifyRun(commentRunId, apifyKey);
+      const items = await fetchApifyDataset(datasetId, apifyKey) as Record<string, unknown>[];
+      let count = 0;
+      for (const comment of items) {
+        const username = (comment.ownerUsername || comment.username || comment.authorUsername) as string | undefined;
+        if (username) {
+          const text = (comment.text || comment.comment || '') as string;
+          const shortCode = comment.postShortCode as string | undefined;
+          allResults.push({
+            username,
+            interaction: text ? `💬 "${text.slice(0, 140)}${text.length > 140 ? '...' : ''}"` : '💬 Commented',
+            interactionType: 'comment',
+            postUrl: (comment.postUrl as string) || (comment.url as string) || (shortCode ? `https://www.instagram.com/p/${shortCode}/` : ''),
+            postCaption: '',
+            hashtag: tag,
+            timestamp: (comment.timestamp as string) || new Date().toISOString(),
+          });
+          count++;
+        }
+      }
+      return count;
+    };
+
+    // ── Step 2a: Manual URLs — full comment budget per post ───────────────────
+    const dedupedManual = [...new Set(manualPostUrls as string[])].slice(0, 10);
+    if (dedupedManual.length > 0) {
+      const perUrlLimit = Math.min(resultsLimit, 500);
+      await scrapeComments(dedupedManual, perUrlLimit, 'manual-post');
+    }
+
+    // ── Step 2b: Hashtag-discovered posts — remaining comment budget ───────────
+    const hashtagUrlsToScrape = [...new Set(hashtagPostUrls)].slice(0, 15);
+    if (hashtagUrlsToScrape.length > 0) {
+      const perUrlLimit = Math.max(10, Math.ceil((resultsLimit * 0.5) / hashtagUrlsToScrape.length));
+      await scrapeComments(hashtagUrlsToScrape, perUrlLimit, 'listing-comment');
+    }
+
+    const totalPostsScraped = dedupedManual.length + hashtagUrlsToScrape.length;
 
     // ── Deduplicate (comments > buyer posts > listing posts) ─────────────────
     const priority = (r: InstagramResult) =>
@@ -291,7 +305,7 @@ export async function POST(req: NextRequest) {
       listingTags,
       buyerTags,
       totalFound: finalResults.length,
-      postsScraped: urlsToScrape.length,
+      postsScraped: totalPostsScraped,
       commentCount: finalResults.filter(r => r.interactionType === 'comment').length,
       buyerPostCount: finalResults.filter(r => r.hashtag === 'buyer-intent').length,
     });
