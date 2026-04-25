@@ -18,9 +18,9 @@ const ACTOR_FIELDS: ApiKeyField[] = [
     key: 'actor_instagram_comments',
     label: 'Instagram Comment Scraper Actor ID',
     category: 'actors',
-    placeholder: 'apify/instagram-comment-scraper',
+    placeholder: 'apify~instagram-scraper (default)',
     required: false,
-    note: 'Apify actor used to extract commenters. Find alternatives at apify.com/store — search "instagram comments". Default: apify/instagram-comment-scraper',
+    note: 'Apify actor used to extract commenters. Default: apify~instagram-scraper (built-in). To use a dedicated comment actor, find one at apify.com/store → search "instagram comments" and paste its ID here.',
   },
 ];
 

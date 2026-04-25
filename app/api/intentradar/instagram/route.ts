@@ -184,9 +184,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Dedicated comment scraper — configurable in Settings, falls back to standard actor
+    // Dedicated comment scraper — configurable in Settings
     const commentActorId = (await getSetting('actor_instagram_comments'))?.trim()
-      || 'apify/instagram-comment-scraper';
+      || 'apify~instagram-scraper';
+
+    // apify~instagram-scraper requires resultsType:'comments'; dedicated actors use directUrls only
+    const isStandardScraper = commentActorId === 'apify~instagram-scraper';
 
     const hasHashtagInputs = !!city?.trim();
     const hasManualUrls = manualPostUrls.length > 0;
@@ -263,12 +266,11 @@ export async function POST(req: NextRequest) {
     // ── Helper: extract comments and push to allResults ───────────────────────
     const scrapeComments = async (urls: string[], perUrlLimit: number, tag: string) => {
       if (urls.length === 0) return 0;
-      const commentRunId = await runApifyActor(
-        commentActorId,
-        // directUrls works for most Apify Instagram actors; some use postUrls
-        { directUrls: urls, postUrls: urls, resultsLimit: perUrlLimit },
-        apifyKey
-      );
+      const commentInput = isStandardScraper
+        ? { directUrls: urls, resultsType: 'comments', resultsLimit: perUrlLimit }
+        : { directUrls: urls, postUrls: urls, resultsLimit: perUrlLimit };
+
+      const commentRunId = await runApifyActor(commentActorId, commentInput, apifyKey);
       const datasetId = await waitForApifyRun(commentRunId, apifyKey);
       const items = await fetchApifyDataset(datasetId, apifyKey) as Record<string, unknown>[];
       let count = 0;
