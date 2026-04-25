@@ -4,6 +4,7 @@
 import { useState, useEffect } from 'react';
 
 const API_KEY_FIELDS = [
+  { key: 'api_key_apify', label: 'Apify API Key', category: 'api_keys', placeholder: 'apify_api_...', required: true },
   { key: 'api_key_youtube', label: 'YouTube Data API v3', category: 'api_keys', placeholder: 'AIzaSy...', required: true },
   { key: 'api_key_google_places', label: 'Google Places API', category: 'api_keys', placeholder: 'AIzaSy...', required: false },
   { key: 'api_key_reddit_client_id', label: 'Reddit Client ID', category: 'api_keys', placeholder: 'Your Reddit app client ID', required: true },
