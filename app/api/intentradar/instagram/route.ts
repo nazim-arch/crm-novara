@@ -169,8 +169,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const commentActorId = (await getSetting('actor_instagram_comments'))?.trim()
-      || 'apify~instagram-scraper';
+    // Normalize actor ID: convert slash format to tilde (Apify API uses ~)
+    // Reject anything that doesn't contain ~ after normalization (catches stale bad values)
+    const rawActorSetting = (await getSetting('actor_instagram_comments'))?.trim() || '';
+    const normalizedActor = rawActorSetting.replace('/', '~');
+    const commentActorId = normalizedActor.includes('~') ? normalizedActor : 'apify~instagram-scraper';
     const isStandardScraper = commentActorId === 'apify~instagram-scraper';
 
     // ── Step 1: Find high-comment recent posts via hashtags ───────────────────
