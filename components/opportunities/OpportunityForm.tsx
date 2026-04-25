@@ -370,110 +370,113 @@ export function OpportunityForm({
           )}
 
           {isLand ? (
-            /* Land layout: Label | Land Area | Area Unit | Sale Type | Price/Unit | Row Total | Delete */
+            /* Land layout: label full-width on top, then area/unit/sale-type/price in a row */
             <>
-              <div className="grid grid-cols-[1fr_90px_100px_110px_130px_110px_36px] gap-2 text-xs font-medium text-muted-foreground px-1">
-                <span>Label / Parcel</span>
-                <span>Area</span>
-                <span>Unit</span>
-                <span>Sale Type</span>
-                <span>Price / Unit (₹)</span>
-                <span>Row Total</span>
-                <span />
-              </div>
               {fields.map((field, index) => {
                 const area = Number(watch(`configurations.${index}.land_area`)) || 0;
                 const price = Number(watch(`configurations.${index}.price_per_unit`)) || 0;
                 const rowTotal = area * price;
 
                 return (
-                  <div
-                    key={field.id}
-                    className="grid grid-cols-[1fr_90px_100px_110px_130px_110px_36px] gap-2 items-start"
-                  >
-                    <div>
-                      <Input
-                        placeholder={labelPlaceholder}
-                        {...register(`configurations.${index}.label`)}
-                      />
-                      {errors.configurations?.[index]?.label && (
-                        <p className="text-xs text-destructive mt-0.5">
-                          {errors.configurations[index]?.label?.message}
-                        </p>
-                      )}
-                    </div>
-                    <div>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="0"
-                        {...register(`configurations.${index}.land_area`)}
-                      />
-                    </div>
-                    <div>
-                      <Select
-                        defaultValue={field.area_unit ?? undefined}
-                        onValueChange={(v) =>
-                          setValue(`configurations.${index}.area_unit`, v as (typeof AREA_UNITS)[number])
-                        }
+                  <div key={field.id} className="rounded-lg border p-3 space-y-2">
+                    {/* Row 1: label + delete */}
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1">
+                        <Label className="text-xs text-muted-foreground mb-1 block">Label / Parcel</Label>
+                        <Input
+                          placeholder={labelPlaceholder}
+                          {...register(`configurations.${index}.label`)}
+                        />
+                        {errors.configurations?.[index]?.label && (
+                          <p className="text-xs text-destructive mt-0.5">
+                            {errors.configurations[index]?.label?.message}
+                          </p>
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 mt-5 text-muted-foreground hover:text-destructive shrink-0"
+                        onClick={() => {
+                          if (fields.length > 1) remove(index);
+                          else toast.error("At least one configuration row is required");
+                        }}
                       >
-                        <SelectTrigger className="h-9">
-                          <SelectValue placeholder="Unit" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {AREA_UNITS.map((u) => (
-                            <SelectItem key={u} value={u}>{u}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
-                    <div>
-                      <Select
-                        defaultValue={field.sale_type ?? undefined}
-                        onValueChange={(v) =>
-                          setValue(`configurations.${index}.sale_type`, v as (typeof SALE_TYPES)[number])
-                        }
-                      >
-                        <SelectTrigger className="h-9">
-                          <SelectValue placeholder="Type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {SALE_TYPES.map((s) => (
-                            <SelectItem key={s} value={s}>{s === "ForSale" ? "For Sale" : "Requirement"}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+
+                    {/* Row 2: area / unit / sale type / price / total */}
+                    <div className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] gap-2">
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">Area</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="0"
+                          {...register(`configurations.${index}.land_area`)}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">Unit</Label>
+                        <Select
+                          defaultValue={field.area_unit ?? undefined}
+                          onValueChange={(v) =>
+                            setValue(`configurations.${index}.area_unit`, v as (typeof AREA_UNITS)[number])
+                          }
+                        >
+                          <SelectTrigger className="h-9">
+                            <SelectValue placeholder="Unit" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {AREA_UNITS.map((u) => (
+                              <SelectItem key={u} value={u}>{u}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">Sale Type</Label>
+                        <Select
+                          defaultValue={field.sale_type ?? undefined}
+                          onValueChange={(v) =>
+                            setValue(`configurations.${index}.sale_type`, v as (typeof SALE_TYPES)[number])
+                          }
+                        >
+                          <SelectTrigger className="h-9">
+                            <SelectValue placeholder="Type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {SALE_TYPES.map((s) => (
+                              <SelectItem key={s} value={s}>{s === "ForSale" ? "For Sale" : "Requirement"}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">Price / Unit (₹)</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="1"
+                          placeholder="0"
+                          {...register(`configurations.${index}.price_per_unit`)}
+                        />
+                        {errors.configurations?.[index]?.price_per_unit && (
+                          <p className="text-xs text-destructive mt-0.5">
+                            {errors.configurations[index]?.price_per_unit?.message}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex flex-col justify-end pb-0.5">
+                        <span className="text-xs text-muted-foreground mb-1">Total</span>
+                        <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+                          {rowTotal > 0 ? formatCurrency(rowTotal) : "—"}
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="1"
-                        placeholder="0"
-                        {...register(`configurations.${index}.price_per_unit`)}
-                      />
-                      {errors.configurations?.[index]?.price_per_unit && (
-                        <p className="text-xs text-destructive mt-0.5">
-                          {errors.configurations[index]?.price_per_unit?.message}
-                        </p>
-                      )}
-                    </div>
-                    <div className="h-9 px-2 flex items-center text-sm font-medium text-muted-foreground">
-                      {rowTotal > 0 ? formatCurrency(rowTotal) : "—"}
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 text-muted-foreground hover:text-destructive"
-                      onClick={() => {
-                        if (fields.length > 1) remove(index);
-                        else toast.error("At least one configuration row is required");
-                      }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
                   </div>
                 );
               })}
