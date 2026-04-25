@@ -1,6 +1,6 @@
 // app/api/intentradar/instagram/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { getSetting } from '@/lib/intentradar/db';
+import { getApiKey } from '@/lib/intentradar/db';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface InstagramResult {
@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
       resultsLimit = 100,
     } = body;
 
-    const apifyKey = await getSetting('api_key_apify');
+    const apifyKey = await getApiKey('apify');
     if (!apifyKey) {
       return NextResponse.json(
         { error: 'Apify API Key not configured. Please add it in IntentRadar Settings.' },
