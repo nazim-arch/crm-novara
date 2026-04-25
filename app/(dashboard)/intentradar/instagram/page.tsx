@@ -1,7 +1,7 @@
 // app/intentradar/instagram/page.tsx
 'use client';
 
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -53,7 +53,26 @@ interface MineResponse {
   error?: string;
 }
 
-// ─── Client hashtag preview ───────────────────────────────────────────────────
+interface NominatimResult {
+  place_id: number;
+  display_name: string;
+  name: string;
+  address: Record<string, string>;
+  type: string;
+  class: string;
+}
+
+// ─── localStorage dedup helpers ───────────────────────────────────────────────
+const LS_KEY = 'ir_ig_used_post_urls';
+
+function loadUsedUrls(): string[] {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch { return []; }
+}
+function saveUsedUrls(urls: string[]) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(urls)); } catch {}
+}
+
+// ─── Client hashtag preview (lightweight) ────────────────────────────────────
 function previewHashtags(inputs: {
   city: string; microMarkets: string[]; propertyType: string;
   bhkConfig?: string; customHashtags?: string[];
@@ -128,12 +147,13 @@ const CONDITION_LABELS: Record<string, { label: string; color: string; bg: strin
 };
 
 const REJECTION_LABELS: Record<string, string> = {
-  older_than_90_days:      'Too old (>90 days)',
-  low_comment_count:       'Low engagement (≤5 comments)',
-  wrong_property_type:     'Wrong property type',
-  wrong_city:              'City not matched',
-  weak_relevance_score:    'Low relevance score (<40)',
-  no_buyer_intent:         'No buyer intent signals',
+  older_than_90_days:   'Too old (>90 days)',
+  low_comment_count:    'Low engagement (≤5 comments)',
+  wrong_property_type:  'Wrong property type',
+  wrong_city:           'City not matched',
+  weak_relevance_score: 'Low relevance score (<40)',
+  no_buyer_intent:      'No buyer intent signals',
+  already_scraped:      'Already scraped in previous run',
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -157,7 +177,216 @@ const STEPS_HASHTAG = [
   '💬 Extracting commenters from top-scored posts...',
 ];
 
-// ─── Components ───────────────────────────────────────────────────────────────
+// ─── Dark-themed City Autocomplete (Nominatim) ────────────────────────────────
+function CitySearchDark({ value, onChange, disabled }: {
+  value: string; onChange: (city: string) => void; disabled?: boolean;
+}) {
+  const [query, setQuery] = useState(value);
+  const [suggestions, setSuggestions] = useState<NominatimResult[]>([]);
+  const [open, setOpen] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { setQuery(value); }, [value]);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const search = useCallback((q: string) => {
+    if (q.length < 2) { setSuggestions([]); setOpen(false); return; }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&addressdetails=1&limit=6&featuretype=city&accept-language=en`;
+        const res = await fetch(url, { headers: { 'User-Agent': 'Novara-CRM/1.0' } });
+        const data: NominatimResult[] = await res.json();
+        const cities = data.filter(r => ['city', 'town', 'village', 'administrative'].includes(r.type) || r.class === 'place');
+        setSuggestions(cities.slice(0, 6));
+        setOpen(cities.length > 0);
+      } catch { /* silently fail */ }
+    }, 350);
+  }, []);
+
+  const handleInput = (q: string) => {
+    setQuery(q);
+    onChange(q);
+    search(q);
+  };
+
+  const select = (r: NominatimResult) => {
+    const cityName = r.address?.city || r.address?.town || r.address?.village || r.name;
+    setQuery(cityName);
+    onChange(cityName);
+    setSuggestions([]);
+    setOpen(false);
+  };
+
+  const baseInput: React.CSSProperties = {
+    width: '100%', padding: '10px 14px', borderRadius: 8,
+    border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)',
+    color: 'white', fontSize: 13, outline: 'none', boxSizing: 'border-box',
+    opacity: disabled ? 0.4 : 1,
+  };
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative' }}>
+      <input
+        type="text"
+        value={query}
+        onChange={e => !disabled && handleInput(e.target.value)}
+        onFocus={() => suggestions.length > 0 && setOpen(true)}
+        placeholder="Type city name — e.g. Bangalore, Pune, Hyderabad…"
+        disabled={disabled}
+        style={baseInput}
+      />
+      {value && (
+        <div style={{ marginTop: 5, fontSize: 11, color: '#818cf8', fontWeight: 600 }}>✓ {value}</div>
+      )}
+      {open && suggestions.length > 0 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+          background: '#1e293b', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5)', marginTop: 4, overflow: 'hidden',
+        }}>
+          {suggestions.map(r => {
+            const cityName = r.address?.city || r.address?.town || r.address?.village || r.name;
+            const country = r.address?.country || '';
+            const state = r.address?.state || '';
+            return (
+              <div key={r.place_id} onMouseDown={() => select(r)}
+                style={{ padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.06)', fontSize: 13 }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <span style={{ fontWeight: 600, color: 'white' }}>📍 {cityName}</span>
+                <div style={{ fontSize: 11, color: '#475569', marginTop: 1 }}>{[state, country].filter(Boolean).join(', ')}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Dark-themed Micro-Market Tag Input (Nominatim) ───────────────────────────
+function MarketTagInputDark({ city, tags, onAdd, onRemove, disabled }: {
+  city: string; tags: string[]; onAdd: (m: string) => void;
+  onRemove: (m: string) => void; disabled?: boolean;
+}) {
+  const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<NominatimResult[]>([]);
+  const [open, setOpen] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const search = useCallback((q: string) => {
+    if (q.length < 2) { setSuggestions([]); setOpen(false); return; }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const cityQuery = city ? `${q}, ${city}` : q;
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cityQuery)}&format=json&addressdetails=1&limit=8&accept-language=en`;
+        const res = await fetch(url, { headers: { 'User-Agent': 'Novara-CRM/1.0' } });
+        const data: NominatimResult[] = await res.json();
+        setSuggestions(data.slice(0, 7));
+        setOpen(data.length > 0);
+      } catch { /* silently fail */ }
+    }, 350);
+  }, [city]);
+
+  const getMarketName = (r: NominatimResult): string =>
+    r.address?.suburb || r.address?.neighbourhood || r.address?.quarter ||
+    r.address?.village || r.address?.town || r.name;
+
+  const select = (r: NominatimResult) => {
+    const name = getMarketName(r);
+    if (name) { onAdd(name); setQuery(''); setSuggestions([]); setOpen(false); inputRef.current?.focus(); }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if ((e.key === 'Enter' || e.key === ',') && query.trim()) {
+      e.preventDefault(); onAdd(query.trim()); setQuery(''); setSuggestions([]); setOpen(false);
+    }
+    if (e.key === 'Backspace' && !query && tags.length > 0) onRemove(tags[tags.length - 1]);
+  };
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative' }}>
+      <div
+        onClick={() => !disabled && inputRef.current?.focus()}
+        style={{
+          display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 12px',
+          borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)',
+          background: 'rgba(255,255,255,0.05)', minHeight: 44, alignItems: 'center',
+          cursor: disabled ? 'default' : 'text', opacity: disabled ? 0.4 : 1,
+        }}
+      >
+        {tags.map(tag => (
+          <span key={tag} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 20, background: IG_ACCENT + '25', color: IG_ACCENT, fontSize: 12, fontWeight: 600, flexShrink: 0 }}>
+            {tag}
+            <button type="button" onClick={e => { e.stopPropagation(); !disabled && onRemove(tag); }}
+              style={{ border: 'none', background: 'none', cursor: 'pointer', color: IG_ACCENT, fontSize: 15, lineHeight: 1, padding: 0 }}>×</button>
+          </span>
+        ))}
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
+          onChange={e => !disabled && (setQuery(e.target.value), search(e.target.value))}
+          onKeyDown={handleKeyDown}
+          onFocus={() => suggestions.length > 0 && setOpen(true)}
+          disabled={disabled}
+          placeholder={tags.length === 0 ? (city ? `Search localities in ${city}…` : 'Search any locality or neighbourhood…') : ''}
+          style={{ border: 'none', outline: 'none', background: 'transparent', color: 'white', fontSize: 13, minWidth: 160, flex: 1 }}
+        />
+      </div>
+      <p style={{ fontSize: 11, color: '#475569', marginTop: 4 }}>
+        Search and select from map · or type any name and press <kbd style={{ fontSize: 10, background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8' }}>Enter</kbd>
+      </p>
+      {open && suggestions.length > 0 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+          background: '#1e293b', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5)', marginTop: 4, overflow: 'hidden',
+        }}>
+          {suggestions.map(r => {
+            const name = getMarketName(r);
+            const context = [r.address?.city, r.address?.town, r.address?.state].filter(Boolean).join(', ');
+            const alreadyAdded = tags.includes(name);
+            return (
+              <div key={r.place_id} onMouseDown={() => !alreadyAdded && select(r)}
+                style={{ padding: '9px 14px', cursor: alreadyAdded ? 'default' : 'pointer', borderBottom: '1px solid rgba(255,255,255,0.06)', fontSize: 13, opacity: alreadyAdded ? 0.5 : 1 }}
+                onMouseEnter={e => { if (!alreadyAdded) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <span style={{ fontWeight: 600, color: 'white' }}>📍 {name}</span>
+                {alreadyAdded && <span style={{ fontSize: 10, color: '#34d399', marginLeft: 6 }}>✓ Added</span>}
+                {context && <div style={{ fontSize: 10, color: '#475569', marginTop: 1 }}>{context}</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Custom Hashtag TagInput ──────────────────────────────────────────────────
 function TagInput({ tags, onAdd, onRemove, placeholder, accent }: {
   tags: string[]; onAdd: (t: string) => void; onRemove: (t: string) => void;
   placeholder: string; accent: string;
@@ -217,6 +446,11 @@ export default function InstagramMinerPage() {
   const [filter, setFilter] = useState('');
   const [showTopPosts, setShowTopPosts] = useState(true);
   const [showDebug, setShowDebug] = useState(false);
+
+  // Deduplication
+  const [usedUrls, setUsedUrls] = useState<string[]>([]);
+  useEffect(() => { setUsedUrls(loadUsedUrls()); }, []);
+
   const stepTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const parsedManualUrls = useMemo(
@@ -262,6 +496,7 @@ export default function InstagramMinerPage() {
           propertyType, bhkConfig: bhk || undefined, customHashtags,
           manualPostUrls: parsedManualUrls,
           resultsLimit,
+          excludedUrls: isManualMode ? [] : usedUrls,
         }),
       });
 
@@ -274,12 +509,25 @@ export default function InstagramMinerPage() {
       setGeneratedHashtags(data.hashtags || []);
       setNearbyAreasUsed(data.nearbyAreas || []);
       if (data.debugSummary) setDebugSummary(data.debugSummary);
+
+      // Save newly scraped post URLs for deduplication in future runs
+      if (!isManualMode && data.topPosts?.length) {
+        const newUrls = data.topPosts.map(p => p.url).filter(Boolean);
+        const merged = [...new Set([...usedUrls, ...newUrls])];
+        setUsedUrls(merged);
+        saveUsedUrls(merged);
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Mining failed');
     } finally {
       if (stepTimer.current) clearInterval(stepTimer.current);
       setLoading(false);
     }
+  };
+
+  const clearHistory = () => {
+    setUsedUrls([]);
+    saveUsedUrls([]);
   };
 
   const filteredCommenters = useMemo(() => {
@@ -341,10 +589,13 @@ export default function InstagramMinerPage() {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
             {/* City */}
-            <div>
+            <div style={{ opacity: isManualMode ? 0.4 : 1 }}>
               <Label hint={isManualMode ? '— ignored in URL mode' : '— required'}>City</Label>
-              <input value={city} onChange={e => setCity(e.target.value)} placeholder="e.g. Bangalore"
-                style={{ ...inputStyle, opacity: isManualMode ? 0.4 : 1 }} disabled={isManualMode} />
+              <CitySearchDark
+                value={city}
+                onChange={(c) => { setCity(c); setMicroMarkets([]); }}
+                disabled={isManualMode}
+              />
             </div>
 
             {/* Results Limit */}
@@ -359,15 +610,13 @@ export default function InstagramMinerPage() {
             {/* Micro-Markets */}
             <div style={{ gridColumn: '1 / -1', opacity: isManualMode ? 0.4 : 1 }}>
               <Label hint="— nearby areas auto-included from built-in locality map">Micro-Markets / Target Areas</Label>
-              <TagInput tags={microMarkets}
+              <MarketTagInputDark
+                city={city}
+                tags={microMarkets}
                 onAdd={t => !isManualMode && setMicroMarkets(m => m.includes(t) ? m : [...m, t])}
                 onRemove={t => !isManualMode && setMicroMarkets(m => m.filter(x => x !== t))}
-                placeholder="e.g. Kalyan Nagar, Whitefield, Koramangala..." accent={IG_ACCENT} />
-              {!isManualMode && microMarkets.length > 0 && (
-                <p style={{ fontSize: 11, color: '#475569', margin: '5px 0 0' }}>
-                  ℹ️ Nearby areas automatically added from locality map · Posts in the broader {city || 'city'} area also captured
-                </p>
-              )}
+                disabled={isManualMode}
+              />
             </div>
 
             {/* Budget */}
@@ -445,6 +694,18 @@ export default function InstagramMinerPage() {
               <div style={{ fontSize: 11, color: '#334155', marginTop: 8 }}>
                 Scoring: City (25) · Micro-market (25) · Property type (15) · BHK (10) · Budget (10) · Buyer intent (10) · Engagement (5) = 100 pts · Min score to select: 40 (prefer ≥55)
               </div>
+            </div>
+          )}
+
+          {/* Dedup status + clear */}
+          {!isManualMode && usedUrls.length > 0 && (
+            <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <span style={{ fontSize: 12, color: '#475569' }}>
+                🔁 <strong style={{ color: '#64748b' }}>{usedUrls.length}</strong> post{usedUrls.length !== 1 ? 's' : ''} already scraped — will be skipped
+              </span>
+              <button type="button" onClick={clearHistory} style={{ fontSize: 11, color: '#f87171', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+                Clear history
+              </button>
             </div>
           )}
 
@@ -545,7 +806,6 @@ export default function InstagramMinerPage() {
                       {p.caption && p.caption !== 'Manual URL' && (
                         <div style={{ fontSize: 11, color: '#475569', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.caption}</div>
                       )}
-                      {/* Condition badges */}
                       {p.matchedConditions && p.matchedConditions.length > 0 && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
                           {p.matchedConditions.map(c => {
@@ -558,13 +818,9 @@ export default function InstagramMinerPage() {
                           })}
                         </div>
                       )}
-                      {/* Reason selected */}
                       {p.reasonSelected && p.reasonSelected !== 'Manual URL — criteria not applied' && (
-                        <div style={{ fontSize: 10, color: '#475569', marginTop: 5, fontStyle: 'italic' }}>
-                          {p.reasonSelected}
-                        </div>
+                        <div style={{ fontSize: 10, color: '#475569', marginTop: 5, fontStyle: 'italic' }}>{p.reasonSelected}</div>
                       )}
-                      {/* Score breakdown tooltip-style */}
                       {p.scoreBreakdown && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
                           {Object.entries(p.scoreBreakdown).map(([k, v]) => v > 0 ? (
@@ -590,7 +846,7 @@ export default function InstagramMinerPage() {
           </div>
         )}
 
-        {/* Debug Summary (collapsible) */}
+        {/* Debug Summary */}
         {debugSummary && !loading && mode === 'hashtag' && (
           <div style={{ marginBottom: 16 }}>
             <button type="button" onClick={() => setShowDebug(p => !p)} style={{
@@ -599,7 +855,7 @@ export default function InstagramMinerPage() {
               color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             }}>
-              <span>🔬 Debug Summary — {debugSummary.totalScanned} posts scanned → {debugSummary.selectedPosts} selected</span>
+              <span>🔬 Debug — {debugSummary.totalScanned} scanned → {debugSummary.selectedPosts} selected</span>
               <span>{showDebug ? '▲' : '▼'}</span>
             </button>
             {showDebug && (

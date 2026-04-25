@@ -503,6 +503,8 @@ export async function POST(req: NextRequest) {
       resultsLimit = 100,
     } = body;
 
+    const excludedUrls = new Set<string>((body.excludedUrls as string[]) || []);
+
     const apifyKey = await getApiKey('apify');
     if (!apifyKey) {
       return NextResponse.json(
@@ -573,6 +575,10 @@ export async function POST(req: NextRequest) {
 
     for (const item of postItems) {
       if (!item.url) continue;
+
+      // Hard filter: already scraped
+      const itemUrl = item.url as string;
+      if (excludedUrls.has(itemUrl)) { bump('already_scraped'); continue; }
 
       // Hard filter: age
       const ts = (item.timestamp as string) || '';
