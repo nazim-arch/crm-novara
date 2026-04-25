@@ -263,35 +263,44 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Helper: extract comments and push to allResults ───────────────────────
-    const scrapeComments = async (urls: string[], perUrlLimit: number, tag: string) => {
-      if (urls.length === 0) return 0;
-      const commentInput = isStandardScraper
-        ? { directUrls: urls, resultsType: 'comments', resultsLimit: perUrlLimit }
-        : { directUrls: urls, postUrls: urls, resultsLimit: perUrlLimit };
+    // ── Helper: extract comments — non-fatal, returns error string on failure ──
+    let commentScrapeError: string | null = null;
 
-      const commentRunId = await runApifyActor(commentActorId, commentInput, apifyKey);
-      const datasetId = await waitForApifyRun(commentRunId, apifyKey);
-      const items = await fetchApifyDataset(datasetId, apifyKey) as Record<string, unknown>[];
-      let count = 0;
-      for (const comment of items) {
-        const username = (comment.ownerUsername || comment.username || comment.authorUsername) as string | undefined;
-        if (username) {
-          const text = (comment.text || comment.comment || '') as string;
-          const shortCode = comment.postShortCode as string | undefined;
-          allResults.push({
-            username,
-            interaction: text ? `💬 "${text.slice(0, 140)}${text.length > 140 ? '...' : ''}"` : '💬 Commented',
-            interactionType: 'comment',
-            postUrl: (comment.postUrl as string) || (comment.url as string) || (shortCode ? `https://www.instagram.com/p/${shortCode}/` : ''),
-            postCaption: '',
-            hashtag: tag,
-            timestamp: (comment.timestamp as string) || new Date().toISOString(),
-          });
-          count++;
+    const scrapeComments = async (urls: string[], perUrlLimit: number, tag: string): Promise<number> => {
+      if (urls.length === 0) return 0;
+      try {
+        const commentInput = isStandardScraper
+          ? { directUrls: urls, resultsType: 'comments', resultsLimit: perUrlLimit }
+          : { directUrls: urls, postUrls: urls, resultsLimit: perUrlLimit };
+
+        const commentRunId = await runApifyActor(commentActorId, commentInput, apifyKey);
+        const datasetId = await waitForApifyRun(commentRunId, apifyKey);
+        const items = await fetchApifyDataset(datasetId, apifyKey) as Record<string, unknown>[];
+        let count = 0;
+        for (const comment of items) {
+          const username = (comment.ownerUsername || comment.username || comment.authorUsername) as string | undefined;
+          if (username) {
+            const text = (comment.text || comment.comment || '') as string;
+            const shortCode = comment.postShortCode as string | undefined;
+            allResults.push({
+              username,
+              interaction: text ? `💬 "${text.slice(0, 140)}${text.length > 140 ? '...' : ''}"` : '💬 Commented',
+              interactionType: 'comment',
+              postUrl: (comment.postUrl as string) || (comment.url as string) || (shortCode ? `https://www.instagram.com/p/${shortCode}/` : ''),
+              postCaption: '',
+              hashtag: tag,
+              timestamp: (comment.timestamp as string) || new Date().toISOString(),
+            });
+            count++;
+          }
         }
+        return count;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[IntentRadar] Comment scraping failed (actor: ${commentActorId}):`, msg);
+        commentScrapeError = `Comment scraping skipped: ${msg}`;
+        return 0;
       }
-      return count;
     };
 
     // ── Step 2a: Manual URLs — full comment budget per post ───────────────────
@@ -340,6 +349,7 @@ export async function POST(req: NextRequest) {
       commentCount: finalResults.filter(r => r.interactionType === 'comment').length,
       buyerPostCount: finalResults.filter(r => r.hashtag === 'buyer-intent').length,
       commentActorId,
+      commentScrapeWarning: commentScrapeError,
     });
 
   } catch (error: unknown) {

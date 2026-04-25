@@ -24,6 +24,7 @@ interface MineResponse {
   postsScraped: number;
   commentCount: number;
   buyerPostCount: number;
+  commentScrapeWarning?: string | null;
   error?: string;
 }
 
@@ -223,6 +224,7 @@ export default function InstagramMinerPage() {
   const [postsScraped, setPostsScraped] = useState(0);
   const [commentCount, setCommentCount] = useState(0);
   const [buyerPostCount, setBuyerPostCount] = useState(0);
+  const [commentWarning, setCommentWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const stepTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -282,6 +284,7 @@ export default function InstagramMinerPage() {
       setPostsScraped(data.postsScraped);
       setCommentCount(data.commentCount || 0);
       setBuyerPostCount(data.buyerPostCount || 0);
+      setCommentWarning(data.commentScrapeWarning || null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Mining failed');
     } finally {
@@ -589,6 +592,16 @@ export default function InstagramMinerPage() {
         )}
 
         {/* ── Results ──────────────────────────────────────────────────────── */}
+        {commentWarning && results !== null && !loading && (
+          <div style={{ marginBottom: 12, padding: '12px 18px', borderRadius: 12, background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.3)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#fbbf24', marginBottom: 2 }}>Comment scraping skipped — showing buyer posts only</div>
+              <div style={{ fontSize: 12, color: '#92400e' }}>{commentWarning}. To fix: go to <Link href="/intentradar/settings" style={{ color: '#fbbf24' }}>Settings → Apify Actor Configuration</Link> and verify the actor ID.</div>
+            </div>
+          </div>
+        )}
+
         {results !== null && !loading && (
           <div style={{ ...glassCard, overflow: 'hidden' }}>
 
