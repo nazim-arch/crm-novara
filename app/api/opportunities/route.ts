@@ -94,7 +94,7 @@ export async function POST(request: Request) {
         created_by_id: session.user.id,
         configurations: {
           create: configRows.map((row) => ({
-            label: row.label,
+            label: row.label ?? "",
             number_of_units: row.number_of_units,
             price_per_unit: row.price_per_unit,
             row_total: row.row_total,

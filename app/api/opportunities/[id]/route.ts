@@ -94,7 +94,7 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
         total_sales_value, possible_revenue, updated_at: new Date(),
         configurations: {
           create: configRows.map((row) => ({
-            label: row.label, number_of_units: row.number_of_units,
+            label: row.label ?? "", number_of_units: row.number_of_units,
             price_per_unit: row.price_per_unit, row_total: row.row_total,
             land_area: row.land_area ?? null,
             area_unit: row.area_unit ?? null,

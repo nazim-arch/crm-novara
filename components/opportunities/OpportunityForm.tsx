@@ -343,7 +343,7 @@ export function OpportunityForm({
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-              {isLand ? "Land Parcels" : "Inventory / Configurations"}{" "}
+              Inventory / Configurations{" "}
               <span className="text-destructive">*</span>
             </CardTitle>
             <Button
@@ -382,16 +382,11 @@ export function OpportunityForm({
                     {/* Row 1: label + delete */}
                     <div className="flex items-start gap-2">
                       <div className="flex-1">
-                        <Label className="text-xs text-muted-foreground mb-1 block">Label / Parcel</Label>
+                        <Label className="text-xs text-muted-foreground mb-1 block">Label / Parcel <span className="text-muted-foreground/60">(optional)</span></Label>
                         <Input
                           placeholder={labelPlaceholder}
                           {...register(`configurations.${index}.label`)}
                         />
-                        {errors.configurations?.[index]?.label && (
-                          <p className="text-xs text-destructive mt-0.5">
-                            {errors.configurations[index]?.label?.message}
-                          </p>
-                        )}
                       </div>
                       <Button
                         type="button"

@@ -7,7 +7,7 @@ export const PROPERTY_TYPES = ["Residential", "Commercial", "Plot", "Villa", "Ap
 
 export const configurationRowSchema = z.object({
   id: z.string().optional(),
-  label: z.string().min(1, "Label is required"),
+  label: z.string().optional().or(z.literal("")),
   number_of_units: z.coerce.number({ message: "Must be a number" }).int("Must be a whole number").min(1, "Must be at least 1"),
   price_per_unit: z.coerce.number({ message: "Must be a number" }).positive("Must be greater than 0"),
   // Land-specific (optional — only used when property_type = Land)
