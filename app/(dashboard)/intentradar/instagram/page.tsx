@@ -12,12 +12,33 @@ interface Commenter {
   timestamp: string;
 }
 
+interface MatchedCriteria {
+  city: string | false;
+  microMarket: string | false;
+  propertyType: string | false;
+  bhk: string | false;
+  budget: string | false;
+  buyerIntentComments: number;
+  engagementLevel: string;
+}
+
 interface TopPost {
   url: string;
   commentsCount: number;
   score: number;
   caption: string;
   matchedConditions?: string[];
+  matchedCriteria?: MatchedCriteria;
+  scoreBreakdown?: Record<string, number>;
+  reasonSelected?: string;
+}
+
+interface DebugSummary {
+  totalScanned: number;
+  eligibleAfterAgeFilter: number;
+  eligibleAfterEngagementFilter: number;
+  selectedPosts: number;
+  rejectedReasons: Record<string, number>;
 }
 
 interface MineResponse {
@@ -26,13 +47,13 @@ interface MineResponse {
   postsScraped: number;
   topPosts: TopPost[];
   hashtags: string[];
+  nearbyAreas?: string[];
   mode: 'manual' | 'hashtag';
-  eligibleFound?: number;
-  totalScanned?: number;
+  debugSummary?: DebugSummary;
   error?: string;
 }
 
-// ─── Client hashtag preview (mirrors server generateSearchHashtags) ────────────
+// ─── Client hashtag preview ───────────────────────────────────────────────────
 function previewHashtags(inputs: {
   city: string; microMarkets: string[]; propertyType: string;
   bhkConfig?: string; customHashtags?: string[];
@@ -40,28 +61,26 @@ function previewHashtags(inputs: {
   const { city, microMarkets, propertyType, bhkConfig, customHashtags } = inputs;
   const citySlug = city.toLowerCase().replace(/[^a-z0-9]/g, '');
   const propSlug = propertyType.toLowerCase().replace(/[^a-z]/g, '');
+  const bhkSlug = bhkConfig ? bhkConfig.toLowerCase().replace(/\s/g, '') : '';
   const tags = new Set<string>();
 
   tags.add(`${citySlug}realestate`);
+  tags.add(`${citySlug}property`);
   tags.add(`${citySlug}${propSlug}`);
-  tags.add(`${citySlug}properties`);
   tags.add(`${citySlug}flats`);
   tags.add(`${citySlug}homes`);
-  tags.add(`new${propSlug}${citySlug}`);
+  tags.add(`readytomove${citySlug}`);
 
   for (const market of microMarkets.slice(0, 5)) {
     const mSlug = market.toLowerCase().replace(/[^a-z0-9]/g, '');
     tags.add(mSlug);
     tags.add(`${mSlug}${propSlug}`);
-    tags.add(`${citySlug}${mSlug}`);
-    if (bhkConfig) tags.add(`${bhkConfig.toLowerCase().replace(/\s/g, '')}${mSlug}`);
+    if (bhkSlug) tags.add(`${bhkSlug}${mSlug}`);
   }
 
-  if (bhkConfig) {
-    const bhkSlug = bhkConfig.toLowerCase().replace(/\s/g, '');
+  if (bhkSlug) {
     tags.add(`${bhkSlug}${citySlug}`);
     tags.add(`${bhkSlug}${propSlug}`);
-    tags.add(`${bhkSlug}forsale`);
   }
 
   tags.add(`${propSlug}forsale`);
@@ -73,7 +92,7 @@ function previewHashtags(inputs: {
     for (const tag of customHashtags) tags.add(tag.replace(/^#/, '').replace(/\s/g, '').toLowerCase());
   }
 
-  return Array.from(tags).filter(Boolean).slice(0, 22);
+  return Array.from(tags).filter(Boolean).slice(0, 20);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -92,13 +111,29 @@ function shortcode(url: string): string {
   return m ? `/${m[1]}/${m[2]}` : url.slice(-16);
 }
 
+function scoreColor(score: number): string {
+  if (score >= 70) return '#4ade80';
+  if (score >= 55) return '#facc15';
+  return '#f87171';
+}
+
 const CONDITION_LABELS: Record<string, { label: string; color: string; bg: string }> = {
-  city:          { label: 'City',       color: '#818cf8', bg: 'rgba(99,102,241,0.15)' },
-  location:      { label: 'Location',   color: '#4ade80', bg: 'rgba(34,197,94,0.12)' },
-  property_type: { label: 'Type',       color: '#60a5fa', bg: 'rgba(59,130,246,0.12)' },
-  bhk:           { label: 'BHK',        color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
-  budget:        { label: 'Budget',     color: '#e1306c', bg: 'rgba(225,48,108,0.12)' },
-  manual:        { label: 'Manual URL', color: '#a3e635', bg: 'rgba(163,230,53,0.12)' },
+  city:          { label: 'City',         color: '#818cf8', bg: 'rgba(99,102,241,0.15)' },
+  location:      { label: 'Location',     color: '#4ade80', bg: 'rgba(34,197,94,0.12)' },
+  property_type: { label: 'Type',         color: '#60a5fa', bg: 'rgba(59,130,246,0.12)' },
+  bhk:           { label: 'BHK',          color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
+  budget:        { label: 'Budget',       color: '#e1306c', bg: 'rgba(225,48,108,0.12)' },
+  buyer_intent:  { label: 'Buyer Intent', color: '#34d399', bg: 'rgba(52,211,153,0.12)' },
+  manual:        { label: 'Manual URL',   color: '#a3e635', bg: 'rgba(163,230,53,0.12)' },
+};
+
+const REJECTION_LABELS: Record<string, string> = {
+  older_than_90_days:      'Too old (>90 days)',
+  low_comment_count:       'Low engagement (≤5 comments)',
+  wrong_property_type:     'Wrong property type',
+  wrong_city:              'City not matched',
+  weak_relevance_score:    'Low relevance score (<40)',
+  no_buyer_intent:         'No buyer intent signals',
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -116,10 +151,10 @@ const STEPS_MANUAL = [
 ];
 
 const STEPS_HASHTAG = [
-  '🔍 Scanning hashtags for matching real estate posts...',
+  '🔍 Scanning hashtags + nearby areas for matching posts...',
   '📊 Filtering by age (≤90 days) and engagement (>5 comments)...',
-  '🎯 Scoring posts by city · location · type · BHK · budget...',
-  '💬 Extracting commenters from top-ranked posts...',
+  '🎯 Scoring posts: city · location · type · BHK · budget · buyer intent...',
+  '💬 Extracting commenters from top-scored posts...',
 ];
 
 // ─── Components ───────────────────────────────────────────────────────────────
@@ -175,11 +210,13 @@ export default function InstagramMinerPage() {
   const [commenters, setCommenters] = useState<Commenter[] | null>(null);
   const [topPosts, setTopPosts] = useState<TopPost[]>([]);
   const [postsScraped, setPostsScraped] = useState(0);
-  const [scanStats, setScanStats] = useState<{ total: number; eligible: number } | null>(null);
   const [generatedHashtags, setGeneratedHashtags] = useState<string[]>([]);
+  const [nearbyAreasUsed, setNearbyAreasUsed] = useState<string[]>([]);
+  const [debugSummary, setDebugSummary] = useState<DebugSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const [showTopPosts, setShowTopPosts] = useState(true);
+  const [showDebug, setShowDebug] = useState(false);
   const stepTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const parsedManualUrls = useMemo(
@@ -194,7 +231,7 @@ export default function InstagramMinerPage() {
   }, [city, microMarkets, propertyType, bhk, customHashtags, isManualMode]);
 
   const hasHashtagInputs = !!city.trim() && microMarkets.length > 0;
-  const canStart = isManualMode || (hasHashtagInputs && !!budgetMin && !!budgetMax);
+  const canStart = isManualMode || hasHashtagInputs;
 
   const STEPS = isManualMode ? STEPS_MANUAL : STEPS_HASHTAG;
 
@@ -203,7 +240,8 @@ export default function InstagramMinerPage() {
     setError(null);
     setCommenters(null);
     setTopPosts([]);
-    setScanStats(null);
+    setDebugSummary(null);
+    setNearbyAreasUsed([]);
     setStepIndex(0);
     setMode(isManualMode ? 'manual' : 'hashtag');
 
@@ -234,9 +272,8 @@ export default function InstagramMinerPage() {
       setTopPosts(data.topPosts || []);
       setPostsScraped(data.postsScraped || 0);
       setGeneratedHashtags(data.hashtags || []);
-      if (data.totalScanned != null) {
-        setScanStats({ total: data.totalScanned, eligible: data.eligibleFound ?? 0 });
-      }
+      setNearbyAreasUsed(data.nearbyAreas || []);
+      if (data.debugSummary) setDebugSummary(data.debugSummary);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Mining failed');
     } finally {
@@ -283,7 +320,7 @@ export default function InstagramMinerPage() {
             <div style={{ fontSize: 48, marginBottom: 10 }}>📸</div>
             <h1 style={{ fontSize: 30, fontWeight: 800, margin: '0 0 8px', color: 'white' }}>Instagram Intent Miner</h1>
             <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, margin: 0, maxWidth: 520, marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.6 }}>
-              Finds the most relevant, high-comment real estate posts matching your criteria → extracts only the commenters
+              Weighted relevance scoring across city · micro-market · nearby areas · property type · BHK · budget · buyer intent → extracts only the commenters
             </p>
           </div>
         </div>
@@ -321,21 +358,21 @@ export default function InstagramMinerPage() {
 
             {/* Micro-Markets */}
             <div style={{ gridColumn: '1 / -1', opacity: isManualMode ? 0.4 : 1 }}>
-              <Label hint="— press Enter or comma to add; nearby areas auto-included via city hashtags">Micro-Markets</Label>
+              <Label hint="— nearby areas auto-included from built-in locality map">Micro-Markets / Target Areas</Label>
               <TagInput tags={microMarkets}
                 onAdd={t => !isManualMode && setMicroMarkets(m => m.includes(t) ? m : [...m, t])}
                 onRemove={t => !isManualMode && setMicroMarkets(m => m.filter(x => x !== t))}
                 placeholder="e.g. Kalyan Nagar, Whitefield, Koramangala..." accent={IG_ACCENT} />
               {!isManualMode && microMarkets.length > 0 && (
                 <p style={{ fontSize: 11, color: '#475569', margin: '5px 0 0' }}>
-                  ℹ️ Posts in your specified areas AND broader {city || 'city'} area will be captured via city-level hashtags
+                  ℹ️ Nearby areas automatically added from locality map · Posts in the broader {city || 'city'} area also captured
                 </p>
               )}
             </div>
 
             {/* Budget */}
             <div style={{ gridColumn: '1 / -1', opacity: isManualMode ? 0.4 : 1 }}>
-              <Label hint="— extended ±30% when matching posts (60–80L matches posts mentioning 42L–104L)">Budget Range (₹ Lakhs)</Label>
+              <Label hint="— optional, improves scoring accuracy (±25% tolerance applied)">Budget Range (₹ Lakhs)</Label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <input type="number" value={budgetMin} onChange={e => !isManualMode && setBudgetMin(e.target.value)} placeholder="Min e.g. 60" style={{ ...inputStyle, flex: 1 }} disabled={isManualMode} />
                 <span style={{ color: '#475569', fontWeight: 600, flexShrink: 0 }}>to</span>
@@ -375,7 +412,7 @@ export default function InstagramMinerPage() {
 
             {/* Custom Hashtags */}
             <div style={{ gridColumn: '1 / -1', opacity: isManualMode ? 0.4 : 1 }}>
-              <Label hint="— optional extra hashtags to search">Custom Hashtags</Label>
+              <Label hint="— optional extra hashtags">Custom Hashtags</Label>
               <TagInput tags={customHashtags}
                 onAdd={t => { const c = t.replace(/^#/, '').replace(/\s/g, '').toLowerCase(); if (c && !isManualMode) setCustomHashtags(h => h.includes(c) ? h : [...h, c]); }}
                 onRemove={t => !isManualMode && setCustomHashtags(h => h.filter(x => x !== t))}
@@ -384,7 +421,7 @@ export default function InstagramMinerPage() {
 
             {/* Manual URLs */}
             <div style={{ gridColumn: '1 / -1' }}>
-              <Label hint="— paste specific reels/posts to mine comments from (bypasses all other criteria)">
+              <Label hint="— bypasses all criteria, extracts commenters directly">
                 🎯 Target Posts / Reels
               </Label>
               <textarea value={manualUrls} onChange={e => setManualUrls(e.target.value)}
@@ -397,15 +434,16 @@ export default function InstagramMinerPage() {
           {!isManualMode && hashtagPreview.length > 0 && (
             <div style={{ marginTop: 20, padding: '14px 18px', borderRadius: 10, background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)' }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: '#818cf8', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>
-                🔍 {hashtagPreview.length} hashtags to search — posts filtered by relevance score
+                🔍 {hashtagPreview.length}+ hashtags to search (+ nearby area tags auto-added)
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                 {hashtagPreview.map(tag => (
                   <span key={tag} style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 12, background: 'rgba(99,102,241,0.15)', color: '#a5b4fc' }}>#{tag}</span>
                 ))}
+                <span style={{ fontSize: 11, padding: '3px 10px', color: '#475569' }}>+ nearby area hashtags</span>
               </div>
               <div style={{ fontSize: 11, color: '#334155', marginTop: 8 }}>
-                Post selection rules: ≤90 days old · {'>'}5 comments · city match mandatory · at least 2 conditions matched · budget extended ±30%
+                Scoring: City (25) · Micro-market (25) · Property type (15) · BHK (10) · Budget (10) · Buyer intent (10) · Engagement (5) = 100 pts · Min score to select: 40 (prefer ≥55)
               </div>
             </div>
           )}
@@ -422,7 +460,7 @@ export default function InstagramMinerPage() {
             </button>
             {!canStart && !loading && (
               <p style={{ fontSize: 12, color: '#475569', textAlign: 'center', margin: '8px 0 0' }}>
-                {isManualMode ? 'Ready — click to extract' : 'Required: City · Micro-Markets · Budget  —  OR  —  paste post URLs above'}
+                {isManualMode ? 'Ready — click to extract' : 'Required: City + at least one Micro-Market  —  OR  —  paste post URLs above'}
               </p>
             )}
           </div>
@@ -461,12 +499,22 @@ export default function InstagramMinerPage() {
             <div style={{ fontSize: 14, color: '#64748b', maxWidth: 520, margin: '0 auto', lineHeight: 1.7 }}>
               <strong style={{ color: '#94a3b8' }}>Two ways to use:</strong><br />
               <span style={{ color: '#4ade80' }}>① Paste a reel/post URL</span> → extracts all commenters directly<br />
-              <span style={{ color: '#818cf8' }}>② Fill City + Area + Budget</span> → finds top relevant posts → extracts commenters
+              <span style={{ color: '#818cf8' }}>② Fill City + Area</span> → weighted scoring finds best-match posts → extracts commenters
             </div>
           </div>
         )}
 
-        {/* Top Posts Selected (collapsible) */}
+        {/* Nearby Areas Used */}
+        {nearbyAreasUsed.length > 0 && !loading && mode === 'hashtag' && (
+          <div style={{ marginBottom: 12, padding: '10px 16px', borderRadius: 10, background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.2)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#34d399', flexShrink: 0 }}>📍 Nearby areas searched:</span>
+            {nearbyAreasUsed.map(a => (
+              <span key={a} style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, background: 'rgba(52,211,153,0.12)', color: '#6ee7b7', fontWeight: 600 }}>{a}</span>
+            ))}
+          </div>
+        )}
+
+        {/* Top Posts Selected */}
         {topPosts.length > 0 && !loading && (
           <div style={{ marginBottom: 16 }}>
             <button type="button" onClick={() => setShowTopPosts(p => !p)} style={{
@@ -477,9 +525,9 @@ export default function InstagramMinerPage() {
             }}>
               <span>
                 📊 {topPosts.length} post{topPosts.length > 1 ? 's' : ''} selected for comment mining
-                {mode === 'hashtag' && scanStats && (
+                {mode === 'hashtag' && debugSummary && (
                   <span style={{ color: '#475569', fontWeight: 400, fontSize: 12, marginLeft: 8 }}>
-                    ({scanStats.eligible} eligible from {scanStats.total} scanned)
+                    ({debugSummary.eligibleAfterEngagementFilter} eligible from {debugSummary.totalScanned} scanned)
                   </span>
                 )}
               </span>
@@ -497,6 +545,7 @@ export default function InstagramMinerPage() {
                       {p.caption && p.caption !== 'Manual URL' && (
                         <div style={{ fontSize: 11, color: '#475569', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.caption}</div>
                       )}
+                      {/* Condition badges */}
                       {p.matchedConditions && p.matchedConditions.length > 0 && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
                           {p.matchedConditions.map(c => {
@@ -509,15 +558,80 @@ export default function InstagramMinerPage() {
                           })}
                         </div>
                       )}
+                      {/* Reason selected */}
+                      {p.reasonSelected && p.reasonSelected !== 'Manual URL — criteria not applied' && (
+                        <div style={{ fontSize: 10, color: '#475569', marginTop: 5, fontStyle: 'italic' }}>
+                          {p.reasonSelected}
+                        </div>
+                      )}
+                      {/* Score breakdown tooltip-style */}
+                      {p.scoreBreakdown && (
+                        <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                          {Object.entries(p.scoreBreakdown).map(([k, v]) => v > 0 ? (
+                            <span key={k} style={{ fontSize: 9, padding: '1px 6px', borderRadius: 6, background: 'rgba(255,255,255,0.06)', color: '#64748b', fontWeight: 600 }}>
+                              {k} +{v}
+                            </span>
+                          ) : null)}
+                        </div>
+                      )}
                     </div>
                     {p.commentsCount > 0 && (
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 700, color: '#e1306c' }}>{p.commentsCount.toLocaleString()} 💬</div>
-                        {p.score > 0 && <div style={{ fontSize: 10, color: '#334155' }}>score {p.score}</div>}
+                        {p.score > 0 && (
+                          <div style={{ fontSize: 11, fontWeight: 700, color: scoreColor(p.score), marginTop: 2 }}>{p.score}/100</div>
+                        )}
                       </div>
                     )}
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Debug Summary (collapsible) */}
+        {debugSummary && !loading && mode === 'hashtag' && (
+          <div style={{ marginBottom: 16 }}>
+            <button type="button" onClick={() => setShowDebug(p => !p)} style={{
+              width: '100%', padding: '10px 18px', borderRadius: 10,
+              background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
+              color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <span>🔬 Debug Summary — {debugSummary.totalScanned} posts scanned → {debugSummary.selectedPosts} selected</span>
+              <span>{showDebug ? '▲' : '▼'}</span>
+            </button>
+            {showDebug && (
+              <div style={{ marginTop: 6, padding: '16px 18px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', fontSize: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 14 }}>
+                  {[
+                    ['Total scanned', debugSummary.totalScanned],
+                    ['After age filter (≤90 days)', debugSummary.eligibleAfterAgeFilter],
+                    ['After engagement filter (>5 comments)', debugSummary.eligibleAfterEngagementFilter],
+                    ['Selected for mining', debugSummary.selectedPosts],
+                  ].map(([label, val]) => (
+                    <div key={label as string} style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.04)' }}>
+                      <div style={{ fontSize: 10, color: '#475569', marginBottom: 3 }}>{label}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: 'white' }}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+                {Object.keys(debugSummary.rejectedReasons).length > 0 && (
+                  <>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#475569', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.8 }}>Rejection Reasons</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {Object.entries(debugSummary.rejectedReasons)
+                        .sort(([, a], [, b]) => b - a)
+                        .map(([reason, count]) => (
+                          <div key={reason} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderRadius: 6, background: 'rgba(239,68,68,0.06)' }}>
+                            <span style={{ color: '#94a3b8' }}>{REJECTION_LABELS[reason] || reason}</span>
+                            <span style={{ fontWeight: 700, color: '#f87171' }}>{count}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
