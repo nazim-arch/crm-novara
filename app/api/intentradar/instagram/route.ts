@@ -34,6 +34,10 @@ interface ScoredPost {
 
 interface DebugSummary {
   totalScanned: number;
+  rawUrlsFound: number;
+  validPostUrls: number;
+  rejectedInvalidUrls: number;
+  invalidUrlExamples: string[];
   eligibleAfterAgeFilter: number;
   eligibleAfterEngagementFilter: number;
   selectedPosts: number;
@@ -334,6 +338,53 @@ function deriveMatchedConditions(mc: MatchedCriteria): string[] {
   return out;
 }
 
+// ─── URL Validation & Normalization ──────────────────────────────────────────
+// Only /p/ and /reel/ URLs with a valid shortcode are accepted as mining targets.
+// Hashtag pages, profile pages, explore pages etc. are discovery sources only.
+
+const VALID_IG_POST_RE = /^https?:\/\/(www\.)?instagram\.com\/(p|reel)\/([A-Za-z0-9_-]{5,})\/?/;
+
+function isValidInstagramPostUrl(url: string): boolean {
+  return VALID_IG_POST_RE.test(url);
+}
+
+function normalizeInstagramUrl(url: string): string | null {
+  const m = url.match(/^https?:\/\/(www\.)?instagram\.com\/(p|reel)\/([A-Za-z0-9_-]{5,})/);
+  if (!m) return null;
+  return `https://www.instagram.com/${m[2]}/${m[3]}/`;
+}
+
+function classifyInvalidUrl(url: string): string {
+  if (!url) return 'missing_shortcode';
+  const lower = url.toLowerCase();
+  if (!lower.includes('instagram.com')) return 'invalid_url_type';
+  if (lower.includes('/explore/')) return 'hashtag_url';
+  if (lower.includes('/stories/')) return 'invalid_url_type';
+  if (lower.includes('/highlights/')) return 'invalid_url_type';
+  if (lower.includes('/search')) return 'search_url';
+  if (lower.includes('/reel/') || lower.includes('/p/')) return 'missing_shortcode';
+  return 'profile_url';
+}
+
+function extractPostUrl(item: Record<string, unknown>): string | null {
+  const rawUrl = ((item.url || item.postUrl || '') as string).trim();
+
+  // Path 1: URL is already a valid post/reel
+  if (isValidInstagramPostUrl(rawUrl)) return normalizeInstagramUrl(rawUrl);
+
+  // Path 2: Reconstruct from shortcode fields (Apify often provides these even when URL is wrong)
+  const sc = (
+    (item.shortCode || item.shortcode || item.postShortCode || item.code || '') as string
+  ).trim();
+  if (/^[A-Za-z0-9_-]{5,}$/.test(sc)) {
+    const typeHint = ((item.type || item.mediaType || item.productType || '') as string).toLowerCase();
+    const isReel = typeHint.includes('video') || rawUrl.includes('/reel/');
+    return `https://www.instagram.com/${isReel ? 'reel' : 'p'}/${sc}/`;
+  }
+
+  return null;
+}
+
 // ─── Hashtag Generator ────────────────────────────────────────────────────────
 export function generateSearchHashtags(inputs: {
   city: string;
@@ -515,10 +566,24 @@ export async function POST(req: NextRequest) {
 
     const commentActorId = normalizeActorId(await getSetting('actor_instagram_comments'));
 
-    // ── MODE A: Manual URLs — skip post finding entirely ──────────────────────
-    const manualUrls = [...new Set((manualPostUrls as string[]).filter(Boolean))].slice(0, 10);
+    // ── MODE A: Manual URLs — validate then extract commenters ───────────────
+    const rawManualUrls = [...new Set((manualPostUrls as string[]).filter(Boolean))];
+    const manualUrls: string[] = [];
+    const manualRejected: string[] = [];
+    for (const u of rawManualUrls.slice(0, 10)) {
+      const normalized = normalizeInstagramUrl(u);
+      if (normalized) manualUrls.push(normalized);
+      else manualRejected.push(u);
+    }
 
-    if (manualUrls.length > 0) {
+    if (rawManualUrls.length > 0) {
+      if (manualUrls.length === 0) {
+        return NextResponse.json({
+          error: `None of the provided URLs are valid Instagram post or reel links. ` +
+            `Only https://www.instagram.com/p/{id}/ or /reel/{id}/ URLs are accepted. ` +
+            `Rejected: ${manualRejected.slice(0, 3).join(', ')}`,
+        }, { status: 400 });
+      }
       const commenters = await extractCommenters(manualUrls, resultsLimit, commentActorId, apifyKey);
       return NextResponse.json({
         commenters,
@@ -533,6 +598,7 @@ export async function POST(req: NextRequest) {
         hashtags: [],
         nearbyAreas: [],
         mode: 'manual',
+        ...(manualRejected.length > 0 && { manualRejected }),
       });
     }
 
@@ -559,10 +625,14 @@ export async function POST(req: NextRequest) {
     const postDatasetId = await waitForApifyRun(postRunId, apifyKey);
     const postItems = await fetchApifyDataset(postDatasetId, apifyKey) as Record<string, unknown>[];
 
-    // Step 2: Hard filters + weighted scoring
+    // Step 2: URL validation — keep only valid /p/ or /reel/ items
     const THREE_MONTHS_MS = 90 * 24 * 60 * 60 * 1000;
     const debug: DebugSummary = {
       totalScanned: postItems.length,
+      rawUrlsFound: postItems.length,
+      validPostUrls: 0,
+      rejectedInvalidUrls: 0,
+      invalidUrlExamples: [],
       eligibleAfterAgeFilter: 0,
       eligibleAfterEngagementFilter: 0,
       selectedPosts: 0,
@@ -571,11 +641,24 @@ export async function POST(req: NextRequest) {
 
     const bump = (key: string) => { debug.rejectedReasons[key] = (debug.rejectedReasons[key] || 0) + 1; };
 
+    // Validate URLs and reconstruct from shortcode where possible
+    const validItems: Record<string, unknown>[] = [];
+    for (const item of postItems) {
+      const postUrl = extractPostUrl(item);
+      if (!postUrl) {
+        const rawUrl = ((item.url || '') as string);
+        debug.rejectedInvalidUrls++;
+        if (debug.invalidUrlExamples.length < 5) debug.invalidUrlExamples.push(rawUrl || '(empty)');
+        bump(classifyInvalidUrl(rawUrl));
+        continue;
+      }
+      debug.validPostUrls++;
+      validItems.push({ ...item, url: postUrl });
+    }
+
     const scoredPosts: ScoredPost[] = [];
 
-    for (const item of postItems) {
-      if (!item.url) continue;
-
+    for (const item of validItems) {
       // Hard filter: already scraped
       const itemUrl = item.url as string;
       if (excludedUrls.has(itemUrl)) { bump('already_scraped'); continue; }

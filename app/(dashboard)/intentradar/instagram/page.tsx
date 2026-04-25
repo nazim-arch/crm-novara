@@ -35,6 +35,10 @@ interface TopPost {
 
 interface DebugSummary {
   totalScanned: number;
+  rawUrlsFound: number;
+  validPostUrls: number;
+  rejectedInvalidUrls: number;
+  invalidUrlExamples: string[];
   eligibleAfterAgeFilter: number;
   eligibleAfterEngagementFilter: number;
   selectedPosts: number;
@@ -147,12 +151,18 @@ const CONDITION_LABELS: Record<string, { label: string; color: string; bg: strin
 };
 
 const REJECTION_LABELS: Record<string, string> = {
+  // URL validation
+  invalid_url_type:     'Invalid URL (not Instagram)',
+  hashtag_url:          'Hashtag/explore page (discovery source only)',
+  profile_url:          'Profile page (not a post)',
+  search_url:           'Search page (not a post)',
+  missing_shortcode:    'Missing post shortcode',
+  // Pipeline filters
   older_than_90_days:   'Too old (>90 days)',
   low_comment_count:    'Low engagement (≤5 comments)',
   wrong_property_type:  'Wrong property type',
   wrong_city:           'City not matched',
   weak_relevance_score: 'Low relevance score (<40)',
-  no_buyer_intent:      'No buyer intent signals',
   already_scraped:      'Already scraped in previous run',
 };
 
@@ -860,9 +870,29 @@ export default function InstagramMinerPage() {
             </button>
             {showDebug && (
               <div style={{ marginTop: 6, padding: '16px 18px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', fontSize: 12 }}>
+                {/* URL validation row */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 10 }}>
+                  {[
+                    ['Raw items from Apify', debugSummary.rawUrlsFound ?? debugSummary.totalScanned],
+                    ['Valid /p/ or /reel/ URLs', debugSummary.validPostUrls ?? 0],
+                    ['Rejected (non-post URLs)', debugSummary.rejectedInvalidUrls ?? 0],
+                  ].map(([label, val]) => (
+                    <div key={label as string} style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.04)' }}>
+                      <div style={{ fontSize: 10, color: '#475569', marginBottom: 3 }}>{label}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: val === 0 ? '#f87171' : 'white' }}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+                {debugSummary.invalidUrlExamples && debugSummary.invalidUrlExamples.length > 0 && (
+                  <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)' }}>
+                    <div style={{ fontSize: 10, color: '#f87171', fontWeight: 700, marginBottom: 4 }}>REJECTED URL EXAMPLES</div>
+                    {debugSummary.invalidUrlExamples.map((u, i) => (
+                      <div key={i} style={{ fontSize: 10, color: '#64748b', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u}</div>
+                    ))}
+                  </div>
+                )}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 14 }}>
                   {[
-                    ['Total scanned', debugSummary.totalScanned],
                     ['After age filter (≤90 days)', debugSummary.eligibleAfterAgeFilter],
                     ['After engagement filter (>5 comments)', debugSummary.eligibleAfterEngagementFilter],
                     ['Selected for mining', debugSummary.selectedPosts],
