@@ -80,6 +80,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
               <TableHead>Name / Project</TableHead>
               <TableHead>Location</TableHead>
               <TableHead>Type</TableHead>
+              <TableHead>Opp By</TableHead>
               {canViewFinancials && <TableHead>Commission</TableHead>}
               {canViewFinancials && <TableHead>Possible Revenue</TableHead>}
               <TableHead>Leads</TableHead>
@@ -89,7 +90,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
           <TableBody>
             {opportunities.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={canViewFinancials ? 8 : 6} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={canViewFinancials ? 9 : 7} className="text-center py-12 text-muted-foreground">
                   <Building2 className="h-8 w-8 mx-auto mb-2 opacity-30" />
                   No opportunities yet
                 </TableCell>
@@ -108,6 +109,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
                   </TableCell>
                   <TableCell className="text-sm">{opp.location}</TableCell>
                   <TableCell className="text-sm">{opp.property_type}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{opp.opportunity_by ?? "Developer"}</TableCell>
                   {canViewFinancials && <TableCell className="text-sm">{Number(opp.commission_percent)}%</TableCell>}
                   {canViewFinancials && (
                     <TableCell className="text-sm">

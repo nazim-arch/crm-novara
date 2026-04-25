@@ -71,8 +71,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten() }, { status: 400 });
     }
 
-    const { configurations, notes, developer, ...rest } = parsed.data;
-    const total_sales_value = configurations.reduce((sum, row) => sum + row.number_of_units * row.price_per_unit, 0);
+    const { configurations, notes, developer, opportunity_by, ...rest } = parsed.data;
+    const isLand = rest.property_type === "Land";
+
+    const configRows = configurations.map((row) => {
+      const rowTotal = isLand && row.land_area
+        ? Number(row.land_area) * row.price_per_unit
+        : row.number_of_units * row.price_per_unit;
+      return { ...row, row_total: rowTotal };
+    });
+
+    const total_sales_value = configRows.reduce((sum, row) => sum + row.row_total, 0);
     const possible_revenue = (total_sales_value * rest.commission_percent) / 100;
     const opp_number = await generateId("OPP");
 
@@ -80,12 +89,18 @@ export async function POST(request: Request) {
       data: {
         opp_number, ...rest,
         developer: developer || null, notes: notes || null,
+        opportunity_by: opportunity_by ?? "Developer",
         total_sales_value, possible_revenue,
         created_by_id: session.user.id,
         configurations: {
-          create: configurations.map((row) => ({
-            label: row.label, number_of_units: row.number_of_units,
-            price_per_unit: row.price_per_unit, row_total: row.number_of_units * row.price_per_unit,
+          create: configRows.map((row) => ({
+            label: row.label,
+            number_of_units: row.number_of_units,
+            price_per_unit: row.price_per_unit,
+            row_total: row.row_total,
+            land_area: row.land_area ?? null,
+            area_unit: row.area_unit ?? null,
+            sale_type: row.sale_type ?? null,
           })),
         },
       },

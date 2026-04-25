@@ -32,6 +32,7 @@ export default async function EditOpportunityPage({ params }: { params: Params }
           name: opp.name,
           project: opp.project,
           developer: opp.developer ?? undefined,
+          opportunity_by: (opp.opportunity_by ?? "Developer") as "Developer" | "Seller" | "Buyer",
           location: opp.location,
           property_type: opp.property_type,
           commission_percent: Number(opp.commission_percent),
@@ -43,6 +44,9 @@ export default async function EditOpportunityPage({ params }: { params: Params }
           label: c.label,
           number_of_units: c.number_of_units,
           price_per_unit: Number(c.price_per_unit),
+          land_area: c.land_area != null ? Number(c.land_area) : null,
+          area_unit: c.area_unit ?? null,
+          sale_type: c.sale_type ?? null,
         }))}
       />
     </div>

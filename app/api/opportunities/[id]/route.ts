@@ -72,9 +72,16 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
       return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten() }, { status: 400 });
     }
 
-    const { configurations, notes, developer, ...rest } = parsed.data;
+    const { configurations, notes, developer, opportunity_by, ...rest } = parsed.data;
+    const isLand = rest.property_type === "Land";
     const activeConfigs = configurations.filter((c) => !c._delete);
-    const total_sales_value = activeConfigs.reduce((sum, row) => sum + row.number_of_units * row.price_per_unit, 0);
+    const configRows = activeConfigs.map((row) => {
+      const rowTotal = isLand && row.land_area
+        ? Number(row.land_area) * row.price_per_unit
+        : row.number_of_units * row.price_per_unit;
+      return { ...row, row_total: rowTotal };
+    });
+    const total_sales_value = configRows.reduce((sum, row) => sum + row.row_total, 0);
     const possible_revenue = (total_sales_value * rest.commission_percent) / 100;
 
     await prisma.opportunityConfiguration.deleteMany({ where: { opportunity_id: id } });
@@ -83,11 +90,15 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
       where: { id, deleted_at: null },
       data: {
         ...rest, developer: developer || null, notes: notes || null,
+        opportunity_by: opportunity_by ?? "Developer",
         total_sales_value, possible_revenue, updated_at: new Date(),
         configurations: {
-          create: activeConfigs.map((row) => ({
+          create: configRows.map((row) => ({
             label: row.label, number_of_units: row.number_of_units,
-            price_per_unit: row.price_per_unit, row_total: row.number_of_units * row.price_per_unit,
+            price_per_unit: row.price_per_unit, row_total: row.row_total,
+            land_area: row.land_area ?? null,
+            area_unit: row.area_unit ?? null,
+            sale_type: row.sale_type ?? null,
           })),
         },
       },

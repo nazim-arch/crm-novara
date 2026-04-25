@@ -95,6 +95,7 @@ interface RecentActivity {
 
 interface TaskStats { todo: number; inProgress: number; done: number; overdue: number }
 interface ClientTaskRow { name: string; count: number }
+interface OppByRow { opportunity_by: string; count: number; possible_revenue: number }
 
 interface Props {
   canViewFinancials: boolean;
@@ -107,6 +108,7 @@ interface Props {
   temperatureDistribution: TempRow[];
   sourceDistribution: SourceRow[];
   topOpportunities: TopOpportunity[];
+  opportunityByBreakdown: OppByRow[];
   recentActivities: RecentActivity[];
   taskStats: TaskStats;
   taskClientDistribution: ClientTaskRow[];
@@ -234,6 +236,7 @@ export function CrmDashboardClient({
   temperatureDistribution,
   sourceDistribution,
   topOpportunities,
+  opportunityByBreakdown,
   recentActivities,
   taskStats,
   taskClientDistribution,
@@ -702,6 +705,30 @@ export function CrmDashboardClient({
               )}
             </CardContent>
           </Card>
+
+          {opportunityByBreakdown.length > 0 && (
+            <Card className="mt-4">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Briefcase className="h-4 w-4" />
+                  Opportunities by Category
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-3 gap-3">
+                  {opportunityByBreakdown.map((row) => (
+                    <div key={row.opportunity_by} className="p-3 rounded-lg border bg-muted/30">
+                      <p className="text-xs text-muted-foreground">{row.opportunity_by}</p>
+                      <p className="text-lg font-semibold mt-0.5">{row.count}</p>
+                      {row.possible_revenue > 0 && (
+                        <p className="text-xs text-primary mt-0.5">{fc(row.possible_revenue)}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </section>
       )}
 

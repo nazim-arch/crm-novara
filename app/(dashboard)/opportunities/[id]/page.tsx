@@ -161,6 +161,7 @@ export default async function OpportunityDetailPage({ params }: { params: Params
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <InfoItem label="Project" value={opp.project} />
                 <InfoItem label="Developer" value={opp.developer} />
+                <InfoItem label="Opportunity By" value={opp.opportunity_by ?? "Developer"} />
                 <InfoItem label="Location" value={opp.location} />
                 <InfoItem label="Property Type" value={opp.property_type} />
                 {canViewFinancials && <InfoItem label="Commission" value={`${Number(opp.commission_percent)}%`} />}
@@ -180,7 +181,7 @@ export default async function OpportunityDetailPage({ params }: { params: Params
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium">
-                Inventory / Configurations ({opp.configurations.length})
+                {opp.property_type === "Land" ? "Land Parcels" : "Inventory / Configurations"} ({opp.configurations.length})
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -192,7 +193,15 @@ export default async function OpportunityDetailPage({ params }: { params: Params
                     <thead>
                       <tr className="border-b text-xs text-muted-foreground">
                         <th className="text-left py-2 pr-4">Label</th>
-                        <th className="text-right py-2 px-4">Units</th>
+                        {opp.property_type === "Land" ? (
+                          <>
+                            <th className="text-right py-2 px-4">Area</th>
+                            <th className="text-right py-2 px-4">Unit</th>
+                            <th className="text-right py-2 px-4">Sale Type</th>
+                          </>
+                        ) : (
+                          <th className="text-right py-2 px-4">Units</th>
+                        )}
                         <th className="text-right py-2 px-4">Price / Unit</th>
                         <th className="text-right py-2 pl-4">Row Total</th>
                       </tr>
@@ -201,7 +210,15 @@ export default async function OpportunityDetailPage({ params }: { params: Params
                       {opp.configurations.map((cfg) => (
                         <tr key={cfg.id} className="border-b last:border-0">
                           <td className="py-2 pr-4 font-medium">{cfg.label}</td>
-                          <td className="py-2 px-4 text-right">{cfg.number_of_units}</td>
+                          {opp.property_type === "Land" ? (
+                            <>
+                              <td className="py-2 px-4 text-right">{cfg.land_area != null ? Number(cfg.land_area) : "—"}</td>
+                              <td className="py-2 px-4 text-right">{cfg.area_unit ?? "—"}</td>
+                              <td className="py-2 px-4 text-right">{cfg.sale_type === "ForSale" ? "For Sale" : cfg.sale_type ?? "—"}</td>
+                            </>
+                          ) : (
+                            <td className="py-2 px-4 text-right">{cfg.number_of_units}</td>
+                          )}
                           <td className="py-2 px-4 text-right">
                             {formatCurrency(Number(cfg.price_per_unit))}
                           </td>
@@ -213,7 +230,7 @@ export default async function OpportunityDetailPage({ params }: { params: Params
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2">
-                        <td colSpan={3} className="py-2 pr-4 text-right text-muted-foreground text-xs font-medium">
+                        <td colSpan={opp.property_type === "Land" ? 5 : 3} className="py-2 pr-4 text-right text-muted-foreground text-xs font-medium">
                           Total Sales Value
                         </td>
                         <td className="py-2 pl-4 text-right font-semibold">

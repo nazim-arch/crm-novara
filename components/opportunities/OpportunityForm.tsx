@@ -8,6 +8,9 @@ import { toast } from "sonner";
 import {
   createOpportunitySchema,
   type CreateOpportunityInput,
+  AREA_UNITS,
+  SALE_TYPES,
+  OPPORTUNITY_BY,
 } from "@/lib/validations/opportunity";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +35,7 @@ const CONFIG_LABEL_PLACEHOLDER: Record<PropertyType, string> = {
   Plot: "e.g. 30×40, 500 sqft",
   Commercial: "e.g. Shop, Showroom",
   Office: "e.g. Unit A, Suite 101",
+  Land: "e.g. North Block, Parcel A",
 };
 
 function formatCurrency(n: number) {
@@ -45,6 +49,9 @@ interface ExistingConfig {
   label: string;
   number_of_units: number;
   price_per_unit: number | string;
+  land_area?: number | string | null;
+  area_unit?: string | null;
+  sale_type?: string | null;
 }
 
 interface OpportunityFormProps {
@@ -69,6 +76,9 @@ export function OpportunityForm({
           label: c.label,
           number_of_units: c.number_of_units,
           price_per_unit: Number(c.price_per_unit),
+          land_area: c.land_area != null ? Number(c.land_area) : undefined,
+          area_unit: (c.area_unit as (typeof AREA_UNITS)[number]) ?? undefined,
+          sale_type: (c.sale_type as (typeof SALE_TYPES)[number]) ?? undefined,
         }))
       : [{ label: "", number_of_units: 1, price_per_unit: 0 }];
 
@@ -84,6 +94,7 @@ export function OpportunityForm({
     resolver: zodResolver(createOpportunitySchema) as any,
     defaultValues: {
       status: "Active",
+      opportunity_by: "Developer",
       ...defaultValues,
       configurations: initialConfigs,
     },
@@ -97,10 +108,15 @@ export function OpportunityForm({
   const propertyType = watch("property_type");
   const commissionPercent = watch("commission_percent");
   const configurations = watch("configurations");
+  const isLand = propertyType === "Land";
 
   const totalSalesValue = (configurations ?? []).reduce((sum, row) => {
-    const units = Number(row.number_of_units) || 0;
     const price = Number(row.price_per_unit) || 0;
+    if (isLand) {
+      const area = Number(row.land_area) || 0;
+      return sum + area * price;
+    }
+    const units = Number(row.number_of_units) || 0;
     return sum + units * price;
   }, 0);
 
@@ -111,6 +127,14 @@ export function OpportunityForm({
 
   const labelPlaceholder =
     propertyType ? CONFIG_LABEL_PLACEHOLDER[propertyType] : "e.g. 2BHK, Plot";
+
+  const handleAddRow = () => {
+    if (isLand) {
+      append({ label: "", number_of_units: 1, price_per_unit: 0, land_area: undefined, area_unit: undefined, sale_type: undefined });
+    } else {
+      append({ label: "", number_of_units: 1, price_per_unit: 0 });
+    }
+  };
 
   const onSubmit = async (data: CreateOpportunityInput) => {
     setLoading(true);
@@ -186,7 +210,28 @@ export function OpportunityForm({
 
           <div className="space-y-1.5">
             <Label htmlFor="developer">Developer</Label>
-            <Input id="developer" {...register("developer")} />
+            <Input id="developer" {...register("developer")} placeholder="Developer name (optional)" />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>
+              Opportunity By <span className="text-destructive">*</span>
+            </Label>
+            <Select
+              defaultValue={defaultValues?.opportunity_by ?? "Developer"}
+              onValueChange={(v) =>
+                v && setValue("opportunity_by", v as (typeof OPPORTUNITY_BY)[number])
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select" />
+              </SelectTrigger>
+              <SelectContent>
+                {OPPORTUNITY_BY.map((opt) => (
+                  <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-1.5">
@@ -223,6 +268,7 @@ export function OpportunityForm({
                 <SelectItem value="Plot">Plot</SelectItem>
                 <SelectItem value="Commercial">Commercial</SelectItem>
                 <SelectItem value="Office">Office</SelectItem>
+                <SelectItem value="Land">Land</SelectItem>
               </SelectContent>
             </Select>
             {errors.property_type && (
@@ -297,16 +343,14 @@ export function OpportunityForm({
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-              Inventory / Configurations{" "}
+              {isLand ? "Land Parcels" : "Inventory / Configurations"}{" "}
               <span className="text-destructive">*</span>
             </CardTitle>
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() =>
-                append({ label: "", number_of_units: 1, price_per_unit: 0 })
-              }
+              onClick={handleAddRow}
             >
               <Plus className="h-3.5 w-3.5 mr-1" />
               Add Row
@@ -325,83 +369,196 @@ export function OpportunityForm({
             </p>
           )}
 
-          {/* Table header */}
-          <div className="grid grid-cols-[1fr_80px_140px_120px_36px] gap-2 text-xs font-medium text-muted-foreground px-1">
-            <span>
-              {propertyType === "Plot" ? "Plot Size / Label" : "Unit Type / Label"}
-            </span>
-            <span>Units</span>
-            <span>Price / Unit (₹)</span>
-            <span>Row Total</span>
-            <span />
-          </div>
-
-          {fields.map((field, index) => {
-            const units = Number(watch(`configurations.${index}.number_of_units`)) || 0;
-            const price = Number(watch(`configurations.${index}.price_per_unit`)) || 0;
-            const rowTotal = units * price;
-
-            return (
-              <div
-                key={field.id}
-                className="grid grid-cols-[1fr_80px_140px_120px_36px] gap-2 items-start"
-              >
-                <div>
-                  <Input
-                    placeholder={labelPlaceholder}
-                    {...register(`configurations.${index}.label`)}
-                  />
-                  {errors.configurations?.[index]?.label && (
-                    <p className="text-xs text-destructive mt-0.5">
-                      {errors.configurations[index]?.label?.message}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <Input
-                    type="number"
-                    min="1"
-                    placeholder="1"
-                    {...register(`configurations.${index}.number_of_units`)}
-                  />
-                  {errors.configurations?.[index]?.number_of_units && (
-                    <p className="text-xs text-destructive mt-0.5">
-                      {errors.configurations[index]?.number_of_units?.message}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="1"
-                    placeholder="0"
-                    {...register(`configurations.${index}.price_per_unit`)}
-                  />
-                  {errors.configurations?.[index]?.price_per_unit && (
-                    <p className="text-xs text-destructive mt-0.5">
-                      {errors.configurations[index]?.price_per_unit?.message}
-                    </p>
-                  )}
-                </div>
-                <div className="h-9 px-2 flex items-center text-sm font-medium text-muted-foreground">
-                  {rowTotal > 0 ? formatCurrency(rowTotal) : "—"}
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9 text-muted-foreground hover:text-destructive"
-                  onClick={() => {
-                    if (fields.length > 1) remove(index);
-                    else toast.error("At least one configuration row is required");
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+          {isLand ? (
+            /* Land layout: Label | Land Area | Area Unit | Sale Type | Price/Unit | Row Total | Delete */
+            <>
+              <div className="grid grid-cols-[1fr_90px_100px_110px_130px_110px_36px] gap-2 text-xs font-medium text-muted-foreground px-1">
+                <span>Label / Parcel</span>
+                <span>Area</span>
+                <span>Unit</span>
+                <span>Sale Type</span>
+                <span>Price / Unit (₹)</span>
+                <span>Row Total</span>
+                <span />
               </div>
-            );
-          })}
+              {fields.map((field, index) => {
+                const area = Number(watch(`configurations.${index}.land_area`)) || 0;
+                const price = Number(watch(`configurations.${index}.price_per_unit`)) || 0;
+                const rowTotal = area * price;
+
+                return (
+                  <div
+                    key={field.id}
+                    className="grid grid-cols-[1fr_90px_100px_110px_130px_110px_36px] gap-2 items-start"
+                  >
+                    <div>
+                      <Input
+                        placeholder={labelPlaceholder}
+                        {...register(`configurations.${index}.label`)}
+                      />
+                      {errors.configurations?.[index]?.label && (
+                        <p className="text-xs text-destructive mt-0.5">
+                          {errors.configurations[index]?.label?.message}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0"
+                        {...register(`configurations.${index}.land_area`)}
+                      />
+                    </div>
+                    <div>
+                      <Select
+                        defaultValue={field.area_unit ?? undefined}
+                        onValueChange={(v) =>
+                          setValue(`configurations.${index}.area_unit`, v as (typeof AREA_UNITS)[number])
+                        }
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Unit" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {AREA_UNITS.map((u) => (
+                            <SelectItem key={u} value={u}>{u}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Select
+                        defaultValue={field.sale_type ?? undefined}
+                        onValueChange={(v) =>
+                          setValue(`configurations.${index}.sale_type`, v as (typeof SALE_TYPES)[number])
+                        }
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SALE_TYPES.map((s) => (
+                            <SelectItem key={s} value={s}>{s === "ForSale" ? "For Sale" : "Requirement"}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="1"
+                        placeholder="0"
+                        {...register(`configurations.${index}.price_per_unit`)}
+                      />
+                      {errors.configurations?.[index]?.price_per_unit && (
+                        <p className="text-xs text-destructive mt-0.5">
+                          {errors.configurations[index]?.price_per_unit?.message}
+                        </p>
+                      )}
+                    </div>
+                    <div className="h-9 px-2 flex items-center text-sm font-medium text-muted-foreground">
+                      {rowTotal > 0 ? formatCurrency(rowTotal) : "—"}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 text-muted-foreground hover:text-destructive"
+                      onClick={() => {
+                        if (fields.length > 1) remove(index);
+                        else toast.error("At least one configuration row is required");
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                );
+              })}
+            </>
+          ) : (
+            /* Standard layout: Label | Units | Price/Unit | Row Total | Delete */
+            <>
+              <div className="grid grid-cols-[1fr_80px_140px_120px_36px] gap-2 text-xs font-medium text-muted-foreground px-1">
+                <span>
+                  {propertyType === "Plot" ? "Plot Size / Label" : "Unit Type / Label"}
+                </span>
+                <span>Units</span>
+                <span>Price / Unit (₹)</span>
+                <span>Row Total</span>
+                <span />
+              </div>
+
+              {fields.map((field, index) => {
+                const units = Number(watch(`configurations.${index}.number_of_units`)) || 0;
+                const price = Number(watch(`configurations.${index}.price_per_unit`)) || 0;
+                const rowTotal = units * price;
+
+                return (
+                  <div
+                    key={field.id}
+                    className="grid grid-cols-[1fr_80px_140px_120px_36px] gap-2 items-start"
+                  >
+                    <div>
+                      <Input
+                        placeholder={labelPlaceholder}
+                        {...register(`configurations.${index}.label`)}
+                      />
+                      {errors.configurations?.[index]?.label && (
+                        <p className="text-xs text-destructive mt-0.5">
+                          {errors.configurations[index]?.label?.message}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <Input
+                        type="number"
+                        min="1"
+                        placeholder="1"
+                        {...register(`configurations.${index}.number_of_units`)}
+                      />
+                      {errors.configurations?.[index]?.number_of_units && (
+                        <p className="text-xs text-destructive mt-0.5">
+                          {errors.configurations[index]?.number_of_units?.message}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="1"
+                        placeholder="0"
+                        {...register(`configurations.${index}.price_per_unit`)}
+                      />
+                      {errors.configurations?.[index]?.price_per_unit && (
+                        <p className="text-xs text-destructive mt-0.5">
+                          {errors.configurations[index]?.price_per_unit?.message}
+                        </p>
+                      )}
+                    </div>
+                    <div className="h-9 px-2 flex items-center text-sm font-medium text-muted-foreground">
+                      {rowTotal > 0 ? formatCurrency(rowTotal) : "—"}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 text-muted-foreground hover:text-destructive"
+                      onClick={() => {
+                        if (fields.length > 1) remove(index);
+                        else toast.error("At least one configuration row is required");
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                );
+              })}
+            </>
+          )}
         </CardContent>
       </Card>
 

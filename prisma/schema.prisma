@@ -45,6 +45,7 @@ enum PropertyType {
   Villa
   Apartment
   Office
+  Land
 }
 
 enum Purpose {
@@ -272,7 +273,8 @@ model Opportunity {
   opp_number        String            @unique
   name              String
   project           String
-  developer         String?
+  developer         String?           // kept for backward compat; label depends on opportunity_by
+  opportunity_by    String            @default("Developer") // Developer | Seller | Buyer
   property_type     PropertyType
   location          String
   commission_percent Decimal          @db.Decimal(8, 4)
@@ -309,9 +311,13 @@ model OpportunityConfiguration {
   id              String   @id @default(cuid())
   opportunity_id  String
   label           String
-  number_of_units Int
+  number_of_units Int      @default(1)
   price_per_unit  Decimal  @db.Decimal(12, 2)
   row_total       Decimal  @db.Decimal(14, 2)
+  // Land-specific fields (null for non-land property types)
+  land_area       Decimal? @db.Decimal(14, 4)
+  area_unit       String?  // SqFt | Acre | Guntha | Cent
+  sale_type       String?  // ForSale | Requirement
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
 

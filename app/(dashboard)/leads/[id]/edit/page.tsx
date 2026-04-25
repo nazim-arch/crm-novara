@@ -68,7 +68,7 @@ export default async function EditLeadPage({ params }: { params: Params }) {
           referral_source: lead.referral_source ?? undefined,
           budget_min: lead.budget_min ? Number(lead.budget_min) : undefined,
           budget_max: lead.budget_max ? Number(lead.budget_max) : undefined,
-          property_type: lead.property_type ?? undefined,
+          property_type: (lead.property_type ?? undefined) as "Residential" | "Commercial" | "Plot" | "Villa" | "Apartment" | "Office" | undefined,
           unit_type: lead.unit_type ?? undefined,
           location_preference: lead.location_preference ?? undefined,
           timeline_to_buy: lead.timeline_to_buy ?? undefined,

@@ -69,6 +69,7 @@ export default async function CrmDashboardPage({ searchParams }: { searchParams:
     expenseAgg,
     topOpportunities,
     expensesByOpp,
+    oppByBreakdownRaw,
     recentActivities,
     taskByStatus,
     overdueTasksCount,
@@ -144,6 +145,9 @@ export default async function CrmDashboardPage({ searchParams }: { searchParams:
     canViewFinancials
       ? prisma.opportunityExpense.groupBy({ by: ["opportunity_id"], where: { opportunity: { deleted_at: null } }, _sum: { amount: true } })
       : Promise.resolve([]),
+    canViewFinancials
+      ? prisma.opportunity.groupBy({ by: ["opportunity_by"], where: { deleted_at: null }, _count: { id: true }, _sum: { possible_revenue: true } })
+      : Promise.resolve([]),
     prisma.activity.findMany({
       include: { actor: { select: { name: true } } },
       orderBy: { created_at: "desc" },
@@ -190,6 +194,10 @@ export default async function CrmDashboardPage({ searchParams }: { searchParams:
 
   const taskMap: Record<string, number> = {};
   for (const t of taskByStatus) taskMap[t.status] = t._count.id;
+
+  const opportunityByBreakdown = (oppByBreakdownRaw as Array<{ opportunity_by: string | null; _count: { id: number }; _sum: { possible_revenue: unknown } }>)
+    .map(r => ({ opportunity_by: r.opportunity_by ?? "Developer", count: r._count.id, possible_revenue: Number(r._sum.possible_revenue ?? 0) }))
+    .sort((a, b) => b.count - a.count);
 
   return (
     <div className="p-6 space-y-6">
@@ -246,6 +254,7 @@ export default async function CrmDashboardPage({ searchParams }: { searchParams:
           const cr = Number(o.closed_revenue ?? 0);
           return { id: o.id, name: o.name, opp_number: o.opp_number, possible_revenue: Number(o.possible_revenue ?? 0), closed_revenue: cr, total_expense: exp, net_profit: cr - exp, leads_count: o._count.leads };
         })}
+        opportunityByBreakdown={opportunityByBreakdown}
         recentActivities={recentActivities.map(a => ({ id: a.id, action: a.action, entity_type: a.entity_type, entity_id: a.entity_id, actor_name: a.actor.name, created_at: a.created_at.toISOString() }))}
         taskStats={{ todo: taskMap["Todo"] ?? 0, inProgress: taskMap["InProgress"] ?? 0, done: taskMap["Done"] ?? 0, overdue: overdueTasksCount }}
         taskClientDistribution={taskClientDistribution}
