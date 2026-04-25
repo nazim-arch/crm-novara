@@ -83,6 +83,7 @@ export default function IntentRadarDashboard() {
           { href: '/intentradar/generate', icon: '🎯', title: 'New Search', desc: 'Define criteria & scan sources' },
           { href: '/intentradar/leads', icon: '📋', title: 'All Leads', desc: 'View & manage captured leads' },
           { href: '/intentradar/settings', icon: '🔑', title: 'API Settings', desc: 'Configure API keys & sources' },
+          { href: '/intentradar/instagram', icon: '📸', title: 'Instagram Miner', desc: 'Find buyers via Apify + Instagram comments' },
         ].map((link, i) => (
           <Link key={i} href={link.href} style={{
             background: 'white', borderRadius: 14, padding: '24px 20px', textDecoration: 'none',
