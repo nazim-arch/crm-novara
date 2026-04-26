@@ -779,7 +779,15 @@ export async function POST(req: NextRequest) {
 
     const postRunId    = await runApifyActor('apify~instagram-scraper', { directUrls: hashtagUrls, resultsType: 'posts', resultsLimit: 60 }, apifyKey);
     const postDatasetId = await waitForApifyRun(postRunId, apifyKey);
-    const postItems     = await fetchApifyDataset(postDatasetId, apifyKey) as Record<string, unknown>[];
+    const rawItems      = await fetchApifyDataset(postDatasetId, apifyKey) as Record<string, unknown>[];
+
+    // Sort newest-first so the scoring pipeline always evaluates recent posts before older ones
+    // (Apify returns hashtag "Top posts" first by default, which tend to be older/viral)
+    const postItems = rawItems.slice().sort((a, b) => {
+      const ta = a.timestamp ? new Date(a.timestamp as string).getTime() : 0;
+      const tb = b.timestamp ? new Date(b.timestamp as string).getTime() : 0;
+      return tb - ta;
+    });
 
     // Step 2: URL validation
     const debug: DebugSummary = {
