@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiKey, getSetting } from '@/lib/intentradar/db';
 
+export const maxDuration = 300; // 5 min — Vercel Pro/Hobby max for API routes
+
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface Commenter {
   username: string;
@@ -666,7 +668,7 @@ export function generateSearchHashtags(inputs: {
     }
   }
 
-  return { hashtags: Array.from(tags).filter(Boolean).slice(0, 30), nearbyAreas: nearbyAreas.slice(0, 8) };
+  return { hashtags: Array.from(tags).filter(Boolean).slice(0, 20), nearbyAreas: nearbyAreas.slice(0, 6) };
 }
 
 // ─── Apify Helpers (unchanged) ─────────────────────────────────────────────────
@@ -685,7 +687,7 @@ async function runApifyActor(actorId: string, input: object, apiKey: string): Pr
   return (await res.json()).data.id;
 }
 
-async function waitForApifyRun(runId: string, apiKey: string, maxWaitMs = 180000): Promise<string> {
+async function waitForApifyRun(runId: string, apiKey: string, maxWaitMs = 270000): Promise<string> {
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
     const res  = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apiKey}`);
@@ -695,7 +697,7 @@ async function waitForApifyRun(runId: string, apiKey: string, maxWaitMs = 180000
     if (status === 'FAILED' || status === 'ABORTED') throw new Error(`Apify run ${status}`);
     await new Promise(r => setTimeout(r, 5000));
   }
-  throw new Error('Apify run timed out after 3 minutes');
+  throw new Error('Apify run timed out after 4.5 minutes — try fewer micro-markets or custom hashtags');
 }
 
 async function fetchApifyDataset(datasetId: string, apiKey: string): Promise<unknown[]> {
