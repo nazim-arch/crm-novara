@@ -111,8 +111,10 @@ function getNearbyAreas(microMarkets: string[]): string[] {
 }
 
 // ─── Property Keywords ─────────────────────────────────────────────────────────
+// For Apartment: BHK terminology is an implicit apartment signal in India
 const PROP_KEYWORDS: Record<string, string[]> = {
-  Apartment:    ['apartment', 'flat', 'flats', 'unit', 'residential flat'],
+  Apartment:    ['apartment', 'flat', 'flats', 'unit', 'residential flat',
+                 'bhk', '1bhk', '2bhk', '3bhk', '4bhk', '1 bhk', '2 bhk', '3 bhk', '4 bhk'],
   Villa:        ['villa', 'independent house', 'bungalow', 'independent home', 'duplex villa'],
   Plot:         ['plot', 'land', 'site', 'bda plot', 'layout plot', 'residential plot'],
   Penthouse:    ['penthouse', 'duplex penthouse', 'sky villa', 'luxury flat'],
@@ -121,12 +123,12 @@ const PROP_KEYWORDS: Record<string, string[]> = {
 };
 
 const WRONG_CATEGORY_MAP: Record<string, string[]> = {
-  Apartment:    ['villa', 'bungalow', 'plot', 'land', 'commercial', 'office', 'shop'],
-  Villa:        ['plot', 'land', 'commercial', 'office', 'shop'],
-  Plot:         ['villa', 'bungalow', 'commercial', 'office'],
+  Apartment:    ['villa', 'bungalow', 'independent house', 'plot', 'land', 'commercial', 'office', 'shop', 'row house', 'rowhouse'],
+  Villa:        ['plot', 'land', 'commercial', 'office', 'shop', 'apartment', 'flat'],
+  Plot:         ['villa', 'bungalow', 'apartment', 'flat', 'commercial', 'office'],
   Penthouse:    ['plot', 'land', 'commercial', 'villa', 'row house'],
   'Row House':  ['plot', 'land', 'commercial'],
-  Commercial:   ['villa', 'bungalow', 'residential'],
+  Commercial:   ['villa', 'bungalow', 'residential', 'apartment', 'flat'],
 };
 
 function getPropKeywords(propertyType: string): string[] {
@@ -158,32 +160,46 @@ function matchesBudgetRange(text: string, min: number, max: number, tolerancePct
 }
 
 // ─── Source Quality Detection (25 pts) ───────────────────────────────────────
-// Classifies the post source to determine quality and real-estate relevance.
+// Primary verification: account identity (username + fullName + bio) must confirm
+// a real estate source. Caption/hashtag signals alone are not sufficient.
 
+// Content-level non-RE signals (hard reject)
 const NON_RE_SIGNALS = [
   'meme', 'funny', 'comedy', 'fashion', 'ootd', 'foodie', 'restaurant',
   'travel', 'fitness', 'workout', 'gym', 'beauty', 'makeup', 'skincare',
   'cricket', 'ipl', 'bollywood', 'music', 'dance', 'reel trend',
 ];
 
-// Developer/builder signals
+// Account-level non-RE signals — if username/bio contains these, hard reject
+const NON_RE_ACCOUNT = [
+  'meme', 'funny', 'comedy', 'food', 'restaurant', 'cafe', 'chef', 'foodie',
+  'fitness', 'gym', 'workout', 'yoga', 'beauty', 'makeup', 'skincare', 'salon',
+  'fashion', 'ootd', 'clothing', 'boutique', 'travel', 'tour', 'trekking',
+  'cricket', 'sports', 'ipl', 'music', 'dance', 'bollywood', 'film', 'actor',
+  'photography', 'nature', 'lifestyle', 'entertainment', 'comedian', 'influencer',
+];
+
+// Developer/builder account + content signals
 const DEV_CAPTION = ['new launch', 'pre-launch', 'pre launch', 'under construction',
   'limited units', 'rera approved', 'rera no', 'possession', 'amenities', 'booking open',
   'sample flat', 'site visit', 'bhk starting', 'configuration', 'sqft', 'sq.ft'];
 const DEV_HASHTAG = ['newlaunch', 'prelaunches', 'reraapproved', 'underconstruction',
   'newproject', 'newdevelopment', 'readytomove', 'propertylisting'];
 const DEV_USERNAME = ['builders', 'constructions', 'infrastructure', 'developers',
-  'projects', 'realty', 'homes', 'properties', 'infra'];
+  'projects', 'realty', 'homes', 'properties', 'infra', 'construction', 'build',
+  'residential', 'housing', 'developer', 'builder'];
 
-// Agent/advisor signals
+// Agent/advisor account signals
 const AGENT_CAPTION = ['real estate advisor', 'property consultant', 'dm for details',
   'contact me', 'call me', 'reach me', 'available for', 'exclusive listing'];
-const AGENT_USERNAME = ['agent', 'advisor', 'consultant', 'realtor', 'broker'];
+const AGENT_USERNAME = ['agent', 'advisor', 'consultant', 'realtor', 'broker',
+  'realestate', 'propertydealer', 'propdealer', 'realty', 'estateconsult'];
 
-// Aggregator/page signals
+// Aggregator/portal account signals
 const AGG_CAPTION = ['luxury homes in', 'flats in', 'properties in', 'homes for sale in',
   'apartments in', '2bhk in', '3bhk in', 'flat for sale', 'property for sale'];
-const AGG_USERNAME = ['flats', 'luxury', 'premium', 'elite', 'nri'];
+const AGG_USERNAME = ['flats', 'luxury', 'premium', 'elite', 'nri', 'apartments',
+  'propertie', 'realestate', 'homesale', 'proplist'];
 
 // Influencer/creator signals
 const INF_CAPTION = ['walkthrough', 'property review', 'investment guide',
@@ -193,51 +209,80 @@ const INF_CAPTION = ['walkthrough', 'property review', 'investment guide',
 const COMM_CAPTION = ['nri buyers', 'invest in', 'north bangalore', 'south bangalore',
   'east bangalore', 'west bangalore'];
 
+// Any account-level RE signal — used to validate generic RE content
+const RE_ACCOUNT_SIGNALS = [
+  'realestate', 'property', 'properties', 'flat', 'flats', 'homes', 'housing',
+  'realtor', 'realty', 'estate', 'builder', 'developer', 'infra', 'construct',
+  'apartment', 'residential', 'commercial', 'bhk', 'villa', 'plot',
+];
+
 type SourceDetectResult = { sourceType: string; sourceScore: number };
 
 function detectSourceType(item: Record<string, unknown>): SourceDetectResult {
-  const caption = ((item.caption as string) || '').toLowerCase();
-  const hashtags = ((item.hashtags as string[]) || []).map(h => h.toLowerCase().replace(/^#/, ''));
-  const username = ((item.ownerUsername || item.username || '') as string).toLowerCase();
-  const fullName = ((item.ownerFullName || item.fullName || '') as string).toLowerCase();
-  const accountText = `${username} ${fullName}`;
+  const caption   = ((item.caption as string) || '').toLowerCase();
+  const hashtags  = ((item.hashtags as string[]) || []).map(h => h.toLowerCase().replace(/^#/, ''));
+  const username  = ((item.ownerUsername || item.username || '') as string).toLowerCase();
+  const fullName  = ((item.ownerFullName || item.fullName || '') as string).toLowerCase();
+  const biography = ((item.biography || item.bio || '') as string).toLowerCase();
+  const accountText = `${username} ${fullName} ${biography}`;
 
-  // Hard reject: non-real-estate content
-  if (NON_RE_SIGNALS.some(kw => caption.includes(kw) || hashtags.includes(kw))) {
+  // Hard reject: non-RE account identity (username/bio reveals non-RE purpose)
+  if (NON_RE_ACCOUNT.some(kw => accountText.includes(kw))) {
+    return { sourceType: 'non_real_estate', sourceScore: 0 };
+  }
+  // Hard reject: non-RE content signals in caption/hashtags
+  if (NON_RE_SIGNALS.some(kw => caption.includes(kw) || hashtags.some(h => h.includes(kw)))) {
     return { sourceType: 'non_real_estate', sourceScore: 0 };
   }
 
-  const capHas  = (kws: string[]) => kws.some(kw => caption.includes(kw));
-  const tagHas  = (kws: string[]) => kws.some(kw => hashtags.some(h => h.includes(kw)));
-  const accHas  = (kws: string[]) => kws.some(kw => accountText.includes(kw));
+  const capHas = (kws: string[]) => kws.some(kw => caption.includes(kw));
+  const tagHas = (kws: string[]) => kws.some(kw => hashtags.some(h => h.includes(kw)));
+  const accHas = (kws: string[]) => kws.some(kw => accountText.includes(kw));
 
-  // Developer / Builder
-  if (capHas(DEV_CAPTION) || (tagHas(DEV_HASHTAG) && accHas(DEV_USERNAME))) {
-    return { sourceType: 'developer', sourceScore: 25 };
+  const isDevAccount   = accHas(DEV_USERNAME);
+  const isDevContent   = capHas(DEV_CAPTION) || tagHas(DEV_HASHTAG);
+  const isAgentAccount = accHas(AGENT_USERNAME);
+  const isAggAccount   = accHas(AGG_USERNAME);
+
+  // Developer: account + content, OR very strong dual content signal
+  if (isDevAccount && isDevContent) return { sourceType: 'developer', sourceScore: 25 };
+  if (isDevContent && capHas(DEV_CAPTION) && tagHas(DEV_HASHTAG)) {
+    // Both caption AND hashtag dev signals without account match → slightly lower confidence
+    return { sourceType: 'developer', sourceScore: 20 };
   }
-  // Real estate agent / advisor
-  if (capHas(AGENT_CAPTION) || accHas(AGENT_USERNAME)) {
-    return { sourceType: 'agent', sourceScore: 22 };
+
+  // Agent: account signal is required; caption alone is not enough
+  if (isAgentAccount) return { sourceType: 'agent', sourceScore: 22 };
+  if (capHas(AGENT_CAPTION) && accHas(RE_ACCOUNT_SIGNALS)) {
+    return { sourceType: 'agent', sourceScore: 18 };
   }
-  // Aggregator / portal page
-  if (capHas(AGG_CAPTION) || (tagHas(['realestate', 'propertylisting']) && accHas(AGG_USERNAME))) {
+
+  // Aggregator: account + any RE content
+  if (isAggAccount && (capHas(AGG_CAPTION) || tagHas(['realestate', 'propertylisting', 'propertyforsale']))) {
     return { sourceType: 'aggregator', sourceScore: 18 };
   }
-  // Influencer / creator
-  if (capHas(INF_CAPTION) || tagHas(['realestateinvestment', 'propertyinvestment', 'realestatetips'])) {
+
+  // Influencer: content signal but MUST also have RE account signal
+  if ((capHas(INF_CAPTION) || tagHas(['realestateinvestment', 'propertyinvestment', 'realestatetips'])) && accHas(RE_ACCOUNT_SIGNALS)) {
     return { sourceType: 'influencer', sourceScore: 15 };
   }
-  // Community / local page
-  if (capHas(COMM_CAPTION) || tagHas(['northbangalore', 'southbangalore', 'nribangalore', 'nrirealestate'])) {
+
+  // Community: content signal + RE account signal
+  if ((capHas(COMM_CAPTION) || tagHas(['nrirealestate', 'northbangalore', 'southbangalore', 'eastbangalore'])) && accHas(RE_ACCOUNT_SIGNALS)) {
     return { sourceType: 'community', sourceScore: 12 };
   }
-  // Generic real estate
-  const reKws = ['realestate', 'property', 'flat', 'apartment', 'bhk', 'sqft', 'housing', 'forsale', 'propertyforsale'];
-  if (reKws.some(kw => caption.includes(kw) || hashtags.some(h => h.includes(kw)))) {
+
+  // Generic RE: ONLY allowed if account is verifiably RE-related
+  const hasREAccount = RE_ACCOUNT_SIGNALS.some(kw => accountText.includes(kw));
+  const RE_CONTENT_KWS = ['realestate', 'property', 'flat', 'apartment', 'bhk', 'sqft', 'forsale', 'housing', 'propertyforsale'];
+  const hasREContent = RE_CONTENT_KWS.some(kw => caption.includes(kw) || hashtags.some(h => h.includes(kw)));
+
+  if (hasREAccount && hasREContent) {
     return { sourceType: 'real_estate', sourceScore: 8 };
   }
-  // Unknown — may still be relevant if other scores are high
-  return { sourceType: 'unknown', sourceScore: 3 };
+
+  // Account has no verifiable RE identity → reject regardless of caption content
+  return { sourceType: 'non_real_estate', sourceScore: 0 };
 }
 
 // ─── Location Scoring (20 pts) ────────────────────────────────────────────────
@@ -272,10 +317,7 @@ function scoreLocation(fullText: string, city: string, microMarkets: string[]): 
     }
   }
 
-  // City only match (no micro-market mention)
-  if (hasCity) return { locationScore: 4, locationMatch: 'city match only', isWrongCity: false };
-
-  // No location signal at all — reject
+  // City mention alone is not enough — must match a micro-market or nearby area
   return { locationScore: 0, locationMatch: 'no match', isWrongCity: true };
 }
 
@@ -285,7 +327,6 @@ type PropertyResult = { propertyScore: number; propertyMatch: string | false; bh
 function scoreProperty(fullText: string, propertyType: string, bhkConfig: string | undefined): PropertyResult {
   const hasCorrect = getPropKeywords(propertyType).some(kw => fullText.includes(kw));
   const hasWrong   = (WRONG_CATEGORY_MAP[propertyType] || []).some(kw => fullText.includes(kw));
-  const residential = ['property', 'home', 'house', 'residence', 'residential', 'housing', 'realty'];
 
   // Wrong type and no correct keyword → reject
   if (hasWrong && !hasCorrect) {
@@ -297,9 +338,8 @@ function scoreProperty(fullText: string, propertyType: string, bhkConfig: string
 
   if (hasCorrect) {
     baseScore = 10; propertyMatch = 'exact match';
-  } else if (residential.some(kw => fullText.includes(kw))) {
-    baseScore = 6; propertyMatch = 'residential match';
   }
+  // Generic "residential" words are not accepted as property type evidence
 
   // BHK bonus (+5 max, total capped at 15)
   let bhkMatch = bhkConfig ? 'not mentioned' : 'not specified';
@@ -489,7 +529,7 @@ function scorePost(
 
   // Build MatchedCriteria (for frontend badge rendering — backward compat)
   const matchedCriteria: MatchedCriteria = {
-    city: !isWrongCity ? (locationMatch.includes('city match only') ? 'city only' : 'match') : false,
+    city: !isWrongCity ? 'match' : false,
     microMarket: locationMatch.startsWith('exact:') || locationMatch.startsWith('nearby:') ? locationMatch : false,
     propertyType: propertyMatch,
     bhk: bhkMatch,
@@ -501,10 +541,8 @@ function scorePost(
   // Build reason text
   const parts: string[] = [];
   if (sourceType && sourceType !== 'unknown' && sourceType !== 'real_estate') parts.push(sourceType.replace('_', ' '));
-  if (locationMatch && !locationMatch.includes('no match') && !locationMatch.includes('city match only')) {
-    parts.push(locationMatch.replace('exact: ', '').replace('nearby: ', 'near ').replace(' (city inferred)', ''));
-  } else if (locationMatch.includes('city match only')) {
-    parts.push(city);
+  if (locationMatch && !locationMatch.includes('no match')) {
+    parts.push(locationMatch.replace('exact: ', '').replace('nearby: ', 'near '));
   }
   if (propertyMatch) parts.push(String(propertyMatch).replace(' + BHK', '') + (bhkMatch === 'exact match' && bhkConfig ? ` ${bhkConfig}` : ''));
   if (budgetMatch && budgetMatch !== 'not specified' && budgetMatch !== 'no price mentioned') parts.push(`budget ${budgetMatch}`);

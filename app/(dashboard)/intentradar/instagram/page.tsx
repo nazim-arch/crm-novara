@@ -169,7 +169,7 @@ const REJECTION_LABELS: Record<string, string> = {
   too_old:              'Too old (>90d / >180d for developers)',
   low_comments:         'Low engagement (<10 comments)',
   too_many_comments:    'Spam/viral (>5000 comments)',
-  wrong_city:           'City not matched',
+  wrong_city:           'No micro-market or nearby area matched',
   wrong_property_type:  'Wrong property type',
   weak_score:           'Low relevance score (<40)',
   // legacy keys
