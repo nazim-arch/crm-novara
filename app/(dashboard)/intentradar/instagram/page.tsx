@@ -31,6 +31,11 @@ interface TopPost {
   matchedCriteria?: MatchedCriteria;
   scoreBreakdown?: Record<string, number>;
   reasonSelected?: string;
+  sourceType?: string;
+  locationMatch?: string;
+  freshnessDays?: number;
+  intentSignals?: string[];
+  engagement?: { comments: number };
 }
 
 interface DebugSummary {
@@ -152,18 +157,25 @@ const CONDITION_LABELS: Record<string, { label: string; color: string; bg: strin
 
 const REJECTION_LABELS: Record<string, string> = {
   // URL validation
+  invalid_url:          'Invalid URL (not a /p/ or /reel/ post)',
   invalid_url_type:     'Invalid URL (not Instagram)',
   hashtag_url:          'Hashtag/explore page (discovery source only)',
   profile_url:          'Profile page (not a post)',
   search_url:           'Search page (not a post)',
   missing_shortcode:    'Missing post shortcode',
   // Pipeline filters
-  older_than_90_days:   'Too old (>90 days)',
-  low_comment_count:    'Low engagement (≤5 comments)',
-  wrong_property_type:  'Wrong property type',
-  wrong_city:           'City not matched',
-  weak_relevance_score: 'Low relevance score (<40)',
   already_scraped:      'Already scraped in previous run',
+  non_real_estate:      'Non-real estate post',
+  too_old:              'Too old (>90d / >180d for developers)',
+  low_comments:         'Low engagement (<10 comments)',
+  too_many_comments:    'Spam/viral (>5000 comments)',
+  wrong_city:           'City not matched',
+  wrong_property_type:  'Wrong property type',
+  weak_score:           'Low relevance score (<40)',
+  // legacy keys
+  older_than_90_days:   'Too old (>90 days)',
+  low_comment_count:    'Low engagement (<10 comments)',
+  weak_relevance_score: 'Low relevance score (<40)',
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -182,8 +194,8 @@ const STEPS_MANUAL = [
 
 const STEPS_HASHTAG = [
   '🔍 Scanning hashtags + nearby areas for matching posts...',
-  '📊 Filtering by age (≤90 days) and engagement (>5 comments)...',
-  '🎯 Scoring posts: city · location · type · BHK · budget · buyer intent...',
+  '📊 Filtering by age, source quality and engagement (10–5000 comments)...',
+  '🎯 Scoring: source quality · location · property · freshness · intent...',
   '💬 Extracting commenters from top-scored posts...',
 ];
 
@@ -702,7 +714,7 @@ export default function InstagramMinerPage() {
                 <span style={{ fontSize: 11, padding: '3px 10px', color: '#475569' }}>+ nearby area hashtags</span>
               </div>
               <div style={{ fontSize: 11, color: '#334155', marginTop: 8 }}>
-                Scoring: City (25) · Micro-market (25) · Property type (15) · BHK (10) · Budget (10) · Buyer intent (10) · Engagement (5) = 100 pts · Min score to select: 40 (prefer ≥55)
+                Scoring: Source Quality (25) · Location (20) · Property (15) · Budget (10) · Freshness (10) · Engagement (10) · Intent (10) = 100 pts · Min score: 40 (prefer ≥55)
               </div>
             </div>
           )}
@@ -810,9 +822,19 @@ export default function InstagramMinerPage() {
                   <div key={i} style={{ padding: '12px 16px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#4338ca', width: 20, flexShrink: 0, marginTop: 2 }}>#{i + 1}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <a href={p.url} target="_blank" rel="noopener noreferrer" style={{ color: '#818cf8', fontSize: 12, fontFamily: 'monospace', textDecoration: 'none' }}>
-                        {shortcode(p.url)}
-                      </a>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <a href={p.url} target="_blank" rel="noopener noreferrer" style={{ color: '#818cf8', fontSize: 12, fontFamily: 'monospace', textDecoration: 'none' }}>
+                          {shortcode(p.url)}
+                        </a>
+                        {p.sourceType && p.sourceType !== 'unknown' && (
+                          <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 7px', borderRadius: 6, background: p.sourceType === 'developer' ? 'rgba(74,222,128,0.15)' : p.sourceType === 'agent' ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.08)', color: p.sourceType === 'developer' ? '#4ade80' : p.sourceType === 'agent' ? '#818cf8' : '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                            {p.sourceType}
+                          </span>
+                        )}
+                        {p.freshnessDays !== undefined && (
+                          <span style={{ fontSize: 9, color: '#475569' }}>{p.freshnessDays}d old</span>
+                        )}
+                      </div>
                       {p.caption && p.caption !== 'Manual URL' && (
                         <div style={{ fontSize: 11, color: '#475569', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.caption}</div>
                       )}
@@ -841,9 +863,9 @@ export default function InstagramMinerPage() {
                         </div>
                       )}
                     </div>
-                    {p.commentsCount > 0 && (
+                    {(p.engagement?.comments ?? p.commentsCount) > 0 && (
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#e1306c' }}>{p.commentsCount.toLocaleString()} 💬</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#e1306c' }}>{(p.engagement?.comments ?? p.commentsCount).toLocaleString()} 💬</div>
                         {p.score > 0 && (
                           <div style={{ fontSize: 11, fontWeight: 700, color: scoreColor(p.score), marginTop: 2 }}>{p.score}/100</div>
                         )}
@@ -893,8 +915,8 @@ export default function InstagramMinerPage() {
                 )}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 14 }}>
                   {[
-                    ['After age filter (≤90 days)', debugSummary.eligibleAfterAgeFilter],
-                    ['After engagement filter (>5 comments)', debugSummary.eligibleAfterEngagementFilter],
+                    ['After age filter (≤90d / ≤180d dev)', debugSummary.eligibleAfterAgeFilter],
+                    ['After engagement filter (10–5000 comments)', debugSummary.eligibleAfterEngagementFilter],
                     ['Selected for mining', debugSummary.selectedPosts],
                   ].map(([label, val]) => (
                     <div key={label as string} style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.04)' }}>

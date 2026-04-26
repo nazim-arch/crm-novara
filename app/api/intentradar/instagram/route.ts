@@ -26,10 +26,13 @@ interface ScoredPost {
   score: number;
   caption: string;
   timestamp: string;
+  sourceType: string;
+  locationMatch: string;
+  freshnessDays: number;
+  intentSignals: string[];
   matchedCriteria: MatchedCriteria;
   scoreBreakdown: Record<string, number>;
   reasonSelected: string;
-  rejectionReason?: string;
 }
 
 interface DebugSummary {
@@ -47,13 +50,15 @@ interface DebugSummary {
 // ─── Nearby Areas Map ─────────────────────────────────────────────────────────
 const NEARBY_AREAS: Record<string, string[]> = {
   // Bangalore North/NE
-  'kalyan nagar':    ['hrbr layout', 'kammanahalli', 'banaswadi', 'horamavu', 'hebbal', 'ramamurthy nagar'],
-  'hrbr layout':     ['kalyan nagar', 'kammanahalli', 'banaswadi', 'horamavu'],
-  'kammanahalli':    ['kalyan nagar', 'hrbr layout', 'banaswadi', 'st thomas town'],
-  'banaswadi':       ['kalyan nagar', 'hrbr layout', 'horamavu', 'ramamurthy nagar'],
-  'hebbal':          ['kalyan nagar', 'sahakarnagar', 'yelahanka', 'kogilu', 'ms ramaiah'],
+  'kalyan nagar':    ['hrbr layout', 'kammanahalli', 'banaswadi', 'horamavu', 'hebbal', 'ramamurthy nagar', 'hennur', 'nagawara'],
+  'hrbr layout':     ['kalyan nagar', 'kammanahalli', 'banaswadi', 'horamavu', 'hebbal'],
+  'kammanahalli':    ['kalyan nagar', 'hrbr layout', 'banaswadi', 'st thomas town', 'hennur'],
+  'banaswadi':       ['kalyan nagar', 'hrbr layout', 'horamavu', 'ramamurthy nagar', 'nagawara'],
+  'hebbal':          ['kalyan nagar', 'sahakarnagar', 'yelahanka', 'kogilu', 'ms ramaiah', 'nagawara'],
   'yelahanka':       ['hebbal', 'sahakarnagar', 'thanisandra', 'kogilu', 'jakkur'],
-  'thanisandra':     ['yelahanka', 'hebbal', 'kogilu', 'jakkur', 'nagawara'],
+  'thanisandra':     ['yelahanka', 'hebbal', 'kogilu', 'jakkur', 'nagawara', 'hennur'],
+  'hennur':          ['kalyan nagar', 'banaswadi', 'thanisandra', 'nagawara', 'horamavu'],
+  'nagawara':        ['hebbal', 'banaswadi', 'hennur', 'thanisandra', 'hrbr layout'],
   // Bangalore East
   'whitefield':      ['marathahalli', 'brookefield', 'itpl', 'kadugodi', 'varthur', 'hope farm'],
   'marathahalli':    ['whitefield', 'brookefield', 'bellandur', 'sarjapur', 'doddanekundi'],
@@ -133,50 +138,303 @@ function getBHKKeywords(bhkConfig: string): string[] {
   return [`${num}bhk`, `${num} bhk`, `${num}-bhk`, `${num} bedroom`, `${num}bedroom`, `${num} bed`].filter(Boolean);
 }
 
-// ─── Budget Matching ───────────────────────────────────────────────────────────
-function matchesBudgetRange(text: string, budgetMin: number, budgetMax: number, tolerancePct = 0): boolean {
-  if (!budgetMin || !budgetMax) return false;
-  const extMin = budgetMin * (1 - tolerancePct);
-  const extMax = budgetMax * (1 + tolerancePct);
-  const lakhPattern = /(\d+(?:\.\d+)?)\s*(?:l(?:akh)?s?|lacs?)\b/gi;
-  const crorePattern = /(\d+(?:\.\d+)?)\s*(?:cr(?:ore)?s?)\b/gi;
+// ─── Budget Matching ──────────────────────────────────────────────────────────
+function matchesBudgetRange(text: string, min: number, max: number, tolerancePct = 0): boolean {
+  if (!min || !max) return false;
+  const lo = min * (1 - tolerancePct);
+  const hi = max * (1 + tolerancePct);
+  const lakhRe = /(\d+(?:\.\d+)?)\s*(?:l(?:akh)?s?|lacs?)\b/gi;
+  const croreRe = /(\d+(?:\.\d+)?)\s*(?:cr(?:ore)?s?)\b/gi;
   let m: RegExpExecArray | null;
-  while ((m = lakhPattern.exec(text)) !== null) {
-    if (parseFloat(m[1]) >= extMin && parseFloat(m[1]) <= extMax) return true;
+  while ((m = lakhRe.exec(text)) !== null) {
+    const v = parseFloat(m[1]);
+    if (v >= lo && v <= hi) return true;
   }
-  while ((m = crorePattern.exec(text)) !== null) {
-    if (parseFloat(m[1]) * 100 >= extMin && parseFloat(m[1]) * 100 <= extMax) return true;
+  while ((m = croreRe.exec(text)) !== null) {
+    const v = parseFloat(m[1]) * 100;
+    if (v >= lo && v <= hi) return true;
   }
   return false;
 }
 
-// ─── Buyer Intent Detection ────────────────────────────────────────────────────
-const BUYER_INTENT_PHRASES = [
-  'price', 'cost', 'details', 'interested', 'site visit', 'contact',
-  'possession', 'loan', 'booking', 'send details', 'brochure', 'floor plan',
-  'how much', 'rate', 'emi', 'ready to move', 'whatsapp', 'call me',
-  'dm me', 'inbox', 'enquiry', 'inquiry', 'sqft', 'sq ft', 'available',
-  'what price', 'price please', 'price?', 'can i get details', 'interested',
+// ─── Source Quality Detection (25 pts) ───────────────────────────────────────
+// Classifies the post source to determine quality and real-estate relevance.
+
+const NON_RE_SIGNALS = [
+  'meme', 'funny', 'comedy', 'fashion', 'ootd', 'foodie', 'restaurant',
+  'travel', 'fitness', 'workout', 'gym', 'beauty', 'makeup', 'skincare',
+  'cricket', 'ipl', 'bollywood', 'music', 'dance', 'reel trend',
+];
+
+// Developer/builder signals
+const DEV_CAPTION = ['new launch', 'pre-launch', 'pre launch', 'under construction',
+  'limited units', 'rera approved', 'rera no', 'possession', 'amenities', 'booking open',
+  'sample flat', 'site visit', 'bhk starting', 'configuration', 'sqft', 'sq.ft'];
+const DEV_HASHTAG = ['newlaunch', 'prelaunches', 'reraapproved', 'underconstruction',
+  'newproject', 'newdevelopment', 'readytomove', 'propertylisting'];
+const DEV_USERNAME = ['builders', 'constructions', 'infrastructure', 'developers',
+  'projects', 'realty', 'homes', 'properties', 'infra'];
+
+// Agent/advisor signals
+const AGENT_CAPTION = ['real estate advisor', 'property consultant', 'dm for details',
+  'contact me', 'call me', 'reach me', 'available for', 'exclusive listing'];
+const AGENT_USERNAME = ['agent', 'advisor', 'consultant', 'realtor', 'broker'];
+
+// Aggregator/page signals
+const AGG_CAPTION = ['luxury homes in', 'flats in', 'properties in', 'homes for sale in',
+  'apartments in', '2bhk in', '3bhk in', 'flat for sale', 'property for sale'];
+const AGG_USERNAME = ['flats', 'luxury', 'premium', 'elite', 'nri'];
+
+// Influencer/creator signals
+const INF_CAPTION = ['walkthrough', 'property review', 'investment guide',
+  'real estate tips', 'market update', 'property tour'];
+
+// Community/local signals
+const COMM_CAPTION = ['nri buyers', 'invest in', 'north bangalore', 'south bangalore',
+  'east bangalore', 'west bangalore'];
+
+type SourceDetectResult = { sourceType: string; sourceScore: number };
+
+function detectSourceType(item: Record<string, unknown>): SourceDetectResult {
+  const caption = ((item.caption as string) || '').toLowerCase();
+  const hashtags = ((item.hashtags as string[]) || []).map(h => h.toLowerCase().replace(/^#/, ''));
+  const username = ((item.ownerUsername || item.username || '') as string).toLowerCase();
+  const fullName = ((item.ownerFullName || item.fullName || '') as string).toLowerCase();
+  const accountText = `${username} ${fullName}`;
+
+  // Hard reject: non-real-estate content
+  if (NON_RE_SIGNALS.some(kw => caption.includes(kw) || hashtags.includes(kw))) {
+    return { sourceType: 'non_real_estate', sourceScore: 0 };
+  }
+
+  const capHas  = (kws: string[]) => kws.some(kw => caption.includes(kw));
+  const tagHas  = (kws: string[]) => kws.some(kw => hashtags.some(h => h.includes(kw)));
+  const accHas  = (kws: string[]) => kws.some(kw => accountText.includes(kw));
+
+  // Developer / Builder
+  if (capHas(DEV_CAPTION) || (tagHas(DEV_HASHTAG) && accHas(DEV_USERNAME))) {
+    return { sourceType: 'developer', sourceScore: 25 };
+  }
+  // Real estate agent / advisor
+  if (capHas(AGENT_CAPTION) || accHas(AGENT_USERNAME)) {
+    return { sourceType: 'agent', sourceScore: 22 };
+  }
+  // Aggregator / portal page
+  if (capHas(AGG_CAPTION) || (tagHas(['realestate', 'propertylisting']) && accHas(AGG_USERNAME))) {
+    return { sourceType: 'aggregator', sourceScore: 18 };
+  }
+  // Influencer / creator
+  if (capHas(INF_CAPTION) || tagHas(['realestateinvestment', 'propertyinvestment', 'realestatetips'])) {
+    return { sourceType: 'influencer', sourceScore: 15 };
+  }
+  // Community / local page
+  if (capHas(COMM_CAPTION) || tagHas(['northbangalore', 'southbangalore', 'nribangalore', 'nrirealestate'])) {
+    return { sourceType: 'community', sourceScore: 12 };
+  }
+  // Generic real estate
+  const reKws = ['realestate', 'property', 'flat', 'apartment', 'bhk', 'sqft', 'housing', 'forsale', 'propertyforsale'];
+  if (reKws.some(kw => caption.includes(kw) || hashtags.some(h => h.includes(kw)))) {
+    return { sourceType: 'real_estate', sourceScore: 8 };
+  }
+  // Unknown — may still be relevant if other scores are high
+  return { sourceType: 'unknown', sourceScore: 3 };
+}
+
+// ─── Location Scoring (20 pts) ────────────────────────────────────────────────
+type LocationResult = { locationScore: number; locationMatch: string; isWrongCity: boolean };
+
+function scoreLocation(fullText: string, city: string, microMarkets: string[]): LocationResult {
+  const cityLower = city.toLowerCase();
+  const citySlug = cityLower.replace(/[^a-z0-9]/g, '');
+  const hasCity = fullText.includes(cityLower) || fullText.includes(citySlug);
+
+  // Check exact micro-market match first
+  for (const market of microMarkets) {
+    const ml = market.toLowerCase();
+    if (fullText.includes(ml) || fullText.includes(ml.replace(/\s/g, ''))) {
+      return {
+        locationScore: hasCity ? 20 : 16, // slightly lower when city not explicit
+        locationMatch: `exact: ${market}`,
+        isWrongCity: false,
+      };
+    }
+  }
+
+  // Check nearby areas
+  for (const area of getNearbyAreas(microMarkets)) {
+    const al = area.toLowerCase();
+    if (fullText.includes(al) || fullText.includes(al.replace(/\s/g, ''))) {
+      return {
+        locationScore: hasCity ? 14 : 10,
+        locationMatch: `nearby: ${area}`,
+        isWrongCity: false,
+      };
+    }
+  }
+
+  // City only match (no micro-market mention)
+  if (hasCity) return { locationScore: 4, locationMatch: 'city match only', isWrongCity: false };
+
+  // No location signal at all — reject
+  return { locationScore: 0, locationMatch: 'no match', isWrongCity: true };
+}
+
+// ─── Property Scoring (15 pts) ────────────────────────────────────────────────
+type PropertyResult = { propertyScore: number; propertyMatch: string | false; bhkMatch: string; isWrongType: boolean };
+
+function scoreProperty(fullText: string, propertyType: string, bhkConfig: string | undefined): PropertyResult {
+  const hasCorrect = getPropKeywords(propertyType).some(kw => fullText.includes(kw));
+  const hasWrong   = (WRONG_CATEGORY_MAP[propertyType] || []).some(kw => fullText.includes(kw));
+  const residential = ['property', 'home', 'house', 'residence', 'residential', 'housing', 'realty'];
+
+  // Wrong type and no correct keyword → reject
+  if (hasWrong && !hasCorrect) {
+    return { propertyScore: 0, propertyMatch: false, bhkMatch: 'N/A', isWrongType: true };
+  }
+
+  let baseScore = 0;
+  let propertyMatch: string | false = false;
+
+  if (hasCorrect) {
+    baseScore = 10; propertyMatch = 'exact match';
+  } else if (residential.some(kw => fullText.includes(kw))) {
+    baseScore = 6; propertyMatch = 'residential match';
+  }
+
+  // BHK bonus (+5 max, total capped at 15)
+  let bhkMatch = bhkConfig ? 'not mentioned' : 'not specified';
+  if (bhkConfig) {
+    if (getBHKKeywords(bhkConfig).some(kw => fullText.includes(kw))) {
+      baseScore = Math.min(15, baseScore + 5);
+      bhkMatch = 'exact match';
+      propertyMatch = propertyMatch ? `${propertyMatch} + BHK` : 'BHK match';
+    }
+  }
+
+  return { propertyScore: baseScore, propertyMatch, bhkMatch, isWrongType: false };
+}
+
+// ─── Budget Scoring (10 pts) ──────────────────────────────────────────────────
+type BudgetResult = { budgetScore: number; budgetMatch: string | false };
+
+function scoreBudget(fullText: string, budgetMin: number, budgetMax: number): BudgetResult {
+  if (!budgetMin || !budgetMax) return { budgetScore: 2, budgetMatch: 'not specified' };
+  if (matchesBudgetRange(fullText, budgetMin, budgetMax, 0))    return { budgetScore: 10, budgetMatch: 'within range' };
+  if (matchesBudgetRange(fullText, budgetMin, budgetMax, 0.15)) return { budgetScore: 7,  budgetMatch: 'within ±15%' };
+  if (matchesBudgetRange(fullText, budgetMin, budgetMax, 0.25)) return { budgetScore: 4,  budgetMatch: 'within ±25%' };
+  const hasPrice = /(\d+(?:\.\d+)?)\s*(?:l(?:akh)?s?|lacs?|cr(?:ore)?s?)\b/i.test(fullText);
+  if (!hasPrice) return { budgetScore: 2, budgetMatch: 'no price mentioned' };
+  return { budgetScore: 0, budgetMatch: false }; // price mentioned but outside range
+}
+
+// ─── Freshness Scoring (10 pts) ───────────────────────────────────────────────
+type FreshnessResult = { freshnessScore: number; freshnessDays: number; tooOld: boolean };
+
+function scoreFreshness(ts: string, isDeveloper: boolean): FreshnessResult {
+  if (!ts) return { freshnessScore: 5, freshnessDays: -1, tooOld: false };
+  const ageMs   = Date.now() - new Date(ts).getTime();
+  const ageDays = Math.floor(ageMs / 86_400_000);
+  const maxDays = isDeveloper ? 180 : 90;
+  if (ageDays > maxDays) return { freshnessScore: 0, freshnessDays: ageDays, tooOld: true };
+  if (ageDays <=  7) return { freshnessScore: 10, freshnessDays: ageDays, tooOld: false };
+  if (ageDays <= 14) return { freshnessScore:  9, freshnessDays: ageDays, tooOld: false };
+  if (ageDays <= 30) return { freshnessScore:  7, freshnessDays: ageDays, tooOld: false };
+  if (ageDays <= 60) return { freshnessScore:  5, freshnessDays: ageDays, tooOld: false };
+  if (ageDays <= 90) return { freshnessScore:  3, freshnessDays: ageDays, tooOld: false };
+  return { freshnessScore: 1, freshnessDays: ageDays, tooOld: false }; // 91-180 developer
+}
+
+// ─── Engagement Scoring (10 pts) — comments only ─────────────────────────────
+function scoreEngagement(comments: number): number {
+  if (comments >= 500) return 10;
+  if (comments >= 200) return  9;
+  if (comments >= 100) return  8;
+  if (comments >=  50) return  6;
+  if (comments >=  20) return  4;
+  if (comments >=  10) return  2;
+  return 0;
+}
+
+// ─── Intent Scoring (10 pts) ─────────────────────────────────────────────────
+const BUYER_CTA = [
+  'for sale', 'available', 'dm for', 'dm me', 'contact', 'call', 'whatsapp',
+  'price on request', 'check link', 'link in bio', 'visit us', 'booking open',
+  'limited units', 'hurry', 'last few',
+];
+const LISTING_LANG = [
+  'new launch', 'pre-launch', 'pre launch', 'under construction', 'rera approved',
+  'ready to move', 'possession', 'new project', 'just launched', 'introducing',
+];
+const COMMENT_INTENT_PHRASES = [
+  'price', 'cost', 'details', 'interested', 'site visit', 'contact', 'possession',
+  'loan', 'booking', 'send details', 'brochure', 'floor plan', 'how much', 'rate',
+  'emi', 'ready to move', 'whatsapp', 'dm me', 'enquiry', 'inquiry', 'sqft',
+  'available', 'what price', 'price please',
 ];
 
 function countBuyerIntentComments(item: Record<string, unknown>): number {
   const list = (
-    (item.latestComments as Record<string, unknown>[]) ||
+    (item.latestComments  as Record<string, unknown>[]) ||
     (item.previewComments as Record<string, unknown>[]) ||
-    (item.comments as Record<string, unknown>[]) ||
+    (item.comments        as Record<string, unknown>[]) ||
     []
   );
   let count = 0;
   for (const c of list) {
     const text = ((c.text || c.comment || c.body || '') as string).toLowerCase();
-    if (BUYER_INTENT_PHRASES.some(phrase => text.includes(phrase))) count++;
+    if (COMMENT_INTENT_PHRASES.some(ph => text.includes(ph))) count++;
   }
   return count;
 }
 
-// ─── Weighted Scoring (A–G, max 100) ─────────────────────────────────────────
-// A: City (25) + B: Micro-Market (25) + C: Property Type (15) +
-// D: BHK (10)  + E: Budget (10)       + F: Buyer Intent (10)  + G: Engagement (5)
+type IntentResult = { intentScore: number; intentSignals: string[]; buyerIntentComments: number };
+
+function scoreIntent(item: Record<string, unknown>, captionText: string): IntentResult {
+  const signals: string[] = [];
+  const hasBuyerCTA    = BUYER_CTA.some(kw => captionText.includes(kw));
+  const hasListingLang = LISTING_LANG.some(kw => captionText.includes(kw));
+  if (hasBuyerCTA)    signals.push('buyer_cta_in_caption');
+  if (hasListingLang) signals.push('listing_language_in_caption');
+
+  const buyerIntentComments = countBuyerIntentComments(item);
+  if (buyerIntentComments >= 5) signals.push(`${buyerIntentComments}_buyer_intent_comments`);
+  else if (buyerIntentComments >= 2) signals.push(`${buyerIntentComments}_buyer_intent_comments`);
+  else if (buyerIntentComments === 1) signals.push('1_buyer_intent_comment');
+
+  // Base score from caption
+  let intentScore = 0;
+  if (hasBuyerCTA && hasListingLang) intentScore = 8; // both = highest
+  else if (hasBuyerCTA)              intentScore = 6;
+  else if (hasListingLang)           intentScore = 5;
+
+  // Bonus from comments (capped at 10 total)
+  if (buyerIntentComments >= 5)      intentScore = Math.min(10, intentScore + 3);
+  else if (buyerIntentComments >= 2) intentScore = Math.min(10, intentScore + 2);
+  else if (buyerIntentComments >= 1) intentScore = Math.min(10, intentScore + 1);
+
+  // No signals but no preview data either → neutral
+  const previewArr = item.latestComments || item.previewComments || item.comments;
+  const hasPreview = Array.isArray(previewArr) && (previewArr as unknown[]).length > 0;
+  if (signals.length === 0 && !hasPreview) intentScore = 3;
+
+  return { intentScore, intentSignals: signals, buyerIntentComments };
+}
+
+// ─── Main Scoring Function ────────────────────────────────────────────────────
+// Scoring: Source (25) + Location (20) + Property (15) + Budget (10)
+//        + Freshness (10) + Engagement (10) + Intent (10) = 100
+
+interface ScoreResult {
+  score: number;
+  sourceType: string;
+  locationMatch: string;
+  freshnessDays: number;
+  intentSignals: string[];
+  matchedCriteria: MatchedCriteria;
+  scoreBreakdown: Record<string, number>;
+  reasonSelected: string;
+  hardReject?: string;
+}
 
 function scorePost(
   item: Record<string, unknown>,
@@ -186,151 +444,85 @@ function scorePost(
   bhkConfig: string | undefined,
   budgetMin: number,
   budgetMax: number,
-): { score: number; matchedCriteria: MatchedCriteria; scoreBreakdown: Record<string, number>; rejectionReason?: string } {
+  sourceType: string,
+  sourceScore: number,
+): ScoreResult {
   const caption = ((item.caption as string) || '').toLowerCase();
-  const hashtagsArr = ((item.hashtags as string[]) || []).map(h => h.toLowerCase());
+  const hashtags = ((item.hashtags as string[]) || []).map(h => h.toLowerCase());
   const locationName = ((item.locationName || item.location || '') as string).toLowerCase();
-  const fullText = `${caption} ${hashtagsArr.join(' ')} ${locationName}`;
-
-  const cityLower = city.toLowerCase();
-  const citySlug = cityLower.replace(/[^a-z0-9]/g, '');
+  const fullText = `${caption} ${hashtags.join(' ')} ${locationName}`;
+  const ts = (item.timestamp as string) || '';
   const comments = Number(item.commentsCount ?? item.commentCount ?? 0);
-  const likes = Number(item.likesCount ?? item.likes ?? 0);
 
-  // A. City Match — 25 pts
-  let cityScore = 0;
-  let cityMatch: string | false = false;
-  if (fullText.includes(cityLower) || fullText.includes(citySlug)) {
-    cityScore = 25; cityMatch = 'exact match';
-  }
+  // Location (20 pts) — wrong city = hard reject
+  const { locationScore, locationMatch, isWrongCity } = scoreLocation(fullText, city, microMarkets);
+  if (isWrongCity) return { score: 0, sourceType, locationMatch, freshnessDays: 0, intentSignals: [], matchedCriteria: emptyMatchedCriteria(), scoreBreakdown: {}, reasonSelected: '', hardReject: 'wrong_city' };
 
-  // B. Micro-Market Match — 25 pts
-  let microMarketScore = 0;
-  let microMarketMatch: string | false = false;
+  // Property (15 pts)
+  const { propertyScore, propertyMatch, bhkMatch, isWrongType } = scoreProperty(fullText, propertyType, bhkConfig);
 
-  for (const market of microMarkets) {
-    const ml = market.toLowerCase();
-    if (fullText.includes(ml) || fullText.includes(ml.replace(/\s/g, ''))) {
-      microMarketScore = 25; microMarketMatch = `exact: ${market}`; break;
-    }
-  }
-  if (microMarketScore === 0) {
-    for (const area of getNearbyAreas(microMarkets)) {
-      const al = area.toLowerCase();
-      if (fullText.includes(al) || fullText.includes(al.replace(/\s/g, ''))) {
-        microMarketScore = 18; microMarketMatch = `nearby: ${area}`; break;
-      }
-    }
-  }
-  if (microMarketScore === 0 && cityScore > 0) {
-    microMarketScore = 10; microMarketMatch = 'city-zone match';
-  }
+  // Budget (10 pts)
+  const { budgetScore, budgetMatch } = scoreBudget(fullText, budgetMin, budgetMax);
 
-  // C. Property Type — 15 pts (wrong category → 0)
-  let propertyTypeScore = 0;
-  let propertyTypeMatch: string | false = false;
-  let rejectionReason: string | undefined;
+  // Freshness (10 pts)
+  const isDeveloper = sourceType === 'developer';
+  const { freshnessScore, freshnessDays, tooOld } = scoreFreshness(ts, isDeveloper);
+  if (tooOld) return { score: 0, sourceType, locationMatch, freshnessDays, intentSignals: [], matchedCriteria: emptyMatchedCriteria(), scoreBreakdown: {}, reasonSelected: '', hardReject: 'too_old' };
 
-  const hasCorrect = getPropKeywords(propertyType).some(kw => fullText.includes(kw));
-  const hasWrong = (WRONG_CATEGORY_MAP[propertyType] || []).some(kw => fullText.includes(kw));
+  // Engagement (10 pts)
+  const engagementScore = scoreEngagement(comments);
 
-  if (hasCorrect) {
-    propertyTypeScore = 15; propertyTypeMatch = 'exact match';
-  } else if (hasWrong) {
-    propertyTypeScore = 0; rejectionReason = 'wrong_property_type';
-  } else {
-    const residential = ['property', 'home', 'house', 'residence', 'residential', 'housing', 'realty'];
-    if (residential.some(kw => fullText.includes(kw))) {
-      propertyTypeScore = 10; propertyTypeMatch = 'residential match';
-    }
-  }
+  // Intent (10 pts)
+  const { intentScore, intentSignals, buyerIntentComments } = scoreIntent(item, caption);
 
-  // D. BHK — 10 pts
-  let bhkScore = 0;
-  let bhkMatch: string | false = false;
-  if (bhkConfig) {
-    if (getBHKKeywords(bhkConfig).some(kw => fullText.includes(kw))) {
-      bhkScore = 10; bhkMatch = 'exact match';
-    } else {
-      bhkScore = 4; bhkMatch = 'not mentioned';
-    }
-  } else {
-    bhkScore = 5; bhkMatch = 'not specified';
-  }
+  const total = sourceScore + locationScore + propertyScore + budgetScore + freshnessScore + engagementScore + intentScore;
 
-  // E. Budget — 10 pts
-  let budgetScore = 0;
-  let budgetMatch: string | false = false;
-  if (budgetMin && budgetMax) {
-    if (matchesBudgetRange(fullText, budgetMin, budgetMax, 0)) {
-      budgetScore = 10; budgetMatch = 'within range';
-    } else if (matchesBudgetRange(fullText, budgetMin, budgetMax, 0.15)) {
-      budgetScore = 7; budgetMatch = 'within ±15%';
-    } else if (matchesBudgetRange(fullText, budgetMin, budgetMax, 0.25)) {
-      budgetScore = 4; budgetMatch = 'within ±25%';
-    } else {
-      const anyPrice = /(\d+(?:\.\d+)?)\s*(?:l(?:akh)?s?|lacs?|cr(?:ore)?s?)\b/i.test(fullText);
-      if (!anyPrice) { budgetScore = 2; budgetMatch = 'no price mentioned'; }
-    }
-  } else {
-    budgetScore = 2; budgetMatch = 'not specified';
-  }
-
-  // F. Buyer Intent in Preview Comments — 10 pts
-  const buyerIntentCount = countBuyerIntentComments(item);
-  const previewArr = item.latestComments || item.previewComments || item.comments;
-  const hasPreview = Array.isArray(previewArr) && (previewArr as unknown[]).length > 0;
-  let buyerIntentScore = 0;
-  if (!hasPreview) {
-    buyerIntentScore = 2; // no preview data — neutral
-  } else if (buyerIntentCount >= 5) {
-    buyerIntentScore = 10;
-  } else if (buyerIntentCount >= 2) {
-    buyerIntentScore = 6;
-  } else if (buyerIntentCount >= 1) {
-    buyerIntentScore = 3;
-  }
-
-  // G. Engagement Quality — 5 pts
-  let engagementScore = 0;
-  let engagementLevel = '';
-  if (comments > 100 || likes > 1000) {
-    engagementScore = 5; engagementLevel = 'high';
-  } else if (comments > 20 || likes > 200) {
-    engagementScore = 3; engagementLevel = 'moderate';
-  } else {
-    engagementScore = 1; engagementLevel = 'minimum';
-  }
-
-  if (cityScore === 0) rejectionReason = rejectionReason || 'wrong_city';
-
-  const score = cityScore + microMarketScore + propertyTypeScore + bhkScore + budgetScore + buyerIntentScore + engagementScore;
-
-  return {
-    score,
-    matchedCriteria: { city: cityMatch, microMarket: microMarketMatch, propertyType: propertyTypeMatch, bhk: bhkMatch, budget: budgetMatch, buyerIntentComments: buyerIntentCount, engagementLevel },
-    scoreBreakdown: { city: cityScore, microMarket: microMarketScore, propertyType: propertyTypeScore, bhk: bhkScore, budget: budgetScore, buyerIntent: buyerIntentScore, engagement: engagementScore },
-    rejectionReason,
+  const scoreBreakdown: Record<string, number> = {
+    source: sourceScore,
+    location: locationScore,
+    property: propertyScore,
+    budget: budgetScore,
+    freshness: freshnessScore,
+    engagement: engagementScore,
+    intent: intentScore,
   };
+
+  // Build MatchedCriteria (for frontend badge rendering — backward compat)
+  const matchedCriteria: MatchedCriteria = {
+    city: !isWrongCity ? (locationMatch.includes('city match only') ? 'city only' : 'match') : false,
+    microMarket: locationMatch.startsWith('exact:') || locationMatch.startsWith('nearby:') ? locationMatch : false,
+    propertyType: propertyMatch,
+    bhk: bhkMatch,
+    budget: budgetMatch,
+    buyerIntentComments,
+    engagementLevel: comments >= 100 ? 'high' : comments >= 20 ? 'moderate' : 'minimum',
+  };
+
+  // Build reason text
+  const parts: string[] = [];
+  if (sourceType && sourceType !== 'unknown' && sourceType !== 'real_estate') parts.push(sourceType.replace('_', ' '));
+  if (locationMatch && !locationMatch.includes('no match') && !locationMatch.includes('city match only')) {
+    parts.push(locationMatch.replace('exact: ', '').replace('nearby: ', 'near ').replace(' (city inferred)', ''));
+  } else if (locationMatch.includes('city match only')) {
+    parts.push(city);
+  }
+  if (propertyMatch) parts.push(String(propertyMatch).replace(' + BHK', '') + (bhkMatch === 'exact match' && bhkConfig ? ` ${bhkConfig}` : ''));
+  if (budgetMatch && budgetMatch !== 'not specified' && budgetMatch !== 'no price mentioned') parts.push(`budget ${budgetMatch}`);
+  if (freshnessDays >= 0 && freshnessDays <= 7) parts.push('very recent');
+  if (intentSignals.length > 0) parts.push(intentSignals[0].replace(/_/g, ' ').replace(/\d+_/, ''));
+  const reasonSelected = parts.length > 0 ? parts.join(' · ') : 'Matched by relevance score';
+
+  return { score: total, sourceType, locationMatch, freshnessDays, intentSignals, matchedCriteria, scoreBreakdown, reasonSelected, hardReject: isWrongType ? 'wrong_property_type' : undefined };
 }
 
-function buildReasonSelected(mc: MatchedCriteria, city: string, propertyType: string, bhkConfig?: string): string {
-  const parts: string[] = [];
-  if (mc.city) parts.push(city);
-  if (mc.microMarket && mc.microMarket !== 'city-zone match') {
-    parts.push(mc.microMarket.replace(/^exact: /, '').replace(/^nearby: /, 'near '));
-  }
-  if (mc.propertyType) parts.push(propertyType.toLowerCase());
-  if (mc.bhk === 'exact match' && bhkConfig) parts.push(bhkConfig);
-  if (mc.budget && mc.budget !== 'not specified' && mc.budget !== 'no price mentioned') parts.push(`budget ${mc.budget}`);
-  if (mc.buyerIntentComments > 0) parts.push(`${mc.buyerIntentComments} buyer-intent comment${mc.buyerIntentComments !== 1 ? 's' : ''}`);
-  return parts.length > 0 ? parts.join(' · ') : 'Matched by relevance score';
+function emptyMatchedCriteria(): MatchedCriteria {
+  return { city: false, microMarket: false, propertyType: false, bhk: false, budget: false, buyerIntentComments: 0, engagementLevel: 'minimum' };
 }
 
 function deriveMatchedConditions(mc: MatchedCriteria): string[] {
   const out: string[] = [];
   if (mc.city) out.push('city');
-  if (mc.microMarket && mc.microMarket !== 'city-zone match') out.push('location');
+  if (mc.microMarket) out.push('location');
   if (mc.propertyType) out.push('property_type');
   if (mc.bhk === 'exact match') out.push('bhk');
   if (mc.budget && mc.budget !== 'not specified' && mc.budget !== 'no price mentioned') out.push('budget');
@@ -339,9 +531,6 @@ function deriveMatchedConditions(mc: MatchedCriteria): string[] {
 }
 
 // ─── URL Validation & Normalization ──────────────────────────────────────────
-// Only /p/ and /reel/ URLs with a valid shortcode are accepted as mining targets.
-// Hashtag pages, profile pages, explore pages etc. are discovery sources only.
-
 const VALID_IG_POST_RE = /^https?:\/\/(www\.)?instagram\.com\/(p|reel)\/([A-Za-z0-9_-]{5,})\/?/;
 
 function isValidInstagramPostUrl(url: string): boolean {
@@ -357,31 +546,23 @@ function normalizeInstagramUrl(url: string): string | null {
 function classifyInvalidUrl(url: string): string {
   if (!url) return 'missing_shortcode';
   const lower = url.toLowerCase();
-  if (!lower.includes('instagram.com')) return 'invalid_url_type';
-  if (lower.includes('/explore/')) return 'hashtag_url';
-  if (lower.includes('/stories/')) return 'invalid_url_type';
-  if (lower.includes('/highlights/')) return 'invalid_url_type';
-  if (lower.includes('/search')) return 'search_url';
-  if (lower.includes('/reel/') || lower.includes('/p/')) return 'missing_shortcode';
-  return 'profile_url';
+  if (!lower.includes('instagram.com')) return 'invalid_url';
+  if (lower.includes('/explore/')) return 'invalid_url';
+  if (lower.includes('/stories/') || lower.includes('/highlights/')) return 'invalid_url';
+  if (lower.includes('/search')) return 'invalid_url';
+  if (lower.includes('/reel/') || lower.includes('/p/')) return 'invalid_url';
+  return 'invalid_url';
 }
 
 function extractPostUrl(item: Record<string, unknown>): string | null {
   const rawUrl = ((item.url || item.postUrl || '') as string).trim();
-
-  // Path 1: URL is already a valid post/reel
   if (isValidInstagramPostUrl(rawUrl)) return normalizeInstagramUrl(rawUrl);
-
-  // Path 2: Reconstruct from shortcode fields (Apify often provides these even when URL is wrong)
-  const sc = (
-    (item.shortCode || item.shortcode || item.postShortCode || item.code || '') as string
-  ).trim();
+  const sc = ((item.shortCode || item.shortcode || item.postShortCode || item.code || '') as string).trim();
   if (/^[A-Za-z0-9_-]{5,}$/.test(sc)) {
     const typeHint = ((item.type || item.mediaType || item.productType || '') as string).toLowerCase();
     const isReel = typeHint.includes('video') || rawUrl.includes('/reel/');
     return `https://www.instagram.com/${isReel ? 'reel' : 'p'}/${sc}/`;
   }
-
   return null;
 }
 
@@ -396,8 +577,7 @@ export function generateSearchHashtags(inputs: {
   const { city, microMarkets, propertyType, bhkConfig, customHashtags } = inputs;
   const citySlug = city.toLowerCase().replace(/[^a-z0-9]/g, '');
   const propSlug = propertyType.toLowerCase().replace(/[^a-z]/g, '');
-  const bhkSlug = bhkConfig ? bhkConfig.toLowerCase().replace(/\s/g, '') : '';
-
+  const bhkSlug  = bhkConfig ? bhkConfig.toLowerCase().replace(/\s/g, '') : '';
   const tags = new Set<string>();
 
   // City-level
@@ -412,7 +592,6 @@ export function generateSearchHashtags(inputs: {
   tags.add(`new${propSlug}${citySlug}`);
   tags.add(`${citySlug}newproject`);
 
-  // BHK + city
   if (bhkSlug) {
     tags.add(`${bhkSlug}${citySlug}`);
     tags.add(`${citySlug}${bhkSlug}`);
@@ -420,7 +599,6 @@ export function generateSearchHashtags(inputs: {
     tags.add(`${bhkSlug}forsale`);
   }
 
-  // Micro-market tags
   for (const market of microMarkets.slice(0, 5)) {
     const mSlug = market.toLowerCase().replace(/[^a-z0-9]/g, '');
     tags.add(mSlug);
@@ -428,13 +606,9 @@ export function generateSearchHashtags(inputs: {
     tags.add(`${citySlug}${mSlug}`);
     tags.add(`${mSlug}realestate`);
     tags.add(`${mSlug}property`);
-    if (bhkSlug) {
-      tags.add(`${bhkSlug}${mSlug}`);
-      tags.add(`${mSlug}${bhkSlug}`);
-    }
+    if (bhkSlug) { tags.add(`${bhkSlug}${mSlug}`); tags.add(`${mSlug}${bhkSlug}`); }
   }
 
-  // Nearby area tags
   const nearbyAreas = getNearbyAreas(microMarkets);
   for (const area of nearbyAreas.slice(0, 6)) {
     const aSlug = area.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -442,7 +616,6 @@ export function generateSearchHashtags(inputs: {
     if (bhkSlug) tags.add(`${bhkSlug}${aSlug}`);
   }
 
-  // General intent
   tags.add(`${propSlug}forsale`);
   tags.add('indianrealestate');
   tags.add('readytomovein');
@@ -455,10 +628,7 @@ export function generateSearchHashtags(inputs: {
     }
   }
 
-  return {
-    hashtags: Array.from(tags).filter(Boolean).slice(0, 30),
-    nearbyAreas: nearbyAreas.slice(0, 8),
-  };
+  return { hashtags: Array.from(tags).filter(Boolean).slice(0, 30), nearbyAreas: nearbyAreas.slice(0, 8) };
 }
 
 // ─── Apify Helpers (unchanged) ─────────────────────────────────────────────────
@@ -480,7 +650,7 @@ async function runApifyActor(actorId: string, input: object, apiKey: string): Pr
 async function waitForApifyRun(runId: string, apiKey: string, maxWaitMs = 180000): Promise<string> {
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
-    const res = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apiKey}`);
+    const res  = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apiKey}`);
     const data = await res.json();
     const status = data.data?.status;
     if (status === 'SUCCEEDED') return data.data.defaultDatasetId;
@@ -497,7 +667,7 @@ async function fetchApifyDataset(datasetId: string, apiKey: string): Promise<unk
   return res.json();
 }
 
-// ─── Comment Extraction (unchanged) ───────────────────────────────────────────
+// ─── Comment Extraction (DO NOT MODIFY) ───────────────────────────────────────
 async function extractCommenters(
   postUrls: string[],
   limit: number,
@@ -511,26 +681,23 @@ async function extractCommenters(
     ? { directUrls: postUrls, resultsType: 'comments', resultsLimit: perPostLimit }
     : { directUrls: postUrls, postUrls, resultsLimit: perPostLimit };
 
-  const runId = await runApifyActor(commentActorId, input, apiKey);
+  const runId     = await runApifyActor(commentActorId, input, apiKey);
   const datasetId = await waitForApifyRun(runId, apiKey);
-  const items = await fetchApifyDataset(datasetId, apiKey) as Record<string, unknown>[];
+  const items     = await fetchApifyDataset(datasetId, apiKey) as Record<string, unknown>[];
 
-  const seen = new Set<string>();
+  const seen       = new Set<string>();
   const commenters: Commenter[] = [];
 
   for (const item of items) {
-    const username = (
-      item.ownerUsername || item.username || item.authorUsername
-    ) as string | undefined;
+    const username = (item.ownerUsername || item.username || item.authorUsername) as string | undefined;
     if (!username || seen.has(username)) continue;
     seen.add(username);
-
     const text = (item.text || item.comment || '') as string;
-    const sc = item.postShortCode as string | undefined;
+    const sc   = item.postShortCode as string | undefined;
     commenters.push({
       username,
-      comment: text,
-      postUrl: (item.postUrl as string) || (item.url as string) || (sc ? `https://www.instagram.com/p/${sc}/` : ''),
+      comment:   text,
+      postUrl:   (item.postUrl as string) || (item.url as string) || (sc ? `https://www.instagram.com/p/${sc}/` : ''),
       timestamp: (item.timestamp as string) || new Date().toISOString(),
     });
   }
@@ -543,15 +710,15 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const {
-      city = '',
+      city         = '',
       microMarkets = [],
-      budgetMin = 0,
-      budgetMax = 0,
+      budgetMin    = 0,
+      budgetMax    = 0,
       propertyType = 'Apartment',
       bhkConfig,
       customHashtags = [],
       manualPostUrls = [],
-      resultsLimit = 100,
+      resultsLimit   = 100,
     } = body;
 
     const excludedUrls = new Set<string>((body.excludedUrls as string[]) || []);
@@ -566,9 +733,9 @@ export async function POST(req: NextRequest) {
 
     const commentActorId = normalizeActorId(await getSetting('actor_instagram_comments'));
 
-    // ── MODE A: Manual URLs — validate then extract commenters ───────────────
+    // ── MODE A: Manual URLs — validate → extract commenters (no scoring) ──────
     const rawManualUrls = [...new Set((manualPostUrls as string[]).filter(Boolean))];
-    const manualUrls: string[] = [];
+    const manualUrls: string[]    = [];
     const manualRejected: string[] = [];
     for (const u of rawManualUrls.slice(0, 10)) {
       const normalized = normalizeInstagramUrl(u);
@@ -580,53 +747,41 @@ export async function POST(req: NextRequest) {
       if (manualUrls.length === 0) {
         return NextResponse.json({
           error: `None of the provided URLs are valid Instagram post or reel links. ` +
-            `Only https://www.instagram.com/p/{id}/ or /reel/{id}/ URLs are accepted. ` +
+            `Only instagram.com/p/{id}/ or /reel/{id}/ URLs are accepted. ` +
             `Rejected: ${manualRejected.slice(0, 3).join(', ')}`,
         }, { status: 400 });
       }
       const commenters = await extractCommenters(manualUrls, resultsLimit, commentActorId, apifyKey);
       return NextResponse.json({
         commenters,
-        totalFound: commenters.length,
+        totalFound:   commenters.length,
         postsScraped: manualUrls.length,
         topPosts: manualUrls.map(url => ({
           url, commentsCount: 0, score: 0, caption: 'Manual URL',
-          matchedConditions: ['manual'],
-          matchedCriteria: null,
+          sourceType: 'manual', locationMatch: 'N/A', freshnessDays: 0,
+          engagement: { comments: 0 }, intentSignals: [],
+          matchedConditions: ['manual'], matchedCriteria: null,
           reasonSelected: 'Manual URL — criteria not applied',
         })),
-        hashtags: [],
-        nearbyAreas: [],
-        mode: 'manual',
+        hashtags: [], nearbyAreas: [], mode: 'manual',
         ...(manualRejected.length > 0 && { manualRejected }),
       });
     }
 
-    // ── MODE B: Hashtag search → weighted scoring → extract commenters ─────────
+    // ── MODE B: Auto-discovery ────────────────────────────────────────────────
     if (!city.trim()) {
-      return NextResponse.json(
-        { error: 'City is required when no post URLs are provided.' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'City is required when no post URLs are provided.' }, { status: 400 });
     }
 
-    // Step 1: Generate hashtags (includes nearby areas)
-    const { hashtags, nearbyAreas } = generateSearchHashtags({
-      city, microMarkets, propertyType, bhkConfig, customHashtags,
-    });
+    // Step 1: Generate hashtags + nearby areas
+    const { hashtags, nearbyAreas } = generateSearchHashtags({ city, microMarkets, propertyType, bhkConfig, customHashtags });
     const hashtagUrls = hashtags.map(tag => `https://www.instagram.com/explore/tags/${tag}/`);
 
-    const postRunId = await runApifyActor(
-      'apify~instagram-scraper',
-      { directUrls: hashtagUrls, resultsType: 'posts', resultsLimit: 50 },
-      apifyKey
-    );
-
+    const postRunId    = await runApifyActor('apify~instagram-scraper', { directUrls: hashtagUrls, resultsType: 'posts', resultsLimit: 60 }, apifyKey);
     const postDatasetId = await waitForApifyRun(postRunId, apifyKey);
-    const postItems = await fetchApifyDataset(postDatasetId, apifyKey) as Record<string, unknown>[];
+    const postItems     = await fetchApifyDataset(postDatasetId, apifyKey) as Record<string, unknown>[];
 
-    // Step 2: URL validation — keep only valid /p/ or /reel/ items
-    const THREE_MONTHS_MS = 90 * 24 * 60 * 60 * 1000;
+    // Step 2: URL validation
     const debug: DebugSummary = {
       totalScanned: postItems.length,
       rawUrlsFound: postItems.length,
@@ -638,114 +793,121 @@ export async function POST(req: NextRequest) {
       selectedPosts: 0,
       rejectedReasons: {},
     };
-
     const bump = (key: string) => { debug.rejectedReasons[key] = (debug.rejectedReasons[key] || 0) + 1; };
 
-    // Validate URLs and reconstruct from shortcode where possible
     const validItems: Record<string, unknown>[] = [];
     for (const item of postItems) {
       const postUrl = extractPostUrl(item);
       if (!postUrl) {
-        const rawUrl = ((item.url || '') as string);
         debug.rejectedInvalidUrls++;
-        if (debug.invalidUrlExamples.length < 5) debug.invalidUrlExamples.push(rawUrl || '(empty)');
-        bump(classifyInvalidUrl(rawUrl));
+        const raw = (item.url || '') as string;
+        if (debug.invalidUrlExamples.length < 5) debug.invalidUrlExamples.push(raw || '(empty)');
+        bump('invalid_url');
         continue;
       }
       debug.validPostUrls++;
       validItems.push({ ...item, url: postUrl });
     }
 
+    // Step 3: Filter + Score
+    const SIX_MONTHS_MS   = 180 * 86_400_000;
+    const THREE_MONTHS_MS  =  90 * 86_400_000;
     const scoredPosts: ScoredPost[] = [];
 
     for (const item of validItems) {
-      // Hard filter: already scraped
       const itemUrl = item.url as string;
       if (excludedUrls.has(itemUrl)) { bump('already_scraped'); continue; }
 
-      // Hard filter: age
-      const ts = (item.timestamp as string) || '';
-      if (ts && Date.now() - new Date(ts).getTime() > THREE_MONTHS_MS) {
-        bump('older_than_90_days'); continue;
-      }
+      const ts       = (item.timestamp as string) || '';
+      const comments = Number(item.commentsCount ?? item.commentCount ?? 0);
+
+      // Source quality detection (needed for age threshold)
+      const { sourceType, sourceScore } = detectSourceType(item);
+      if (sourceType === 'non_real_estate') { bump('non_real_estate'); continue; }
+
+      // Age filter — developer posts allowed up to 180 days
+      const isDeveloper = sourceType === 'developer';
+      const maxAgeMs    = isDeveloper ? SIX_MONTHS_MS : THREE_MONTHS_MS;
+      if (ts && Date.now() - new Date(ts).getTime() > maxAgeMs) { bump('too_old'); continue; }
       debug.eligibleAfterAgeFilter++;
 
-      // Hard filter: engagement
-      const commentsCount = Number(item.commentsCount ?? item.commentCount ?? 0);
-      if (commentsCount <= 5) { bump('low_comment_count'); continue; }
+      // Engagement filter: comments ≥ 10 AND ≤ 5000 (no likes/views)
+      if (comments < 10)   { bump('low_comments');       continue; }
+      if (comments > 5000) { bump('too_many_comments');   continue; }
       debug.eligibleAfterEngagementFilter++;
 
-      // Weighted scoring
-      const { score, matchedCriteria, scoreBreakdown, rejectionReason } = scorePost(
-        item, city, microMarkets, propertyType, bhkConfig, Number(budgetMin), Number(budgetMax)
-      );
+      // Full scoring
+      const result = scorePost(item, city, microMarkets, propertyType, bhkConfig, Number(budgetMin), Number(budgetMax), sourceType, sourceScore);
 
-      if (score < 40) {
-        bump(rejectionReason || 'weak_relevance_score'); continue;
-      }
+      if (result.hardReject) { bump(result.hardReject); continue; }
+      if (result.score < 40) { bump('weak_score');       continue; }
 
       scoredPosts.push({
-        url: item.url as string,
-        commentsCount,
-        score,
+        url: itemUrl,
+        commentsCount: comments,
+        score: result.score,
         caption: ((item.caption as string) || '').slice(0, 120),
         timestamp: ts || new Date().toISOString(),
-        matchedCriteria,
-        scoreBreakdown,
-        reasonSelected: buildReasonSelected(matchedCriteria, city, propertyType, bhkConfig),
-        rejectionReason,
+        sourceType: result.sourceType,
+        locationMatch: result.locationMatch,
+        freshnessDays: result.freshnessDays,
+        intentSignals: result.intentSignals,
+        matchedCriteria: result.matchedCriteria,
+        scoreBreakdown: result.scoreBreakdown,
+        reasonSelected: result.reasonSelected,
       });
     }
 
-    // Step 3: Primary selection (≥55), fallback (≥40 if not enough)
-    const primary = scoredPosts.filter(p => p.score >= 55);
+    // Step 4: Select — primary ≥55, fallback ≥40
+    const primary  = scoredPosts.filter(p => p.score >= 55);
     const selected = primary.length >= 5 ? primary : scoredPosts.filter(p => p.score >= 40);
 
-    // Sort: score desc → buyerIntentComments desc → recency desc
+    // Sort: score → buyer intent comments → recency
     selected.sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
-      if (b.matchedCriteria.buyerIntentComments !== a.matchedCriteria.buyerIntentComments) {
-        return b.matchedCriteria.buyerIntentComments - a.matchedCriteria.buyerIntentComments;
-      }
+      const abi = b.matchedCriteria.buyerIntentComments;
+      const aai = a.matchedCriteria.buyerIntentComments;
+      if (abi !== aai) return abi - aai;
       return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
     });
 
     const topPosts = selected.slice(0, 20);
     debug.selectedPosts = topPosts.length;
 
-    // Track weak_relevance_score for posts that didn't make final cut
     for (const p of scoredPosts) {
-      if (!topPosts.includes(p)) bump('weak_relevance_score');
+      if (!topPosts.includes(p)) bump('weak_score');
     }
 
     if (topPosts.length === 0) {
       return NextResponse.json({
-        error: `No posts found matching your criteria (city: ${city}, property: ${propertyType}${bhkConfig ? `, ${bhkConfig}` : ''}). ` +
-          `Try adding more micro-markets, a broader property type, or paste specific post URLs directly.`,
-        hashtags,
-        nearbyAreas,
-        debugSummary: debug,
-        mode: 'hashtag',
+        error: `No qualifying posts found for ${city} · ${propertyType}${bhkConfig ? ` ${bhkConfig}` : ''}. ` +
+          `Try adding more micro-markets or paste specific post URLs directly.`,
+        hashtags, nearbyAreas, debugSummary: debug, mode: 'hashtag',
       }, { status: 400 });
     }
 
-    // Step 4: Extract commenters (unchanged)
-    const postUrls = topPosts.map(p => p.url);
+    // Step 5: Extract commenters (unchanged)
+    const postUrls   = topPosts.map(p => p.url);
     const commenters = await extractCommenters(postUrls, resultsLimit, commentActorId, apifyKey);
 
     return NextResponse.json({
       commenters,
-      totalFound: commenters.length,
+      totalFound:   commenters.length,
       postsScraped: topPosts.length,
       topPosts: topPosts.slice(0, 10).map(p => ({
-        url: p.url,
+        url:          p.url,
         commentsCount: p.commentsCount,
-        score: p.score,
-        caption: p.caption,
+        score:        p.score,
+        caption:      p.caption,
+        sourceType:   p.sourceType,
+        locationMatch: p.locationMatch,
+        freshnessDays: p.freshnessDays,
+        engagement:   { comments: p.commentsCount },
+        intentSignals: p.intentSignals,
         matchedConditions: deriveMatchedConditions(p.matchedCriteria),
-        matchedCriteria: p.matchedCriteria,
-        scoreBreakdown: p.scoreBreakdown,
-        reasonSelected: p.reasonSelected,
+        matchedCriteria:   p.matchedCriteria,
+        scoreBreakdown:    p.scoreBreakdown,
+        reasonSelected:    p.reasonSelected,
       })),
       hashtags,
       nearbyAreas,
