@@ -621,10 +621,11 @@ export default function InstagramMinerPage() {
             </div>
 
             {/* Results Limit */}
-            <div>
-              <Label>Commenters Limit</Label>
+            <div style={{ opacity: isManualMode ? 0.4 : 1 }}>
+              <Label hint={isManualMode ? '— ignored in URL mode (all commenters extracted)' : undefined}>Commenters Limit</Label>
               <select value={resultsLimit} onChange={e => setResultsLimit(Number(e.target.value))}
-                style={{ ...inputStyle, background: '#0f172a', cursor: 'pointer' }}>
+                disabled={isManualMode}
+                style={{ ...inputStyle, background: '#0f172a', cursor: isManualMode ? 'not-allowed' : 'pointer' }}>
                 {RESULTS_LIMITS.map(l => <option key={l} value={l}>{l} commenters</option>)}
               </select>
             </div>
