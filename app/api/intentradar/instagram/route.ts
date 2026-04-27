@@ -1,290 +1,281 @@
 // app/api/intentradar/instagram/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { getSetting } from '@/lib/intentradar/db';
+import { getApiKey, getSetting } from '@/lib/intentradar/db';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-interface InstagramResult {
+export const maxDuration = 300; // 5 min — Vercel Pro/Hobby max for API routes
+
+// ─── Types ─────────────────────────────────────────────────────────────────────
+interface Commenter {
   username: string;
-  interaction: string;
-  interactionType: 'comment' | 'post_owner';
+  comment: string;
   postUrl: string;
-  postCaption: string;
-  hashtag: string;
   timestamp: string;
 }
 
-// ─── Hashtag Generator ───────────────────────────────────────────────────────
-function generateHashtags(inputs: {
-  city: string;
-  microMarkets: string[];
-  budgetMin: number;
-  budgetMax: number;
-  propertyType: string;
-  bhkConfig?: string;
-  customHashtags?: string[];
-}): string[] {
-  const { city, microMarkets, budgetMin, budgetMax, propertyType, bhkConfig, customHashtags } = inputs;
-  const citySlug = city.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const propSlug = propertyType.toLowerCase().replace(/[^a-z]/g, '');
+interface MatchedCriteria {
+  city: string | false;
+  microMarket: string | false;
+  propertyType: string | false;
+  bhk: string | false;
+  budget: string | false;
+  buyerIntentComments: number;
+  engagementLevel: string;
+}
 
-  const hashtags = new Set<string>();
+interface ScoredPost {
+  url: string;
+  commentsCount: number;
+  score: number;
+  caption: string;
+  timestamp: string;
+  sourceType: string;
+  locationMatch: string;
+  freshnessDays: number;
+  intentSignals: string[];
+  matchedCriteria: MatchedCriteria;
+  scoreBreakdown: Record<string, number>;
+  reasonSelected: string;
+}
 
-  hashtags.add(`${citySlug}realestate`);
-  hashtags.add(`${citySlug}properties`);
-  hashtags.add(`${citySlug}flats`);
-  hashtags.add(`${citySlug}homes`);
-  hashtags.add(`${citySlug}${propSlug}`);
+interface DebugSummary {
+  totalScanned: number;
+  rawUrlsFound: number;
+  validPostUrls: number;
+  rejectedInvalidUrls: number;
+  invalidUrlExamples: string[];
+  eligibleAfterAgeFilter: number;
+  eligibleAfterEngagementFilter: number;
+  selectedPosts: number;
+  rejectedReasons: Record<string, number>;
+}
 
-  for (const market of microMarkets.slice(0, 5)) {
-    const mSlug = market.toLowerCase().replace(/[^a-z0-9]/g, '');
-    hashtags.add(mSlug);
-    hashtags.add(`${mSlug}${propSlug}`);
-    hashtags.add(`${citySlug}${mSlug}`);
-  }
+// ─── Nearby Areas Map ─────────────────────────────────────────────────────────
+const NEARBY_AREAS: Record<string, string[]> = {
+  // Bangalore North/NE
+  'kalyan nagar':    ['hrbr layout', 'kammanahalli', 'banaswadi', 'horamavu', 'hebbal', 'ramamurthy nagar', 'hennur', 'nagawara'],
+  'hrbr layout':     ['kalyan nagar', 'kammanahalli', 'banaswadi', 'horamavu', 'hebbal'],
+  'kammanahalli':    ['kalyan nagar', 'hrbr layout', 'banaswadi', 'st thomas town', 'hennur'],
+  'banaswadi':       ['kalyan nagar', 'hrbr layout', 'horamavu', 'ramamurthy nagar', 'nagawara'],
+  'hebbal':          ['kalyan nagar', 'sahakarnagar', 'yelahanka', 'kogilu', 'ms ramaiah', 'nagawara'],
+  'yelahanka':       ['hebbal', 'sahakarnagar', 'thanisandra', 'kogilu', 'jakkur'],
+  'thanisandra':     ['yelahanka', 'hebbal', 'kogilu', 'jakkur', 'nagawara', 'hennur'],
+  'hennur':          ['kalyan nagar', 'banaswadi', 'thanisandra', 'nagawara', 'horamavu'],
+  'nagawara':        ['hebbal', 'banaswadi', 'hennur', 'thanisandra', 'hrbr layout'],
+  // Bangalore East
+  'whitefield':      ['marathahalli', 'brookefield', 'itpl', 'kadugodi', 'varthur', 'hope farm'],
+  'marathahalli':    ['whitefield', 'brookefield', 'bellandur', 'sarjapur', 'doddanekundi'],
+  'koramangala':     ['btm layout', 'hsr layout', 'ejipura', 'sg palya', 'domlur'],
+  'hsr layout':      ['koramangala', 'btm layout', 'bellandur', 'agara', 'sarjapur'],
+  'bellandur':       ['marathahalli', 'sarjapur', 'hsr layout', 'kadubeesanahalli', 'varthur'],
+  'sarjapur':        ['bellandur', 'hsr layout', 'marathahalli', 'attibele'],
+  // Bangalore South
+  'jp nagar':        ['bannerghatta', 'gottigere', 'jayanagar', 'btm layout', 'hulimavu'],
+  'bannerghatta':    ['jp nagar', 'gottigere', 'hulimavu', 'arekere'],
+  'electronic city': ['hsr layout', 'bommanahalli', 'begur', 'anekal', 'sarjapur'],
+  // Bangalore West
+  'rajajinagar':     ['malleshwaram', 'basaveshwara nagar', 'vijayanagar', 'nagarbhavi'],
+  'malleshwaram':    ['rajajinagar', 'sadashivanagar', 'vyalikaval', 'seshadripuram'],
+  // Mumbai
+  'bandra':          ['khar', 'santacruz', 'andheri', 'juhu', 'bandra east', 'bandra west'],
+  'andheri':         ['bandra', 'juhu', 'goregaon', 'lokhandwala', 'versova'],
+  'powai':           ['chandivali', 'vikhroli', 'kanjurmarg', 'ghatkopar', 'hiranandani'],
+  'thane':           ['ghodbunder', 'majiwada', 'kopri', 'naupada', 'kolshet'],
+  'navi mumbai':     ['vashi', 'kharghar', 'nerul', 'belapur', 'panvel'],
+  // Pune
+  'kharadi':         ['wagholi', 'viman nagar', 'hadapsar', 'mundhwa', 'magarpatta'],
+  'hinjewadi':       ['wakad', 'balewadi', 'baner', 'pashan', 'pimple saudagar'],
+  'wakad':           ['hinjewadi', 'balewadi', 'baner', 'pimple nilakh'],
+  'viman nagar':     ['kharadi', 'nagar road', 'kalyani nagar', 'mundhwa'],
+  // Hyderabad
+  'gachibowli':      ['financial district', 'nanakramguda', 'kondapur', 'madhapur', 'kokapet'],
+  'kondapur':        ['gachibowli', 'madhapur', 'hitech city', 'kukatpally', 'miyapur'],
+  'hitech city':     ['kondapur', 'madhapur', 'gachibowli', 'jubilee hills'],
+  'kukatpally':      ['kondapur', 'miyapur', 'hitech city', 'bachupally'],
+  // Chennai
+  'anna nagar':      ['kilpauk', 'aminjikarai', 'thirumangalam', 'chetpet', 'arumbakkam'],
+  'omr':             ['sholinganallur', 'perungudi', 'karapakkam', 'siruseri'],
+  'velachery':       ['guindy', 'pallavaram', 'medavakkam', 'nanganallur'],
+  // Delhi NCR
+  'noida':           ['greater noida', 'noida extension', 'indirapuram', 'vaishali'],
+  'gurgaon':         ['dwarka expressway', 'sohna road', 'golf course road', 'sector 56'],
+  'dwarka':          ['dwarka expressway', 'palam', 'uttam nagar', 'najafgarh'],
+};
 
-  if (bhkConfig) {
-    const bhkSlug = bhkConfig.toLowerCase().replace(/\s/g, '');
-    hashtags.add(`${bhkSlug}${citySlug}`);
-    hashtags.add(`${bhkSlug}forsale`);
-    hashtags.add(`${bhkSlug}apartment`);
-  }
-
-  if (budgetMin && budgetMax) {
-    hashtags.add('budgethomes');
-    hashtags.add('affordablehousing');
-    if (budgetMin < 100) {
-      hashtags.add(`under${Math.round(budgetMax)}lakhs`);
-    } else {
-      hashtags.add('luxuryproperties');
-      hashtags.add('premiumhomes');
+function getNearbyAreas(microMarkets: string[]): string[] {
+  const marketSet = new Set(microMarkets.map(m => m.toLowerCase()));
+  const nearby = new Set<string>();
+  for (const market of microMarkets) {
+    for (const n of NEARBY_AREAS[market.toLowerCase()] || []) {
+      if (!marketSet.has(n)) nearby.add(n);
     }
   }
+  return Array.from(nearby);
+}
 
-  hashtags.add('indianrealestate');
-  hashtags.add('readytomovein');
-  hashtags.add(`newlaunch${citySlug}`);
-  hashtags.add('homesearch');
-  hashtags.add('propertyinvesting');
-  hashtags.add('reraapproved');
+// ─── Property Keywords ─────────────────────────────────────────────────────────
+// For Apartment: BHK terminology is an implicit apartment signal in India
+const PROP_KEYWORDS: Record<string, string[]> = {
+  Apartment:    ['apartment', 'flat', 'flats', 'unit', 'residential flat',
+                 'bhk', '1bhk', '2bhk', '3bhk', '4bhk', '1 bhk', '2 bhk', '3 bhk', '4 bhk'],
+  Villa:        ['villa', 'independent house', 'bungalow', 'independent home', 'duplex villa'],
+  Plot:         ['plot', 'land', 'site', 'bda plot', 'layout plot', 'residential plot'],
+  Penthouse:    ['penthouse', 'duplex penthouse', 'sky villa', 'luxury flat'],
+  'Row House':  ['row house', 'rowhouse', 'townhouse', 'town house'],
+  Commercial:   ['commercial', 'office', 'shop', 'showroom', 'retail', 'warehouse'],
+};
 
-  if (customHashtags) {
-    for (const tag of customHashtags) {
-      hashtags.add(tag.replace(/^#/, '').replace(/\s/g, '').toLowerCase());
-    }
+const WRONG_CATEGORY_MAP: Record<string, string[]> = {
+  Apartment:    ['villa', 'bungalow', 'independent house', 'plot', 'land', 'commercial', 'office', 'shop', 'row house', 'rowhouse'],
+  Villa:        ['plot', 'land', 'commercial', 'office', 'shop', 'apartment', 'flat'],
+  Plot:         ['villa', 'bungalow', 'apartment', 'flat', 'commercial', 'office'],
+  Penthouse:    ['plot', 'land', 'commercial', 'villa', 'row house'],
+  'Row House':  ['plot', 'land', 'commercial'],
+  Commercial:   ['villa', 'bungalow', 'residential', 'apartment', 'flat'],
+};
+
+function getPropKeywords(propertyType: string): string[] {
+  return PROP_KEYWORDS[propertyType] ?? [propertyType.toLowerCase()];
+}
+
+function getBHKKeywords(bhkConfig: string): string[] {
+  const num = bhkConfig.match(/\d+/)?.[0] ?? '';
+  return [`${num}bhk`, `${num} bhk`, `${num}-bhk`, `${num} bedroom`, `${num}bedroom`, `${num} bed`].filter(Boolean);
+}
+
+// ─── Budget Matching ──────────────────────────────────────────────────────────
+function matchesBudgetRange(text: string, min: number, max: number, tolerancePct = 0): boolean {
+  if (!min || !max) return false;
+  const lo = min * (1 - tolerancePct);
+  const hi = max * (1 + tolerancePct);
+  const lakhRe = /(\d+(?:\.\d+)?)\s*(?:l(?:akh)?s?|lacs?)\b/gi;
+  const croreRe = /(\d+(?:\.\d+)?)\s*(?:cr(?:ore)?s?)\b/gi;
+  let m: RegExpExecArray | null;
+  while ((m = lakhRe.exec(text)) !== null) {
+    const v = parseFloat(m[1]);
+    if (v >= lo && v <= hi) return true;
+  }
+  while ((m = croreRe.exec(text)) !== null) {
+    const v = parseFloat(m[1]) * 100;
+    if (v >= lo && v <= hi) return true;
+  }
+  return false;
+}
+
+// ─── Source Quality Detection (25 pts) ───────────────────────────────────────
+// Primary verification: account identity (username + fullName + bio) must confirm
+// a real estate source. Caption/hashtag signals alone are not sufficient.
+
+const NON_RE_SIGNALS = [
+  'meme', 'funny', 'comedy', 'fashion', 'ootd', 'foodie', 'restaurant',
+  'travel', 'fitness', 'workout', 'gym', 'beauty', 'makeup', 'skincare',
+  'cricket', 'ipl', 'bollywood', 'music', 'dance', 'reel trend',
+];
+
+const NON_RE_ACCOUNT = [
+  'meme', 'funny', 'comedy', 'food', 'restaurant', 'cafe', 'chef', 'foodie',
+  'fitness', 'gym', 'workout', 'yoga', 'beauty', 'makeup', 'skincare', 'salon',
+  'fashion', 'ootd', 'clothing', 'boutique', 'travel', 'tour', 'trekking',
+  'cricket', 'sports', 'ipl', 'music', 'dance', 'bollywood', 'film', 'actor',
+  'photography', 'nature', 'lifestyle', 'entertainment', 'comedian', 'influencer',
+];
+
+const DEV_CAPTION = ['new launch', 'pre-launch', 'pre launch', 'under construction',
+  'limited units', 'rera approved', 'rera no', 'possession', 'amenities', 'booking open',
+  'sample flat', 'site visit', 'bhk starting', 'configuration', 'sqft', 'sq.ft'];
+const DEV_HASHTAG = ['newlaunch', 'prelaunches', 'reraapproved', 'underconstruction',
+  'newproject', 'newdevelopment', 'readytomove', 'propertylisting'];
+const DEV_USERNAME = ['builders', 'constructions', 'infrastructure', 'developers',
+  'projects', 'realty', 'homes', 'properties', 'infra', 'construction', 'build',
+  'residential', 'housing', 'developer', 'builder'];
+
+const AGENT_CAPTION = ['real estate advisor', 'property consultant', 'dm for details',
+  'contact me', 'call me', 'reach me', 'available for', 'exclusive listing'];
+const AGENT_USERNAME = ['agent', 'advisor', 'consultant', 'realtor', 'broker',
+  'realestate', 'propertydealer', 'propdealer', 'realty', 'estateconsult'];
+
+const AGG_CAPTION = ['luxury homes in', 'flats in', 'properties in', 'homes for sale in',
+  'apartments in', '2bhk in', '3bhk in', 'flat for sale', 'property for sale'];
+const AGG_USERNAME = ['flats', 'luxury', 'premium', 'elite', 'nri', 'apartments',
+  'propertie', 'realestate', 'homesale', 'proplist'];
+
+const INF_CAPTION = ['walkthrough', 'property review', 'investment guide',
+  'real estate tips', 'market update', 'property tour'];
+
+const COMM_CAPTION = ['nri buyers', 'invest in', 'north bangalore', 'south bangalore',
+  'east bangalore', 'west bangalore'];
+
+const RE_ACCOUNT_SIGNALS = [
+  'realestate', 'property', 'properties', 'flat', 'flats', 'homes', 'housing',
+  'realtor', 'realty', 'estate', 'builder', 'developer', 'infra', 'construct',
+  'apartment', 'residential', 'commercial', 'bhk', 'villa', 'plot',
+];
+
+type SourceDetectResult = { sourceType: string; sourceScore: number };
+
+function detectSourceType(item: Record<string, unknown>): SourceDetectResult {
+  const caption   = ((item.caption as string) || '').toLowerCase();
+  const hashtags  = ((item.hashtags as string[]) || []).map(h => h.toLowerCase().replace(/^#/, ''));
+  const username  = ((item.ownerUsername || item.username || '') as string).toLowerCase();
+  const fullName  = ((item.ownerFullName || item.fullName || '') as string).toLowerCase();
+  const biography = ((item.biography || item.bio || '') as string).toLowerCase();
+  const accountText = `${username} ${fullName} ${biography}`;
+
+  // Hard reject: non-RE account identity
+  if (NON_RE_ACCOUNT.some(kw => accountText.includes(kw))) {
+    return { sourceType: 'non_real_estate', sourceScore: 0 };
+  }
+  // Hard reject: non-RE content signals
+  if (NON_RE_SIGNALS.some(kw => caption.includes(kw) || hashtags.some(h => h.includes(kw)))) {
+    return { sourceType: 'non_real_estate', sourceScore: 0 };
   }
 
-  return Array.from(hashtags).filter(Boolean).slice(0, 15);
-}
+  const capHas = (kws: string[]) => kws.some(kw => caption.includes(kw));
+  const tagHas = (kws: string[]) => kws.some(kw => hashtags.some(h => h.includes(kw)));
+  const accHas = (kws: string[]) => kws.some(kw => accountText.includes(kw));
 
-// ─── Apify Helpers ────────────────────────────────────────────────────────────
-async function runApifyActor(actorId: string, input: object, apiKey: string): Promise<string> {
-  const response = await fetch(
-    `https://api.apify.com/v2/acts/${actorId}/runs?token=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
-    }
-  );
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Apify actor start failed: ${err}`);
+  const isDevAccount   = accHas(DEV_USERNAME);
+  const isDevContent   = capHas(DEV_CAPTION) || tagHas(DEV_HASHTAG);
+  const isAgentAccount = accHas(AGENT_USERNAME);
+  const isAggAccount   = accHas(AGG_USERNAME);
+
+  // Developer: account + content, OR very strong dual content signal
+  if (isDevAccount && isDevContent) return { sourceType: 'developer', sourceScore: 25 };
+  if (isDevContent && capHas(DEV_CAPTION) && tagHas(DEV_HASHTAG)) {
+    return { sourceType: 'developer', sourceScore: 20 };
   }
-  const data = await response.json();
-  return data.data.id;
-}
 
-async function waitForApifyRun(runId: string, apiKey: string, maxWaitMs = 120000): Promise<string> {
-  const start = Date.now();
-  while (Date.now() - start < maxWaitMs) {
-    const res = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apiKey}`);
-    const data = await res.json();
-    const status = data.data?.status;
-    if (status === 'SUCCEEDED') return data.data.defaultDatasetId;
-    if (status === 'FAILED' || status === 'ABORTED') throw new Error(`Apify run ${status}`);
-    await new Promise(r => setTimeout(r, 4000));
+  // Agent: account signal is required; caption alone is not enough
+  if (isAgentAccount) return { sourceType: 'agent', sourceScore: 22 };
+  if (capHas(AGENT_CAPTION) && accHas(RE_ACCOUNT_SIGNALS)) {
+    return { sourceType: 'agent', sourceScore: 18 };
   }
-  throw new Error('Apify run timed out');
-}
 
-async function fetchApifyDataset(datasetId: string, apiKey: string): Promise<unknown[]> {
-  const res = await fetch(
-    `https://api.apify.com/v2/datasets/${datasetId}/items?token=${apiKey}&clean=true&format=json`
-  );
-  return res.json();
-}
-
-// ─── POST Handler ─────────────────────────────────────────────────────────────
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const {
-      city,
-      microMarkets = [],
-      budgetMin = 50,
-      budgetMax = 80,
-      propertyType = 'Apartment',
-      bhkConfig,
-      customHashtags = [],
-      manualPostUrls = [],
-      resultsLimit = 100,
-    } = body;
-
-    const apifyKey = await getSetting('api_key_apify');
-    if (!apifyKey) {
-      return NextResponse.json(
-        { error: 'Apify API Key not configured. Please add it in IntentRadar Settings.' },
-        { status: 400 }
-      );
-    }
-
-    const hashtags = generateHashtags({ city, microMarkets, budgetMin, budgetMax, propertyType, bhkConfig, customHashtags });
-
-    const allResults: InstagramResult[] = [];
-
-    // ── Step 1: Scrape posts via hashtag URLs (apify/instagram-scraper) ───────
-    // Build Instagram hashtag explore URLs — actor accepts these as directUrls
-    const hashtagUrls = hashtags.map(tag => `https://www.instagram.com/explore/tags/${tag}/`);
-    const postsPerHashtag = Math.max(5, Math.ceil(resultsLimit / hashtags.length));
-
-    const hashtagRunId = await runApifyActor(
-      'apify~instagram-scraper',
-      {
-        directUrls: hashtagUrls,
-        resultsType: 'posts',
-        resultsLimit: Math.min(postsPerHashtag, 20),
-      },
-      apifyKey
-    );
-
-    const hashtagDatasetId = await waitForApifyRun(hashtagRunId, apifyKey);
-    const hashtagItems = await fetchApifyDataset(hashtagDatasetId, apifyKey) as Record<string, unknown>[];
-
-    // Collect post URLs + capture post owners as signals
-    const postUrls: string[] = [...manualPostUrls];
-
-    for (const item of hashtagItems) {
-      if (item.url) postUrls.push(item.url as string);
-
-      if (item.ownerUsername && item.url) {
-        const caption = (item.caption as string) || '';
-        allResults.push({
-          username: item.ownerUsername as string,
-          interaction: caption
-            ? `📸 Posted: "${caption.slice(0, 80)}${caption.length > 80 ? '...' : ''}"`
-            : '📸 Posted this',
-          interactionType: 'post_owner',
-          postUrl: item.url as string,
-          postCaption: caption,
-          hashtag: '', // derived from explore URL, not returned directly
-          timestamp: (item.timestamp as string) || new Date().toISOString(),
-        });
-      }
-    }
-
-    // ── Step 2: Scrape comments from collected post URLs ──────────────────────
-    const urlsToScrape = [...new Set(postUrls)].slice(0, 20);
-
-    if (urlsToScrape.length > 0) {
-      const commentRunId = await runApifyActor(
-        'apify~instagram-scraper',
-        {
-          directUrls: urlsToScrape,
-          resultsType: 'comments',
-          resultsLimit: Math.ceil(resultsLimit / urlsToScrape.length),
-        },
-        apifyKey
-      );
-
-      const commentDatasetId = await waitForApifyRun(commentRunId, apifyKey);
-      const commentItems = await fetchApifyDataset(commentDatasetId, apifyKey) as Record<string, unknown>[];
-
-      for (const comment of commentItems) {
-        if (comment.ownerUsername) {
-          allResults.push({
-            username: comment.ownerUsername as string,
-            interaction: (comment.text as string) || '💬 Commented',
-            interactionType: 'comment',
-            postUrl: (comment.postUrl as string) || (comment.url as string) || '',
-            postCaption: '',
-            hashtag: '',
-            timestamp: (comment.timestamp as string) || new Date().toISOString(),
-          });
-        }
-      }
-    }
-
-    // ── Deduplicate (prefer comment over post_owner) ──────────────────────────
-    const deduped = new Map<string, InstagramResult>();
-    for (const r of allResults) {
-      const existing = deduped.get(r.username);
-      if (!existing) {
-        deduped.set(r.username, r);
-      } else if (r.interactionType === 'comment' && existing.interactionType !== 'comment') {
-        deduped.set(r.username, r);
-      }
-    }
-
-    const finalResults = Array.from(deduped.values())
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      .slice(0, resultsLimit);
-
-    return NextResponse.json({
-      results: finalResults,
-      hashtags,
-      totalFound: finalResults.length,
-      postsScraped: urlsToScrape.length,
-    });
-
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : 'Mining failed';
-    console.error('Instagram miner error:', error);
-    return NextResponse.json({ error: msg }, { status: 500 });
+  // Aggregator: account + any RE content
+  if (isAggAccount && (capHas(AGG_CAPTION) || tagHas(['realestate', 'propertylisting', 'propertyforsale']))) {
+    return { sourceType: 'aggregator', sourceScore: 18 };
   }
-}
-const isDevContent = capHas(DEV_CAPTION) || tagHas(DEV_HASHTAG);
-const isAgentAccount = accHas(AGENT_USERNAME);
-const isAggAccount = accHas(AGG_USERNAME);
 
-// Developer: account + content, OR very strong dual content signal
-if (isDevAccount && isDevContent) return { sourceType: 'developer', sourceScore: 25 };
-if (isDevContent && capHas(DEV_CAPTION) && tagHas(DEV_HASHTAG)) {
-  // Both caption AND hashtag dev signals without account match → slightly lower confidence
-  return { sourceType: 'developer', sourceScore: 20 };
-}
+  // Influencer: content signal but MUST also have RE account signal
+  if ((capHas(INF_CAPTION) || tagHas(['realestateinvestment', 'propertyinvestment', 'realestatetips'])) && accHas(RE_ACCOUNT_SIGNALS)) {
+    return { sourceType: 'influencer', sourceScore: 15 };
+  }
 
-// Agent: account signal is required; caption alone is not enough
-if (isAgentAccount) return { sourceType: 'agent', sourceScore: 22 };
-if (capHas(AGENT_CAPTION) && accHas(RE_ACCOUNT_SIGNALS)) {
-  return { sourceType: 'agent', sourceScore: 18 };
-}
+  // Community: content signal + RE account signal
+  if ((capHas(COMM_CAPTION) || tagHas(['nrirealestate', 'northbangalore', 'southbangalore', 'eastbangalore'])) && accHas(RE_ACCOUNT_SIGNALS)) {
+    return { sourceType: 'community', sourceScore: 12 };
+  }
 
-// Aggregator: account + any RE content
-if (isAggAccount && (capHas(AGG_CAPTION) || tagHas(['realestate', 'propertylisting', 'propertyforsale']))) {
-  return { sourceType: 'aggregator', sourceScore: 18 };
-}
+  // Generic RE: ONLY allowed if account is verifiably RE-related
+  const hasREAccount = RE_ACCOUNT_SIGNALS.some(kw => accountText.includes(kw));
+  const RE_CONTENT_KWS = ['realestate', 'property', 'flat', 'apartment', 'bhk', 'sqft', 'forsale', 'housing', 'propertyforsale'];
+  const hasREContent = RE_CONTENT_KWS.some(kw => caption.includes(kw) || hashtags.some(h => h.includes(kw)));
 
-// Influencer: content signal but MUST also have RE account signal
-if ((capHas(INF_CAPTION) || tagHas(['realestateinvestment', 'propertyinvestment', 'realestatetips'])) && accHas(RE_ACCOUNT_SIGNALS)) {
-  return { sourceType: 'influencer', sourceScore: 15 };
-}
+  if (hasREAccount && hasREContent) {
+    return { sourceType: 'real_estate', sourceScore: 8 };
+  }
 
-// Community: content signal + RE account signal
-if ((capHas(COMM_CAPTION) || tagHas(['nrirealestate', 'northbangalore', 'southbangalore', 'eastbangalore'])) && accHas(RE_ACCOUNT_SIGNALS)) {
-  return { sourceType: 'community', sourceScore: 12 };
-}
-
-// Generic RE: ONLY allowed if account is verifiably RE-related
-const hasREAccount = RE_ACCOUNT_SIGNALS.some(kw => accountText.includes(kw));
-const RE_CONTENT_KWS = ['realestate', 'property', 'flat', 'apartment', 'bhk', 'sqft', 'forsale', 'housing', 'propertyforsale'];
-const hasREContent = RE_CONTENT_KWS.some(kw => caption.includes(kw) || hashtags.some(h => h.includes(kw)));
-
-if (hasREAccount && hasREContent) {
-  return { sourceType: 'real_estate', sourceScore: 8 };
-}
-
-// Account has no verifiable RE identity → reject regardless of caption content
-return { sourceType: 'non_real_estate', sourceScore: 0 };
+  // Account has no verifiable RE identity → reject regardless of caption content
+  return { sourceType: 'non_real_estate', sourceScore: 0 };
 }
 
 // ─── Location Scoring (20 pts) ────────────────────────────────────────────────
@@ -295,19 +286,17 @@ function scoreLocation(fullText: string, city: string, microMarkets: string[]): 
   const citySlug = cityLower.replace(/[^a-z0-9]/g, '');
   const hasCity = fullText.includes(cityLower) || fullText.includes(citySlug);
 
-  // Check exact micro-market match first
   for (const market of microMarkets) {
     const ml = market.toLowerCase();
     if (fullText.includes(ml) || fullText.includes(ml.replace(/\s/g, ''))) {
       return {
-        locationScore: hasCity ? 20 : 16, // slightly lower when city not explicit
+        locationScore: hasCity ? 20 : 16,
         locationMatch: `exact: ${market}`,
         isWrongCity: false,
       };
     }
   }
 
-  // Check nearby areas
   for (const area of getNearbyAreas(microMarkets)) {
     const al = area.toLowerCase();
     if (fullText.includes(al) || fullText.includes(al.replace(/\s/g, ''))) {
@@ -328,9 +317,8 @@ type PropertyResult = { propertyScore: number; propertyMatch: string | false; bh
 
 function scoreProperty(fullText: string, propertyType: string, bhkConfig: string | undefined): PropertyResult {
   const hasCorrect = getPropKeywords(propertyType).some(kw => fullText.includes(kw));
-  const hasWrong = (WRONG_CATEGORY_MAP[propertyType] || []).some(kw => fullText.includes(kw));
+  const hasWrong   = (WRONG_CATEGORY_MAP[propertyType] || []).some(kw => fullText.includes(kw));
 
-  // Wrong type and no correct keyword → reject
   if (hasWrong && !hasCorrect) {
     return { propertyScore: 0, propertyMatch: false, bhkMatch: 'N/A', isWrongType: true };
   }
@@ -343,7 +331,6 @@ function scoreProperty(fullText: string, propertyType: string, bhkConfig: string
   }
   // Generic "residential" words are not accepted as property type evidence
 
-  // BHK bonus (+5 max, total capped at 15)
   let bhkMatch = bhkConfig ? 'not mentioned' : 'not specified';
   if (bhkConfig) {
     if (getBHKKeywords(bhkConfig).some(kw => fullText.includes(kw))) {
@@ -361,12 +348,12 @@ type BudgetResult = { budgetScore: number; budgetMatch: string | false };
 
 function scoreBudget(fullText: string, budgetMin: number, budgetMax: number): BudgetResult {
   if (!budgetMin || !budgetMax) return { budgetScore: 2, budgetMatch: 'not specified' };
-  if (matchesBudgetRange(fullText, budgetMin, budgetMax, 0)) return { budgetScore: 10, budgetMatch: 'within range' };
-  if (matchesBudgetRange(fullText, budgetMin, budgetMax, 0.15)) return { budgetScore: 7, budgetMatch: 'within ±15%' };
-  if (matchesBudgetRange(fullText, budgetMin, budgetMax, 0.25)) return { budgetScore: 4, budgetMatch: 'within ±25%' };
+  if (matchesBudgetRange(fullText, budgetMin, budgetMax, 0))    return { budgetScore: 10, budgetMatch: 'within range' };
+  if (matchesBudgetRange(fullText, budgetMin, budgetMax, 0.15)) return { budgetScore: 7,  budgetMatch: 'within ±15%' };
+  if (matchesBudgetRange(fullText, budgetMin, budgetMax, 0.25)) return { budgetScore: 4,  budgetMatch: 'within ±25%' };
   const hasPrice = /(\d+(?:\.\d+)?)\s*(?:l(?:akh)?s?|lacs?|cr(?:ore)?s?)\b/i.test(fullText);
   if (!hasPrice) return { budgetScore: 2, budgetMatch: 'no price mentioned' };
-  return { budgetScore: 0, budgetMatch: false }; // price mentioned but outside range
+  return { budgetScore: 0, budgetMatch: false };
 }
 
 // ─── Freshness Scoring (10 pts) ───────────────────────────────────────────────
@@ -374,26 +361,26 @@ type FreshnessResult = { freshnessScore: number; freshnessDays: number; tooOld: 
 
 function scoreFreshness(ts: string, isDeveloper: boolean): FreshnessResult {
   if (!ts) return { freshnessScore: 5, freshnessDays: -1, tooOld: false };
-  const ageMs = Date.now() - new Date(ts).getTime();
+  const ageMs   = Date.now() - new Date(ts).getTime();
   const ageDays = Math.floor(ageMs / 86_400_000);
   const maxDays = isDeveloper ? 180 : 90;
   if (ageDays > maxDays) return { freshnessScore: 0, freshnessDays: ageDays, tooOld: true };
-  if (ageDays <= 7) return { freshnessScore: 10, freshnessDays: ageDays, tooOld: false };
-  if (ageDays <= 14) return { freshnessScore: 9, freshnessDays: ageDays, tooOld: false };
-  if (ageDays <= 30) return { freshnessScore: 7, freshnessDays: ageDays, tooOld: false };
-  if (ageDays <= 60) return { freshnessScore: 5, freshnessDays: ageDays, tooOld: false };
-  if (ageDays <= 90) return { freshnessScore: 3, freshnessDays: ageDays, tooOld: false };
-  return { freshnessScore: 1, freshnessDays: ageDays, tooOld: false }; // 91-180 developer
+  if (ageDays <=  7) return { freshnessScore: 10, freshnessDays: ageDays, tooOld: false };
+  if (ageDays <= 14) return { freshnessScore:  9, freshnessDays: ageDays, tooOld: false };
+  if (ageDays <= 30) return { freshnessScore:  7, freshnessDays: ageDays, tooOld: false };
+  if (ageDays <= 60) return { freshnessScore:  5, freshnessDays: ageDays, tooOld: false };
+  if (ageDays <= 90) return { freshnessScore:  3, freshnessDays: ageDays, tooOld: false };
+  return { freshnessScore: 1, freshnessDays: ageDays, tooOld: false };
 }
 
 // ─── Engagement Scoring (10 pts) — comments only ─────────────────────────────
 function scoreEngagement(comments: number): number {
   if (comments >= 500) return 10;
-  if (comments >= 200) return 9;
-  if (comments >= 100) return 8;
-  if (comments >= 50) return 6;
-  if (comments >= 20) return 4;
-  if (comments >= 10) return 2;
+  if (comments >= 200) return  9;
+  if (comments >= 100) return  8;
+  if (comments >=  50) return  6;
+  if (comments >=  20) return  4;
+  if (comments >=  10) return  2;
   return 0;
 }
 
@@ -416,9 +403,9 @@ const COMMENT_INTENT_PHRASES = [
 
 function countBuyerIntentComments(item: Record<string, unknown>): number {
   const list = (
-    (item.latestComments as Record<string, unknown>[]) ||
+    (item.latestComments  as Record<string, unknown>[]) ||
     (item.previewComments as Record<string, unknown>[]) ||
-    (item.comments as Record<string, unknown>[]) ||
+    (item.comments        as Record<string, unknown>[]) ||
     []
   );
   let count = 0;
@@ -433,9 +420,9 @@ type IntentResult = { intentScore: number; intentSignals: string[]; buyerIntentC
 
 function scoreIntent(item: Record<string, unknown>, captionText: string): IntentResult {
   const signals: string[] = [];
-  const hasBuyerCTA = BUYER_CTA.some(kw => captionText.includes(kw));
+  const hasBuyerCTA    = BUYER_CTA.some(kw => captionText.includes(kw));
   const hasListingLang = LISTING_LANG.some(kw => captionText.includes(kw));
-  if (hasBuyerCTA) signals.push('buyer_cta_in_caption');
+  if (hasBuyerCTA)    signals.push('buyer_cta_in_caption');
   if (hasListingLang) signals.push('listing_language_in_caption');
 
   const buyerIntentComments = countBuyerIntentComments(item);
@@ -443,18 +430,15 @@ function scoreIntent(item: Record<string, unknown>, captionText: string): Intent
   else if (buyerIntentComments >= 2) signals.push(`${buyerIntentComments}_buyer_intent_comments`);
   else if (buyerIntentComments === 1) signals.push('1_buyer_intent_comment');
 
-  // Base score from caption
   let intentScore = 0;
-  if (hasBuyerCTA && hasListingLang) intentScore = 8; // both = highest
-  else if (hasBuyerCTA) intentScore = 6;
-  else if (hasListingLang) intentScore = 5;
+  if (hasBuyerCTA && hasListingLang) intentScore = 8;
+  else if (hasBuyerCTA)              intentScore = 6;
+  else if (hasListingLang)           intentScore = 5;
 
-  // Bonus from comments (capped at 10 total)
-  if (buyerIntentComments >= 5) intentScore = Math.min(10, intentScore + 3);
+  if (buyerIntentComments >= 5)      intentScore = Math.min(10, intentScore + 3);
   else if (buyerIntentComments >= 2) intentScore = Math.min(10, intentScore + 2);
   else if (buyerIntentComments >= 1) intentScore = Math.min(10, intentScore + 1);
 
-  // No signals but no preview data either → neutral
   const previewArr = item.latestComments || item.previewComments || item.comments;
   const hasPreview = Array.isArray(previewArr) && (previewArr as unknown[]).length > 0;
   if (signals.length === 0 && !hasPreview) intentScore = 3;
@@ -463,9 +447,6 @@ function scoreIntent(item: Record<string, unknown>, captionText: string): Intent
 }
 
 // ─── Main Scoring Function ────────────────────────────────────────────────────
-// Scoring: Source (25) + Location (20) + Property (15) + Budget (10)
-//        + Freshness (10) + Engagement (10) + Intent (10) = 100
-
 interface ScoreResult {
   score: number;
   sourceType: string;
@@ -496,40 +477,26 @@ function scorePost(
   const ts = (item.timestamp as string) || '';
   const comments = Number(item.commentsCount ?? item.commentCount ?? 0);
 
-  // Location (20 pts) — wrong city = hard reject
   const { locationScore, locationMatch, isWrongCity } = scoreLocation(fullText, city, microMarkets);
   if (isWrongCity) return { score: 0, sourceType, locationMatch, freshnessDays: 0, intentSignals: [], matchedCriteria: emptyMatchedCriteria(), scoreBreakdown: {}, reasonSelected: '', hardReject: 'wrong_city' };
 
-  // Property (15 pts)
   const { propertyScore, propertyMatch, bhkMatch, isWrongType } = scoreProperty(fullText, propertyType, bhkConfig);
-
-  // Budget (10 pts)
   const { budgetScore, budgetMatch } = scoreBudget(fullText, budgetMin, budgetMax);
 
-  // Freshness (10 pts)
   const isDeveloper = sourceType === 'developer';
   const { freshnessScore, freshnessDays, tooOld } = scoreFreshness(ts, isDeveloper);
   if (tooOld) return { score: 0, sourceType, locationMatch, freshnessDays, intentSignals: [], matchedCriteria: emptyMatchedCriteria(), scoreBreakdown: {}, reasonSelected: '', hardReject: 'too_old' };
 
-  // Engagement (10 pts)
   const engagementScore = scoreEngagement(comments);
-
-  // Intent (10 pts)
   const { intentScore, intentSignals, buyerIntentComments } = scoreIntent(item, caption);
 
   const total = sourceScore + locationScore + propertyScore + budgetScore + freshnessScore + engagementScore + intentScore;
 
   const scoreBreakdown: Record<string, number> = {
-    source: sourceScore,
-    location: locationScore,
-    property: propertyScore,
-    budget: budgetScore,
-    freshness: freshnessScore,
-    engagement: engagementScore,
-    intent: intentScore,
+    source: sourceScore, location: locationScore, property: propertyScore,
+    budget: budgetScore, freshness: freshnessScore, engagement: engagementScore, intent: intentScore,
   };
 
-  // Build MatchedCriteria (for frontend badge rendering — backward compat)
   const matchedCriteria: MatchedCriteria = {
     city: !isWrongCity ? 'match' : false,
     microMarket: locationMatch.startsWith('exact:') || locationMatch.startsWith('nearby:') ? locationMatch : false,
@@ -540,7 +507,6 @@ function scorePost(
     engagementLevel: comments >= 100 ? 'high' : comments >= 20 ? 'moderate' : 'minimum',
   };
 
-  // Build reason text
   const parts: string[] = [];
   if (sourceType && sourceType !== 'unknown' && sourceType !== 'real_estate') parts.push(sourceType.replace('_', ' '));
   if (locationMatch && !locationMatch.includes('no match')) {
@@ -583,17 +549,6 @@ function normalizeInstagramUrl(url: string): string | null {
   return `https://www.instagram.com/${m[2]}/${m[3]}/`;
 }
 
-function classifyInvalidUrl(url: string): string {
-  if (!url) return 'missing_shortcode';
-  const lower = url.toLowerCase();
-  if (!lower.includes('instagram.com')) return 'invalid_url';
-  if (lower.includes('/explore/')) return 'invalid_url';
-  if (lower.includes('/stories/') || lower.includes('/highlights/')) return 'invalid_url';
-  if (lower.includes('/search')) return 'invalid_url';
-  if (lower.includes('/reel/') || lower.includes('/p/')) return 'invalid_url';
-  return 'invalid_url';
-}
-
 function extractPostUrl(item: Record<string, unknown>): string | null {
   const rawUrl = ((item.url || item.postUrl || '') as string).trim();
   if (isValidInstagramPostUrl(rawUrl)) return normalizeInstagramUrl(rawUrl);
@@ -617,10 +572,9 @@ export function generateSearchHashtags(inputs: {
   const { city, microMarkets, propertyType, bhkConfig, customHashtags } = inputs;
   const citySlug = city.toLowerCase().replace(/[^a-z0-9]/g, '');
   const propSlug = propertyType.toLowerCase().replace(/[^a-z]/g, '');
-  const bhkSlug = bhkConfig ? bhkConfig.toLowerCase().replace(/\s/g, '') : '';
+  const bhkSlug  = bhkConfig ? bhkConfig.toLowerCase().replace(/\s/g, '') : '';
   const tags = new Set<string>();
 
-  // City-level
   tags.add(`${citySlug}realestate`);
   tags.add(`${citySlug}property`);
   tags.add(`${citySlug}${propSlug}`);
@@ -671,7 +625,7 @@ export function generateSearchHashtags(inputs: {
   return { hashtags: Array.from(tags).filter(Boolean).slice(0, 20), nearbyAreas: nearbyAreas.slice(0, 6) };
 }
 
-// ─── Apify Helpers (unchanged) ─────────────────────────────────────────────────
+// ─── Apify Helpers ─────────────────────────────────────────────────────────────
 function normalizeActorId(raw: string | null | undefined): string {
   const trimmed = (raw ?? '').trim();
   const normalized = trimmed.replace('/', '~');
@@ -690,7 +644,7 @@ async function runApifyActor(actorId: string, input: object, apiKey: string): Pr
 async function waitForApifyRun(runId: string, apiKey: string, maxWaitMs = 270000): Promise<string> {
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
-    const res = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apiKey}`);
+    const res  = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apiKey}`);
     const data = await res.json();
     const status = data.data?.status;
     if (status === 'SUCCEEDED') return data.data.defaultDatasetId;
@@ -707,7 +661,7 @@ async function fetchApifyDataset(datasetId: string, apiKey: string): Promise<unk
   return res.json();
 }
 
-// ─── Comment Extraction (DO NOT MODIFY username extraction logic) ─────────────
+// ─── Comment Extraction ────────────────────────────────────────────────────────
 async function extractCommenters(
   postUrls: string[],
   limit: number,
@@ -723,11 +677,11 @@ async function extractCommenters(
     ? { directUrls: postUrls, resultsType: 'comments', resultsLimit: perPostLimit }
     : { directUrls: postUrls, postUrls, resultsLimit: perPostLimit };
 
-  const runId = await runApifyActor(commentActorId, input, apiKey);
+  const runId     = await runApifyActor(commentActorId, input, apiKey);
   const datasetId = await waitForApifyRun(runId, apiKey);
-  const items = await fetchApifyDataset(datasetId, apiKey) as Record<string, unknown>[];
+  const items     = await fetchApifyDataset(datasetId, apiKey) as Record<string, unknown>[];
 
-  const seen = new Set<string>();
+  const seen       = new Set<string>();
   const commenters: Commenter[] = [];
 
   for (const item of items) {
@@ -735,11 +689,11 @@ async function extractCommenters(
     if (!username || seen.has(username)) continue;
     seen.add(username);
     const text = (item.text || item.comment || '') as string;
-    const sc = item.postShortCode as string | undefined;
+    const sc   = item.postShortCode as string | undefined;
     commenters.push({
       username,
-      comment: text,
-      postUrl: (item.postUrl as string) || (item.url as string) || (sc ? `https://www.instagram.com/p/${sc}/` : ''),
+      comment:   text,
+      postUrl:   (item.postUrl as string) || (item.url as string) || (sc ? `https://www.instagram.com/p/${sc}/` : ''),
       timestamp: (item.timestamp as string) || new Date().toISOString(),
     });
   }
@@ -752,15 +706,15 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const {
-      city = '',
+      city         = '',
       microMarkets = [],
-      budgetMin = 0,
-      budgetMax = 0,
+      budgetMin    = 0,
+      budgetMax    = 0,
       propertyType = 'Apartment',
       bhkConfig,
       customHashtags = [],
       manualPostUrls = [],
-      resultsLimit = 100,
+      resultsLimit   = 100,
     } = body;
 
     const excludedUrls = new Set<string>((body.excludedUrls as string[]) || []);
@@ -775,9 +729,9 @@ export async function POST(req: NextRequest) {
 
     const commentActorId = normalizeActorId(await getSetting('actor_instagram_comments'));
 
-    // ── MODE A: Manual URLs — validate → extract commenters (no scoring) ──────
+    // ── MODE A: Manual URLs — validate → extract ALL commenters (no scoring) ──
     const rawManualUrls = [...new Set((manualPostUrls as string[]).filter(Boolean))];
-    const manualUrls: string[] = [];
+    const manualUrls: string[]     = [];
     const manualRejected: string[] = [];
     for (const u of rawManualUrls.slice(0, 10)) {
       const normalized = normalizeInstagramUrl(u);
@@ -793,10 +747,11 @@ export async function POST(req: NextRequest) {
             `Rejected: ${manualRejected.slice(0, 3).join(', ')}`,
         }, { status: 400 });
       }
+      // unlimited=true: fetch all comments, no limit applied
       const commenters = await extractCommenters(manualUrls, resultsLimit, commentActorId, apifyKey, true);
       return NextResponse.json({
         commenters,
-        totalFound: commenters.length,
+        totalFound:   commenters.length,
         postsScraped: manualUrls.length,
         topPosts: manualUrls.map(url => ({
           url, commentsCount: 0, score: 0, caption: 'Manual URL',
@@ -815,33 +770,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'City is required when no post URLs are provided.' }, { status: 400 });
     }
 
-    // Step 1: Generate hashtags + nearby areas
     const { hashtags, nearbyAreas } = generateSearchHashtags({ city, microMarkets, propertyType, bhkConfig, customHashtags });
     const hashtagUrls = hashtags.map(tag => `https://www.instagram.com/explore/tags/${tag}/`);
 
-    const postRunId = await runApifyActor('apify~instagram-scraper', { directUrls: hashtagUrls, resultsType: 'posts', resultsLimit: 60 }, apifyKey);
+    const postRunId    = await runApifyActor('apify~instagram-scraper', { directUrls: hashtagUrls, resultsType: 'posts', resultsLimit: 60 }, apifyKey);
     const postDatasetId = await waitForApifyRun(postRunId, apifyKey);
-    const rawItems = await fetchApifyDataset(postDatasetId, apifyKey) as Record<string, unknown>[];
+    const rawItems      = await fetchApifyDataset(postDatasetId, apifyKey) as Record<string, unknown>[];
 
-    // Sort newest-first so the scoring pipeline always evaluates recent posts before older ones
-    // (Apify returns hashtag "Top posts" first by default, which tend to be older/viral)
+    // Sort newest-first — Apify returns hashtag "Top posts" first by default
     const postItems = rawItems.slice().sort((a, b) => {
       const ta = a.timestamp ? new Date(a.timestamp as string).getTime() : 0;
       const tb = b.timestamp ? new Date(b.timestamp as string).getTime() : 0;
       return tb - ta;
     });
 
-    // Step 2: URL validation
     const debug: DebugSummary = {
-      totalScanned: postItems.length,
-      rawUrlsFound: postItems.length,
-      validPostUrls: 0,
-      rejectedInvalidUrls: 0,
-      invalidUrlExamples: [],
-      eligibleAfterAgeFilter: 0,
-      eligibleAfterEngagementFilter: 0,
-      selectedPosts: 0,
-      rejectedReasons: {},
+      totalScanned: postItems.length, rawUrlsFound: postItems.length,
+      validPostUrls: 0, rejectedInvalidUrls: 0, invalidUrlExamples: [],
+      eligibleAfterAgeFilter: 0, eligibleAfterEngagementFilter: 0,
+      selectedPosts: 0, rejectedReasons: {},
     };
     const bump = (key: string) => { debug.rejectedReasons[key] = (debug.rejectedReasons[key] || 0) + 1; };
 
@@ -859,9 +806,8 @@ export async function POST(req: NextRequest) {
       validItems.push({ ...item, url: postUrl });
     }
 
-    // Step 3: Filter + Score
-    const SIX_MONTHS_MS = 180 * 86_400_000;
-    const THREE_MONTHS_MS = 90 * 86_400_000;
+    const SIX_MONTHS_MS  = 180 * 86_400_000;
+    const THREE_MONTHS_MS =  90 * 86_400_000;
     const scoredPosts: ScoredPost[] = [];
 
     for (const item of validItems) {
@@ -871,26 +817,21 @@ export async function POST(req: NextRequest) {
       const ts = (item.timestamp as string) || '';
       const comments = Number(item.commentsCount ?? item.commentCount ?? 0);
 
-      // Source quality detection (needed for age threshold)
       const { sourceType, sourceScore } = detectSourceType(item);
       if (sourceType === 'non_real_estate') { bump('non_real_estate'); continue; }
 
-      // Age filter — developer posts allowed up to 180 days
       const isDeveloper = sourceType === 'developer';
       const maxAgeMs = isDeveloper ? SIX_MONTHS_MS : THREE_MONTHS_MS;
       if (ts && Date.now() - new Date(ts).getTime() > maxAgeMs) { bump('too_old'); continue; }
       debug.eligibleAfterAgeFilter++;
 
-      // Engagement filter: comments ≥ 10 AND ≤ 5000 (no likes/views)
-      if (comments < 10) { bump('low_comments'); continue; }
-      if (comments > 5000) { bump('too_many_comments'); continue; }
+      if (comments < 10)   { bump('low_comments');      continue; }
+      if (comments > 5000) { bump('too_many_comments');  continue; }
       debug.eligibleAfterEngagementFilter++;
 
-      // Full scoring
       const result = scorePost(item, city, microMarkets, propertyType, bhkConfig, Number(budgetMin), Number(budgetMax), sourceType, sourceScore);
-
       if (result.hardReject) { bump(result.hardReject); continue; }
-      if (result.score < 40) { bump('weak_score'); continue; }
+      if (result.score < 40) { bump('weak_score');       continue; }
 
       scoredPosts.push({
         url: itemUrl,
@@ -908,11 +849,9 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Step 4: Select — primary ≥55, fallback ≥40
-    const primary = scoredPosts.filter(p => p.score >= 55);
+    const primary  = scoredPosts.filter(p => p.score >= 55);
     const selected = primary.length >= 5 ? primary : scoredPosts.filter(p => p.score >= 40);
 
-    // Sort: score → buyer intent comments → recency
     selected.sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
       const abi = b.matchedCriteria.buyerIntentComments;
@@ -936,13 +875,12 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Step 5: Extract commenters (unchanged)
-    const postUrls = topPosts.map(p => p.url);
+    const postUrls   = topPosts.map(p => p.url);
     const commenters = await extractCommenters(postUrls, resultsLimit, commentActorId, apifyKey);
 
     return NextResponse.json({
       commenters,
-      totalFound: commenters.length,
+      totalFound:   commenters.length,
       postsScraped: topPosts.length,
       topPosts: topPosts.slice(0, 10).map(p => ({
         url: p.url,
