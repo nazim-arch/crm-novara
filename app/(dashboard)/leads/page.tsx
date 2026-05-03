@@ -15,6 +15,7 @@ import {
 import { Plus } from "lucide-react";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { LeadFilters } from "@/components/leads/LeadFilters";
+import { LeadImportModal } from "@/components/leads/LeadImportModal";
 
 type SearchParams = Promise<{
   status?: string;
@@ -81,10 +82,13 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
           <h1 className="text-xl font-semibold">Leads</h1>
           <p className="text-sm text-muted-foreground">{total} total leads</p>
         </div>
-        <Button render={<Link href="/leads/new" />}>
-          <Plus className="h-4 w-4 mr-1" />
-          New Lead
-        </Button>
+        <div className="flex items-center gap-2">
+          <LeadImportModal />
+          <Button render={<Link href="/leads/new" />}>
+            <Plus className="h-4 w-4 mr-1" />
+            New Lead
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
