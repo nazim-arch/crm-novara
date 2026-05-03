@@ -75,7 +75,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
       activityMetadata.activity_to = activity_stage;
     }
 
-    const dbOps: Parameters<typeof prisma.$transaction>[0] = [
+    const [updatedLead] = await prisma.$transaction([
       prisma.lead.update({ where: { id }, data: leadUpdateData }),
       prisma.activity.create({
         data: {
@@ -86,24 +86,20 @@ export async function POST(request: Request, { params }: { params: Params }) {
           metadata: activityMetadata,
         },
       }),
-    ];
-
-    // Record pipeline stage history when pipeline changes
-    if (to_stage) {
-      dbOps.push(
-        prisma.leadStageHistory.create({
-          data: {
-            lead_id: id,
-            from_stage: lead.status,
-            to_stage,
-            changed_by_id: session.user.id,
-            notes: notes || null,
-          },
-        })
-      );
-    }
-
-    const [updatedLead] = await prisma.$transaction(dbOps);
+      ...(to_stage
+        ? [
+            prisma.leadStageHistory.create({
+              data: {
+                lead_id: id,
+                from_stage: lead.status,
+                to_stage,
+                changed_by_id: session.user.id,
+                notes: notes || null,
+              },
+            }),
+          ]
+        : []),
+    ]);
 
     // Recalculate closed_revenue when Won state changes
     if (to_stage === "Won" || lead.status === "Won") {
