@@ -78,15 +78,12 @@ export function LeadFilters({ users, currentParams }: LeadFiltersProps) {
         <SelectContent>
           <SelectItem value="all">All statuses</SelectItem>
           <SelectItem value="New">New</SelectItem>
-          <SelectItem value="Contacted">Contacted</SelectItem>
-          <SelectItem value="Qualified">Qualified</SelectItem>
-          <SelectItem value="Requirement">Requirement</SelectItem>
-          <SelectItem value="OpportunityTagged">Opp. Tagged</SelectItem>
-          <SelectItem value="Visit">Visit</SelectItem>
-          <SelectItem value="FollowUp">Follow-up</SelectItem>
+          <SelectItem value="Prospect">Prospect</SelectItem>
+          <SelectItem value="SiteVisitCompleted">Site Visit Completed</SelectItem>
           <SelectItem value="Negotiation">Negotiation</SelectItem>
           <SelectItem value="Won">Won</SelectItem>
           <SelectItem value="Lost">Lost</SelectItem>
+          <SelectItem value="InvalidLead">Invalid Lead</SelectItem>
           <SelectItem value="OnHold">On Hold</SelectItem>
           <SelectItem value="Recycle">Recycle</SelectItem>
         </SelectContent>

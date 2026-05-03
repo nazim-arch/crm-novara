@@ -16,6 +16,9 @@ const importRowSchema = z.object({
   purpose: z.enum(["EndUse", "Investment"], {
     message: "Purpose must be EndUse or Investment",
   }),
+  lead_type: z.enum(["EndUser", "Broker", "ChannelPartner", "Others"], {
+    message: "Lead Type must be one of: EndUser, Broker, ChannelPartner, Others",
+  }),
   potential_lead_value: z.coerce
     .number({ error: "Potential Lead Value must be a number" })
     .positive("Potential Lead Value must be positive"),
@@ -104,6 +107,7 @@ export async function POST(request: Request) {
             campaign_source: data.campaign_source ?? null,
             referral_source: data.referral_source ?? null,
             reason_for_interest: data.reason_for_interest ?? null,
+            lead_type: data.lead_type,
             // owner, assignee, creator all default to current user for bulk import
             lead_owner_id: userId,
             assigned_to_id: userId,

@@ -130,9 +130,15 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
             </CardHeader>
             <CardContent>
               {canEdit ? (
-                <StageChanger leadId={lead.id} currentStage={lead.status} />
+                <StageChanger
+                  leadId={lead.id}
+                  currentStage={lead.status}
+                  currentActivityStage={lead.activity_stage ?? "New"}
+                />
               ) : (
-                <LeadStatusBadge status={lead.status} />
+                <div className="flex items-center gap-3">
+                  <LeadStatusBadge status={lead.status} />
+                </div>
               )}
             </CardContent>
           </Card>
@@ -181,6 +187,11 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
                 <InfoItem label="Lead Source" value={lead.lead_source} />
+                <InfoItem label="Lead Type" value={
+                  lead.lead_type === "EndUser" ? "End User"
+                  : lead.lead_type === "ChannelPartner" ? "Channel Partner"
+                  : lead.lead_type ?? "—"
+                } />
                 <InfoItem label="Property Type" value={lead.property_type} />
                 <InfoItem label="Unit Type" value={lead.unit_type} />
                 <InfoItem label="Purpose" value={lead.purpose === "EndUse" ? "End Use" : lead.purpose} />

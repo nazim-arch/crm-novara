@@ -289,6 +289,26 @@ export function LeadForm({
                     )}
                   </div>
                   <div className="space-y-1.5">
+                    <Label>Lead Type <span className="text-destructive">*</span></Label>
+                    <Select
+                      defaultValue={defaultValues?.lead_type}
+                      onValueChange={(v) => v && setValue("lead_type", v as CreateLeadInput["lead_type"])}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="EndUser">End User</SelectItem>
+                        <SelectItem value="Broker">Broker</SelectItem>
+                        <SelectItem value="ChannelPartner">Channel Partner</SelectItem>
+                        <SelectItem value="Others">Others</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {errors.lead_type && (
+                      <p className="text-xs text-destructive">{errors.lead_type.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
                     <Label>Temperature <span className="text-destructive">*</span></Label>
                     <Select
                       defaultValue={defaultValues?.temperature ?? "Cold"}

@@ -28,14 +28,32 @@ enum LeadTemperature {
 
 enum LeadStatus {
   New
-  Qualified
-  Visit
-  FollowUp
+  Prospect
+  SiteVisitCompleted
   Negotiation
   Won
   Lost
+  InvalidLead
   OnHold
   Recycle
+}
+
+enum ActivityStage {
+  New
+  NoResponse
+  Busy
+  Unreachable
+  Prospect
+  CallBack
+  NotInterested
+  Junk
+}
+
+enum LeadType {
+  EndUser
+  Broker
+  ChannelPartner
+  Others
 }
 
 enum PropertyType {
@@ -195,8 +213,10 @@ model Lead {
   email       String?
   whatsapp    String?
   lead_source String
-  temperature LeadTemperature @default(Cold)
-  status      LeadStatus      @default(New)
+  temperature    LeadTemperature @default(Cold)
+  status         LeadStatus      @default(New)
+  activity_stage ActivityStage   @default(New)
+  lead_type      LeadType?
 
   // Standard
   campaign_source     String?

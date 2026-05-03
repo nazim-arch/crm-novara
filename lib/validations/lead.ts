@@ -7,6 +7,9 @@ const leadBaseSchema = z.object({
   whatsapp: z.string().optional().or(z.literal("")),
   lead_source: z.string().min(1, "Lead source is required"),
   temperature: z.enum(["Hot", "Warm", "Cold", "FollowUpLater"]).default("Cold"),
+  lead_type: z.enum(["EndUser", "Broker", "ChannelPartner", "Others"], {
+    message: "Lead type is required",
+  }),
   lead_owner_id: z.string().min(1, "Lead owner is required"),
   assigned_to_id: z.string().min(1, "Assignee is required"),
   campaign_source: z.string().optional().or(z.literal("")),
@@ -42,30 +45,25 @@ export const createLeadSchema = leadBaseSchema.refine(
 
 export const updateLeadSchema = leadBaseSchema.partial();
 
+export const PIPELINE_STAGES = [
+  "New", "Prospect", "SiteVisitCompleted", "Negotiation",
+  "Won", "Lost", "InvalidLead", "OnHold", "Recycle",
+] as const;
+
+export const ACTIVITY_STAGES = [
+  "New", "NoResponse", "Busy", "Unreachable",
+  "Prospect", "CallBack", "NotInterested", "Junk",
+] as const;
+
 export const changeStageSchema = z
   .object({
-    to_stage: z.enum([
-      "New",
-      "Qualified",
-      "Visit",
-      "FollowUp",
-      "Negotiation",
-      "Won",
-      "Lost",
-      "OnHold",
-      "Recycle",
-    ]),
+    to_stage: z.enum(PIPELINE_STAGES).optional(),
+    activity_stage: z.enum(ACTIVITY_STAGES).optional(),
     notes: z.string().optional().or(z.literal("")),
     lost_reason: z
       .enum([
-        "Budget",
-        "Location",
-        "Configuration",
-        "Timing",
-        "NotSerious",
-        "Financing",
-        "PurchasedElsewhere",
-        "Other",
+        "Budget", "Location", "Configuration", "Timing",
+        "NotSerious", "Financing", "PurchasedElsewhere", "Other",
       ])
       .optional(),
     lost_notes: z.string().optional().or(z.literal("")),
@@ -73,8 +71,25 @@ export const changeStageSchema = z
     deal_commission_percent: z.coerce.number().min(0).max(100).optional(),
   })
   .refine(
-    (data) => data.to_stage !== "Lost" || !!data.lost_reason,
+    (data) => !!data.to_stage || !!data.activity_stage,
+    { message: "Either pipeline stage or activity stage must be provided" }
+  )
+  .refine(
+    (data) => {
+      const effectiveStage = data.to_stage;
+      return effectiveStage !== "Lost" || !!data.lost_reason;
+    },
     { message: "Lost reason is required when marking as Lost", path: ["lost_reason"] }
+  )
+  .refine(
+    (data) => {
+      const effectiveStage = data.to_stage;
+      return (
+        effectiveStage !== "Lost" ||
+        (!!data.lost_notes && data.lost_notes.trim().length > 0)
+      );
+    },
+    { message: "A note explaining why the lead was lost is required", path: ["lost_notes"] }
   )
   .refine(
     (data) => data.to_stage !== "Won" || (!!data.settlement_value && data.deal_commission_percent !== undefined),

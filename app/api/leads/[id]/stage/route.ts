@@ -19,6 +19,15 @@ export async function POST(request: Request, { params }: { params: Params }) {
 
     const { id } = await params;
     const body = await request.json();
+
+    // Auto-resolve pipeline stage for activity triggers
+    if (body.activity_stage === "NotInterested" && !body.to_stage) {
+      body.to_stage = "Lost";
+    }
+    if (body.activity_stage === "Junk" && !body.to_stage) {
+      body.to_stage = "InvalidLead";
+    }
+
     const parsed = changeStageSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
@@ -27,7 +36,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
       );
     }
 
-    const { to_stage, notes, lost_reason, lost_notes, settlement_value, deal_commission_percent } = parsed.data;
+    const { to_stage, activity_stage, notes, lost_reason, lost_notes, settlement_value, deal_commission_percent } = parsed.data;
 
     const lead = await prisma.lead.findUnique({
       where: { id, deleted_at: null },
@@ -37,44 +46,66 @@ export async function POST(request: Request, { params }: { params: Params }) {
     }
 
     // Build lead update data
-    const leadUpdateData: Record<string, unknown> = {
-      status: to_stage,
-      updated_at: new Date(),
-      ...(lost_reason && { lost_reason }),
-      ...(lost_notes && { lost_notes }),
-      ...(to_stage === "Won" && settlement_value !== undefined && { settlement_value }),
-      ...(to_stage === "Won" && deal_commission_percent !== undefined && { deal_commission_percent }),
-    };
+    const leadUpdateData: Record<string, unknown> = { updated_at: new Date() };
 
-    const [updatedLead] = await prisma.$transaction([
+    if (to_stage) {
+      leadUpdateData.status = to_stage;
+      if (lost_reason) leadUpdateData.lost_reason = lost_reason;
+      if (lost_notes) leadUpdateData.lost_notes = lost_notes;
+      if (to_stage === "Won" && settlement_value !== undefined) leadUpdateData.settlement_value = settlement_value;
+      if (to_stage === "Won" && deal_commission_percent !== undefined) leadUpdateData.deal_commission_percent = deal_commission_percent;
+    }
+
+    if (activity_stage) {
+      leadUpdateData.activity_stage = activity_stage;
+    }
+
+    const activityMetadata: Record<string, unknown> = { notes: notes || null };
+    if (to_stage) {
+      activityMetadata.pipeline_from = lead.status;
+      activityMetadata.pipeline_to = to_stage;
+      activityMetadata.lost_reason = lost_reason || null;
+      if (to_stage === "Won") {
+        activityMetadata.settlement_value = settlement_value;
+        activityMetadata.deal_commission_percent = deal_commission_percent;
+      }
+    }
+    if (activity_stage) {
+      activityMetadata.activity_from = lead.activity_stage;
+      activityMetadata.activity_to = activity_stage;
+    }
+
+    const dbOps: Parameters<typeof prisma.$transaction>[0] = [
       prisma.lead.update({ where: { id }, data: leadUpdateData }),
-      prisma.leadStageHistory.create({
-        data: {
-          lead_id: id,
-          from_stage: lead.status,
-          to_stage,
-          changed_by_id: session.user.id,
-          notes: notes || null,
-        },
-      }),
       prisma.activity.create({
         data: {
           entity_type: "Lead",
           entity_id: id,
-          action: "stage_changed",
+          action: to_stage ? "stage_changed" : "activity_stage_changed",
           actor_id: session.user.id,
-          metadata: {
-            from: lead.status,
-            to: to_stage,
-            notes: notes || null,
-            lost_reason: lost_reason || null,
-            ...(to_stage === "Won" && { settlement_value, deal_commission_percent }),
-          },
+          metadata: activityMetadata,
         },
       }),
-    ]);
+    ];
 
-    // ── Recalculate closed_revenue when Won state changes (entering or leaving Won) ──
+    // Record pipeline stage history when pipeline changes
+    if (to_stage) {
+      dbOps.push(
+        prisma.leadStageHistory.create({
+          data: {
+            lead_id: id,
+            from_stage: lead.status,
+            to_stage,
+            changed_by_id: session.user.id,
+            notes: notes || null,
+          },
+        })
+      );
+    }
+
+    const [updatedLead] = await prisma.$transaction(dbOps);
+
+    // Recalculate closed_revenue when Won state changes
     if (to_stage === "Won" || lead.status === "Won") {
       const linkedOpps = await prisma.leadOpportunity.findMany({
         where: { lead_id: id },
@@ -98,10 +129,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
             lo.lead.settlement_value !== null &&
             lo.lead.deal_commission_percent !== null
           ) {
-            return (
-              sum +
-              (Number(lo.lead.settlement_value) * Number(lo.lead.deal_commission_percent)) / 100
-            );
+            return sum + (Number(lo.lead.settlement_value) * Number(lo.lead.deal_commission_percent)) / 100;
           }
           return sum;
         }, 0);
@@ -112,7 +140,6 @@ export async function POST(request: Request, { params }: { params: Params }) {
         });
       }
 
-      // ── Notify admins only when entering Won ──
       if (to_stage === "Won" && settlement_value !== undefined && deal_commission_percent !== undefined) {
         const admins = await prisma.user.findMany({
           where: { role: "Admin", is_active: true },
@@ -142,7 +169,6 @@ export async function POST(request: Request, { params }: { params: Params }) {
       }
     }
 
-    // ── Lost: notify all Admin users ──
     if (to_stage === "Lost") {
       const admins = await prisma.user.findMany({
         where: { role: "Admin", is_active: true },
@@ -170,8 +196,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
       });
     }
 
-    // ── All other stage changes ──
-    if (to_stage !== "Won" && to_stage !== "Lost") {
+    if (to_stage && to_stage !== "Won" && to_stage !== "Lost") {
       notifyLeadStageChanged({
         assignedToId: lead.assigned_to_id,
         leadId: id,

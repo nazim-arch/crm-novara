@@ -68,14 +68,19 @@ const COLUMN_MAP: Record<string, string> = {
   "notes": "notes",
   "note": "notes",
   "remarks": "notes",
+  "lead type": "lead_type",
+  "lead_type": "lead_type",
+  "type of lead": "lead_type",
+  "client type": "lead_type",
 };
 
-const MANDATORY = ["full_name", "phone", "lead_source", "property_type", "purpose", "potential_lead_value"];
+const MANDATORY = ["full_name", "phone", "lead_source", "lead_type", "property_type", "purpose", "potential_lead_value"];
 
 const MANDATORY_LABELS: Record<string, string> = {
   full_name: "Full Name",
   phone: "Phone",
   lead_source: "Lead Source",
+  lead_type: "Lead Type",
   property_type: "Property Type",
   purpose: "Purpose",
   potential_lead_value: "Potential Lead Value",
@@ -110,7 +115,7 @@ function mapHeaders(rawHeaders: string[]): Record<string, string> {
 function downloadTemplate() {
   const wb = XLSX.utils.book_new();
   const headers = [
-    "Full Name*", "Phone*", "Lead Source*", "Property Type*", "Purpose*", "Potential Lead Value*",
+    "Full Name*", "Phone*", "Lead Source*", "Lead Type*", "Property Type*", "Purpose*", "Potential Lead Value*",
     "Email", "WhatsApp", "Temperature", "Budget Min", "Budget Max",
     "Unit Type", "Location Preference", "Timeline to Buy",
     "Campaign Source", "Referral Source", "Notes",
@@ -118,6 +123,7 @@ function downloadTemplate() {
 
   const notes = [
     "Min 2 chars", "Min 7 digits", "e.g. Website, Facebook, Referral",
+    "EndUser | Broker | ChannelPartner | Others",
     "Residential | Commercial | Plot | Villa | Apartment | Office",
     "EndUse | Investment", "Numeric (e.g. 5000000)",
     "Optional", "Optional", "Hot | Warm | Cold | FollowUpLater (default: Cold)",
@@ -127,7 +133,7 @@ function downloadTemplate() {
   ];
 
   const sampleRow = [
-    "Rajesh Kumar", "9876543210", "Facebook", "Apartment", "EndUse", "7500000",
+    "Rajesh Kumar", "9876543210", "Facebook", "EndUser", "Apartment", "EndUse", "7500000",
     "rajesh@example.com", "9876543210", "Warm", "6000000", "9000000",
     "2BHK", "Koramangala", "6 months",
     "Summer Campaign", "", "Looking for ready to move",
@@ -278,6 +284,7 @@ export function LeadImportModal() {
                 ))}
               </div>
               <div className="text-xs text-muted-foreground space-y-0.5 pt-1">
+                <p><strong>Lead Type:</strong> EndUser · Broker · ChannelPartner · Others</p>
                 <p><strong>Property Type:</strong> Residential · Commercial · Plot · Villa · Apartment · Office</p>
                 <p><strong>Purpose:</strong> EndUse · Investment</p>
                 <p><strong>Temperature:</strong> Hot · Warm · Cold · FollowUpLater (defaults to Cold if blank)</p>

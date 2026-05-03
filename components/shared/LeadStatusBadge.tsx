@@ -3,15 +3,12 @@ import { cn } from "@/lib/utils";
 
 type LeadStatus =
   | "New"
-  | "Contacted"
-  | "Qualified"
-  | "Requirement"
-  | "OpportunityTagged"
-  | "Visit"
-  | "FollowUp"
+  | "Prospect"
+  | "SiteVisitCompleted"
   | "Negotiation"
   | "Won"
   | "Lost"
+  | "InvalidLead"
   | "OnHold"
   | "Recycle";
 
@@ -19,30 +16,24 @@ type LeadTemperature = "Hot" | "Warm" | "Cold" | "FollowUpLater";
 
 const STATUS_STYLES: Record<LeadStatus, string> = {
   New: "bg-slate-100 text-slate-700",
-  Contacted: "bg-blue-100 text-blue-700",
-  Qualified: "bg-indigo-100 text-indigo-700",
-  Requirement: "bg-violet-100 text-violet-700",
-  OpportunityTagged: "bg-purple-100 text-purple-700",
-  Visit: "bg-cyan-100 text-cyan-700",
-  FollowUp: "bg-yellow-100 text-yellow-700",
+  Prospect: "bg-indigo-100 text-indigo-700",
+  SiteVisitCompleted: "bg-cyan-100 text-cyan-700",
   Negotiation: "bg-orange-100 text-orange-700",
   Won: "bg-green-100 text-green-700",
   Lost: "bg-red-100 text-red-700",
+  InvalidLead: "bg-rose-100 text-rose-700",
   OnHold: "bg-gray-100 text-gray-600",
   Recycle: "bg-lime-100 text-lime-700",
 };
 
 const STATUS_LABELS: Record<LeadStatus, string> = {
   New: "New",
-  Contacted: "Contacted",
-  Qualified: "Qualified",
-  Requirement: "Requirement",
-  OpportunityTagged: "Opp. Tagged",
-  Visit: "Visit",
-  FollowUp: "Follow-up",
+  Prospect: "Prospect",
+  SiteVisitCompleted: "Site Visit",
   Negotiation: "Negotiation",
   Won: "Won",
   Lost: "Lost",
+  InvalidLead: "Invalid Lead",
   OnHold: "On Hold",
   Recycle: "Recycle",
 };
@@ -85,6 +76,39 @@ export function TemperatureBadge({ temperature }: { temperature: string }) {
       )}
     >
       {TEMP_LABELS[t] ?? temperature}
+    </span>
+  );
+}
+
+export function ActivityStageBadge({ stage }: { stage: string }) {
+  const styles: Record<string, string> = {
+    New: "bg-slate-100 text-slate-700",
+    NoResponse: "bg-yellow-100 text-yellow-700",
+    Busy: "bg-amber-100 text-amber-700",
+    Unreachable: "bg-orange-100 text-orange-700",
+    Prospect: "bg-blue-100 text-blue-700",
+    CallBack: "bg-violet-100 text-violet-700",
+    NotInterested: "bg-red-100 text-red-700",
+    Junk: "bg-rose-100 text-rose-800",
+  };
+  const labels: Record<string, string> = {
+    New: "New",
+    NoResponse: "No Response",
+    Busy: "Busy",
+    Unreachable: "Unreachable",
+    Prospect: "Prospect",
+    CallBack: "Call Back",
+    NotInterested: "Not Interested",
+    Junk: "Junk",
+  };
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+        styles[stage] ?? "bg-gray-100 text-gray-600"
+      )}
+    >
+      {labels[stage] ?? stage}
     </span>
   );
 }
