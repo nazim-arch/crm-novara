@@ -83,7 +83,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
           entity_id: id,
           action: to_stage ? "stage_changed" : "activity_stage_changed",
           actor_id: session.user.id,
-          metadata: activityMetadata,
+          metadata: activityMetadata as Record<string, string | number | boolean | null>,
         },
       }),
       ...(to_stage
