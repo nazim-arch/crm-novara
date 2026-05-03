@@ -122,7 +122,7 @@ export function StageChanger({ leadId, currentStage, currentActivityStage = "New
   };
 
   // Pipeline stage change handler
-  const handlePipelineChange = (stage: string) => {
+  const handlePipelineChange = (stage: string | null) => {
     if (!stage || stage === currentStage) return;
     if (stage === "Lost") {
       setPendingPipeline(stage);
@@ -139,7 +139,7 @@ export function StageChanger({ leadId, currentStage, currentActivityStage = "New
   };
 
   // Activity stage change handler
-  const handleActivityChange = (stage: string) => {
+  const handleActivityChange = (stage: string | null) => {
     if (!stage || stage === currentActivityStage) return;
     if (stage === "NotInterested") {
       setPendingPipeline("Lost");
