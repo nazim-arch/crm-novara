@@ -17,7 +17,7 @@ const importRowSchema = z.object({
     message: "Purpose must be EndUse or Investment",
   }),
   potential_lead_value: z.coerce
-    .number({ invalid_type_error: "Potential Lead Value must be a number" })
+    .number({ error: "Potential Lead Value must be a number" })
     .positive("Potential Lead Value must be positive"),
   email: z.string().email("Invalid email").optional().or(z.literal("")).transform(v => v || null),
   whatsapp: z.string().optional().or(z.literal("")).transform(v => v || null),
