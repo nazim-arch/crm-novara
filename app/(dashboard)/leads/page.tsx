@@ -12,12 +12,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { LeadFilters } from "@/components/leads/LeadFilters";
 import { LeadImportModal } from "@/components/leads/LeadImportModal";
 import { ExportButton } from "@/components/shared/ExportButton";
 import { SortableHeader } from "@/components/shared/SortableHeader";
+import { startOfDay, endOfDay, subDays } from "date-fns";
 
 const SORT_MAP: Record<string, Prisma.LeadOrderByWithRelationInput> = {
   full_name:            { full_name: "asc" },
@@ -29,6 +30,16 @@ const SORT_MAP: Record<string, Prisma.LeadOrderByWithRelationInput> = {
   updated_at:           { updated_at: "asc" },
 };
 
+const FILTER_LABELS: Record<string, string> = {
+  today:            "Leads Received Today",
+  pending_action:   "Pending First Action",
+  no_activity:      "Leads With No Activity",
+  stale:            "Stale Leads",
+  overdue_followup: "Overdue Follow-ups",
+  to_action_today:  "To Action Today",
+  actioned:         "Actioned Leads",
+};
+
 type SearchParams = Promise<{
   status?: string;
   temperature?: string;
@@ -37,11 +48,20 @@ type SearchParams = Promise<{
   page?: string;
   sort?: string;
   dir?: string;
+  filter?: string;
+  stale_days?: string;
+  source?: string;
+  opportunity_id?: string;
 }>;
 
 export default async function LeadsPage({ searchParams }: { searchParams: SearchParams }) {
   const session = await auth();
   const sp = await searchParams;
+
+  const today = new Date();
+  const todayStart = startOfDay(today);
+  const todayEnd = endOfDay(today);
+  const staleDays = Math.max(1, Number(sp.stale_days ?? "7"));
 
   const page = Math.max(1, Number(sp.page ?? "1"));
   const limit = 20;
@@ -60,13 +80,46 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
         { lead_number: { contains: sp.search, mode: "insensitive" } },
       ],
     }),
+    ...(sp.source && { lead_source: sp.source }),
+    ...(sp.opportunity_id && { opportunities: { some: { opportunity_id: sp.opportunity_id } } }),
   };
 
+  // Role-based scope
   if (session?.user.role === "Sales") {
+    where.AND = [
+      {
+        OR: [
+          { assigned_to_id: session.user.id },
+          { lead_owner_id: session.user.id },
+          { created_by_id: session.user.id },
+        ],
+      },
+    ];
+  }
+
+  // Special filter logic
+  if (sp.filter === "today") {
+    where.created_at = { gte: todayStart, lte: todayEnd };
+  } else if (sp.filter === "pending_action") {
+    where.status = "New";
+    where.stage_history = { none: {} };
+    where.followups = { none: {} };
+  } else if (sp.filter === "no_activity") {
+    where.stage_history = { none: {} };
+    where.followups = { none: {} };
+  } else if (sp.filter === "stale") {
+    where.updated_at = { lt: subDays(todayStart, staleDays) };
+    where.status = { notIn: ["Won", "Lost", "InvalidLead", "Recycle"] };
+  } else if (sp.filter === "overdue_followup") {
+    where.next_followup_date = { lt: todayStart };
+    where.status = { notIn: ["Won", "Lost", "InvalidLead", "Recycle"] };
+  } else if (sp.filter === "to_action_today") {
+    where.status = { notIn: ["Won", "Lost", "InvalidLead", "Recycle"] };
+    where.next_followup_date = { lte: todayEnd };
+  } else if (sp.filter === "actioned") {
     where.OR = [
-      { assigned_to_id: session.user.id },
-      { lead_owner_id: session.user.id },
-      { created_by_id: session.user.id },
+      { stage_history: { some: {} } },
+      { followups: { some: {} } },
     ];
   }
 
@@ -96,6 +149,25 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     <SortableHeader column={col} label={label} currentSort={sortCol} currentDir={sortDir} className={className} />
   );
 
+  const activeFilterLabel = sp.filter
+    ? sp.filter === "stale"
+      ? `Stale Leads (${staleDays}+ days inactive)`
+      : FILTER_LABELS[sp.filter]
+    : sp.source
+    ? `Source: ${sp.source}`
+    : null;
+
+  // Clear-filter URL (removes special params but keeps standard ones)
+  const clearFilterUrl = (() => {
+    const params = new URLSearchParams();
+    if (sp.status && sp.status !== "all") params.set("status", sp.status);
+    if (sp.temperature && sp.temperature !== "all") params.set("temperature", sp.temperature);
+    if (sp.assigned_to && sp.assigned_to !== "all") params.set("assigned_to", sp.assigned_to);
+    if (sp.search) params.set("search", sp.search);
+    const qs = params.toString();
+    return `/leads${qs ? `?${qs}` : ""}`;
+  })();
+
   return (
     <div className="p-6 space-y-4">
       {/* Header */}
@@ -114,8 +186,33 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
         </div>
       </div>
 
+      {/* Active special filter banner */}
+      {activeFilterLabel && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 border border-primary/20 text-sm">
+          <span className="font-medium text-primary">{activeFilterLabel}</span>
+          <span className="text-muted-foreground">— showing {total} leads</span>
+          <Link
+            href={clearFilterUrl}
+            className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-3.5 w-3.5" />
+            Clear filter
+          </Link>
+        </div>
+      )}
+
       {/* Filters */}
-      <LeadFilters users={users} currentParams={sp} />
+      <LeadFilters
+        users={users}
+        currentParams={{
+          status: sp.status,
+          temperature: sp.temperature,
+          assigned_to: sp.assigned_to,
+          search: sp.search,
+          filter: sp.filter,
+          source: sp.source,
+        }}
+      />
 
       {/* Table */}
       <div className="rounded-lg border bg-card overflow-hidden">
@@ -181,12 +278,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
           <span>Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}</span>
           <div className="flex gap-2">
             {page > 1 && (
-              <Button variant="outline" size="sm" render={<Link href={`/leads?${new URLSearchParams({ ...sp, page: String(page - 1) })}`} />}>
+              <Button variant="outline" size="sm" render={<Link href={`/leads?${new URLSearchParams({ ...Object.fromEntries(Object.entries(sp).filter(([, v]) => v !== undefined) as [string, string][]), page: String(page - 1) })}`} />}>
                 Previous
               </Button>
             )}
             {page < totalPages && (
-              <Button variant="outline" size="sm" render={<Link href={`/leads?${new URLSearchParams({ ...sp, page: String(page + 1) })}`} />}>
+              <Button variant="outline" size="sm" render={<Link href={`/leads?${new URLSearchParams({ ...Object.fromEntries(Object.entries(sp).filter(([, v]) => v !== undefined) as [string, string][]), page: String(page + 1) })}`} />}>
                 Next
               </Button>
             )}

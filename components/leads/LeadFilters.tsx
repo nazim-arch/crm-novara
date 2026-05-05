@@ -23,6 +23,8 @@ interface LeadFiltersProps {
     temperature?: string;
     assigned_to?: string;
     search?: string;
+    filter?: string;
+    source?: string;
   };
 }
 
@@ -54,7 +56,9 @@ export function LeadFilters({ users, currentParams }: LeadFiltersProps) {
     currentParams.status ||
     currentParams.temperature ||
     currentParams.assigned_to ||
-    currentParams.search;
+    currentParams.search ||
+    currentParams.filter ||
+    currentParams.source;
 
   return (
     <div className="flex flex-wrap gap-2 items-center">
