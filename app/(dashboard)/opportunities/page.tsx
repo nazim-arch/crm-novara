@@ -13,8 +13,10 @@ import {
 import { Plus, Building2 } from "lucide-react";
 import { hasPermission } from "@/lib/rbac";
 import { ExportButton } from "@/components/shared/ExportButton";
+import { SortableHeader } from "@/components/shared/SortableHeader";
+import type { Prisma } from "@/lib/generated/prisma/client";
 
-type SearchParams = Promise<{ status?: string; search?: string; page?: string }>;
+type SearchParams = Promise<{ status?: string; search?: string; page?: string; sort?: string; dir?: string }>;
 
 function formatCurrency(n: number) {
   if (n >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(2)} Cr`;
@@ -22,12 +24,24 @@ function formatCurrency(n: number) {
   return `₹${n.toLocaleString("en-IN")}`;
 }
 
+const SORT_MAP: Record<string, Prisma.OpportunityOrderByWithRelationInput> = {
+  name:            { name: "asc" },
+  location:        { location: "asc" },
+  property_type:   { property_type: "asc" },
+  status:          { status: "asc" },
+  commission_percent:  { commission_percent: "asc" },
+  possible_revenue:    { possible_revenue: "asc" },
+  created_at:      { created_at: "asc" },
+};
+
 export default async function OpportunitiesPage({ searchParams }: { searchParams: SearchParams }) {
   const session = await auth();
   const sp = await searchParams;
 
   const page = Math.max(1, Number(sp.page ?? "1"));
   const limit = 20;
+  const sortCol = sp.sort ?? "created_at";
+  const sortDir = sp.dir === "asc" ? "asc" : "desc";
 
   const where = {
     deleted_at: null as null,
@@ -41,6 +55,11 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
     }),
   };
 
+  const baseOrder = SORT_MAP[sortCol] ?? { created_at: "asc" };
+  const orderBy = Object.fromEntries(
+    Object.entries(baseOrder).map(([k]) => [k, sortDir])
+  ) as Prisma.OpportunityOrderByWithRelationInput;
+
   const [total, opportunities] = await Promise.all([
     prisma.opportunity.count({ where }),
     prisma.opportunity.findMany({
@@ -49,7 +68,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
         created_by: { select: { id: true, name: true } },
         _count: { select: { leads: true } },
       },
-      orderBy: { updated_at: "desc" },
+      orderBy,
       skip: (page - 1) * limit,
       take: limit,
     }),
@@ -57,6 +76,10 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
 
   const canCreate = session?.user && hasPermission(session.user.role, "opportunity:create");
   const canViewFinancials = session?.user && hasPermission(session.user.role, "financial:view");
+
+  const sh = (col: string, label: string) => (
+    <SortableHeader column={col} label={label} currentSort={sortCol} currentDir={sortDir} />
+  );
 
   return (
     <div className="p-6 space-y-4">
@@ -81,14 +104,14 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
           <TableHeader>
             <TableRow className="bg-muted/50">
               <TableHead>ID</TableHead>
-              <TableHead>Name / Project</TableHead>
-              <TableHead>Location</TableHead>
-              <TableHead>Type</TableHead>
+              <TableHead>{sh("name", "Name / Project")}</TableHead>
+              <TableHead>{sh("location", "Location")}</TableHead>
+              <TableHead>{sh("property_type", "Type")}</TableHead>
               <TableHead>Opp By</TableHead>
-              {canViewFinancials && <TableHead>Commission</TableHead>}
-              {canViewFinancials && <TableHead>Possible Revenue</TableHead>}
+              {canViewFinancials && <TableHead>{sh("commission_percent", "Commission")}</TableHead>}
+              {canViewFinancials && <TableHead>{sh("possible_revenue", "Possible Revenue")}</TableHead>}
               <TableHead>Leads</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead>{sh("status", "Status")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -102,9 +125,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
             ) : (
               opportunities.map((opp) => (
                 <TableRow key={opp.id} className="hover:bg-muted/30">
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {opp.opp_number}
-                  </TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{opp.opp_number}</TableCell>
                   <TableCell>
                     <Link href={`/opportunities/${opp.id}`} className="font-medium hover:underline">
                       {opp.name}
@@ -122,15 +143,11 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
                   )}
                   <TableCell className="text-sm">{opp._count.leads}</TableCell>
                   <TableCell>
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                        opp.status === "Active"
-                          ? "bg-green-100 text-green-700"
-                          : opp.status === "Sold"
-                          ? "bg-blue-100 text-blue-700"
-                          : "bg-gray-100 text-gray-600"
-                      }`}
-                    >
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                      opp.status === "Active" ? "bg-green-100 text-green-700"
+                      : opp.status === "Sold" ? "bg-blue-100 text-blue-700"
+                      : "bg-gray-100 text-gray-600"
+                    }`}>
                       {opp.status}
                     </span>
                   </TableCell>

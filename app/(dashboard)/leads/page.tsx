@@ -17,6 +17,17 @@ import type { Prisma } from "@/lib/generated/prisma/client";
 import { LeadFilters } from "@/components/leads/LeadFilters";
 import { LeadImportModal } from "@/components/leads/LeadImportModal";
 import { ExportButton } from "@/components/shared/ExportButton";
+import { SortableHeader } from "@/components/shared/SortableHeader";
+
+const SORT_MAP: Record<string, Prisma.LeadOrderByWithRelationInput> = {
+  full_name:            { full_name: "asc" },
+  status:               { status: "asc" },
+  temperature:          { temperature: "asc" },
+  next_followup_date:   { next_followup_date: "asc" },
+  potential_lead_value: { potential_lead_value: "asc" },
+  created_at:           { created_at: "asc" },
+  updated_at:           { updated_at: "asc" },
+};
 
 type SearchParams = Promise<{
   status?: string;
@@ -24,6 +35,8 @@ type SearchParams = Promise<{
   assigned_to?: string;
   search?: string;
   page?: string;
+  sort?: string;
+  dir?: string;
 }>;
 
 export default async function LeadsPage({ searchParams }: { searchParams: SearchParams }) {
@@ -32,6 +45,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
 
   const page = Math.max(1, Number(sp.page ?? "1"));
   const limit = 20;
+  const sortCol = sp.sort ?? "updated_at";
+  const sortDir = sp.dir === "asc" ? "asc" : "desc";
 
   const where: Prisma.LeadWhereInput = {
     deleted_at: null,
@@ -55,14 +70,17 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     ];
   }
 
+  const baseOrder = SORT_MAP[sortCol] ?? { updated_at: "asc" };
+  const orderBy = Object.fromEntries(
+    Object.entries(baseOrder).map(([k]) => [k, sortDir])
+  ) as Prisma.LeadOrderByWithRelationInput;
+
   const [total, leads, users] = await Promise.all([
     prisma.lead.count({ where }),
     prisma.lead.findMany({
       where,
-      include: {
-        assigned_to: { select: { id: true, name: true } },
-      },
-      orderBy: { updated_at: "desc" },
+      include: { assigned_to: { select: { id: true, name: true } } },
+      orderBy,
       skip: (page - 1) * limit,
       take: limit,
     }),
@@ -74,6 +92,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
   ]);
 
   const totalPages = Math.ceil(total / limit);
+  const sh = (col: string, label: string, className?: string) => (
+    <SortableHeader column={col} label={label} currentSort={sortCol} currentDir={sortDir} className={className} />
+  );
 
   return (
     <div className="p-6 space-y-4">
@@ -102,14 +123,14 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
           <TableHeader>
             <TableRow className="bg-muted/50">
               <TableHead className="w-32">Lead ID</TableHead>
-              <TableHead>Name</TableHead>
+              <TableHead>{sh("full_name", "Name")}</TableHead>
               <TableHead>Phone</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Temp</TableHead>
+              <TableHead>{sh("status", "Status")}</TableHead>
+              <TableHead>{sh("temperature", "Temp")}</TableHead>
               <TableHead>Assigned To</TableHead>
               <TableHead>Property Type</TableHead>
-              <TableHead>Follow-up</TableHead>
-              <TableHead className="text-right">Pipeline Value</TableHead>
+              <TableHead>{sh("next_followup_date", "Follow-up")}</TableHead>
+              <TableHead className="text-right">{sh("potential_lead_value", "Pipeline Value", "ml-auto")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -123,10 +144,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
               leads.map((lead) => (
                 <TableRow key={lead.id} className="hover:bg-muted/30 cursor-pointer">
                   <TableCell>
-                    <Link
-                      href={`/leads/${lead.id}`}
-                      className="font-mono text-xs text-primary hover:underline"
-                    >
+                    <Link href={`/leads/${lead.id}`} className="font-mono text-xs text-primary hover:underline">
                       {lead.lead_number}
                     </Link>
                   </TableCell>
@@ -136,33 +154,19 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
                     </Link>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">{lead.phone}</TableCell>
-                  <TableCell>
-                    <LeadStatusBadge status={lead.status} />
-                  </TableCell>
-                  <TableCell>
-                    <TemperatureBadge temperature={lead.temperature} />
-                  </TableCell>
+                  <TableCell><LeadStatusBadge status={lead.status} /></TableCell>
+                  <TableCell><TemperatureBadge temperature={lead.temperature} /></TableCell>
                   <TableCell className="text-sm">{lead.assigned_to.name}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{lead.property_type ?? "—"}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {lead.next_followup_date ? (
-                      <span
-                        className={
-                          new Date(lead.next_followup_date) < new Date()
-                            ? "text-destructive font-medium"
-                            : ""
-                        }
-                      >
+                      <span className={new Date(lead.next_followup_date) < new Date() ? "text-destructive font-medium" : ""}>
                         {formatDate(lead.next_followup_date)}
                       </span>
-                    ) : (
-                      "—"
-                    )}
+                    ) : "—"}
                   </TableCell>
                   <TableCell className="text-right text-sm">
-                    {lead.potential_lead_value
-                      ? formatCurrency(Number(lead.potential_lead_value))
-                      : "—"}
+                    {lead.potential_lead_value ? formatCurrency(Number(lead.potential_lead_value)) : "—"}
                   </TableCell>
                 </TableRow>
               ))
@@ -174,25 +178,15 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>
-            Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}
-          </span>
+          <span>Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}</span>
           <div className="flex gap-2">
             {page > 1 && (
-              <Button
-                variant="outline"
-                size="sm"
-                render={<Link href={`/leads?${new URLSearchParams({ ...sp, page: String(page - 1) })}`} />}
-              >
+              <Button variant="outline" size="sm" render={<Link href={`/leads?${new URLSearchParams({ ...sp, page: String(page - 1) })}`} />}>
                 Previous
               </Button>
             )}
             {page < totalPages && (
-              <Button
-                variant="outline"
-                size="sm"
-                render={<Link href={`/leads?${new URLSearchParams({ ...sp, page: String(page + 1) })}`} />}
-              >
+              <Button variant="outline" size="sm" render={<Link href={`/leads?${new URLSearchParams({ ...sp, page: String(page + 1) })}`} />}>
                 Next
               </Button>
             )}

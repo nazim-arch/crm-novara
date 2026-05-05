@@ -23,7 +23,7 @@ import { startOfDay, endOfDay, addDays, differenceInCalendarDays } from "date-fn
 import {
   Phone, Mail, MessageCircle, Home, Users, Zap, Flame,
   AlertTriangle, Clock, Search, Trash2, Loader2, Check, Plus,
-  Building2, User, Calendar, CheckCircle2,
+  Building2, User, Calendar, CheckCircle2, ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -229,6 +229,13 @@ export function FollowUpsClient({
   const [followUps, setFollowUps] = useState<FollowUp[]>(initialFollowUps);
   const [search, setSearch] = useState("");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
+  const [sortCol, setSortCol] = useState("scheduled_at");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const toggleSort = (col: string) => {
+    if (sortCol === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortCol(col); setSortDir("asc"); }
+  };
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [addNextFor, setAddNextFor] = useState<FollowUp | null>(null);
@@ -238,7 +245,7 @@ export function FollowUpsClient({
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    return followUps.filter((fu) => {
+    const list = followUps.filter((fu) => {
       if (assigneeFilter !== "all" && fu.assigned_to?.id !== assigneeFilter) return false;
       if (q) {
         const haystack = [
@@ -253,7 +260,17 @@ export function FollowUpsClient({
       }
       return true;
     });
-  }, [followUps, search, assigneeFilter]);
+    return [...list].sort((a, b) => {
+      let cmp = 0;
+      if (sortCol === "scheduled_at") cmp = new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime();
+      else if (sortCol === "type") cmp = a.type.localeCompare(b.type);
+      else if (sortCol === "priority") {
+        const order: Record<string, number> = { High: 0, Medium: 1, Low: 2 };
+        cmp = (order[a.priority] ?? 9) - (order[b.priority] ?? 9);
+      } else if (sortCol === "assigned_to") cmp = (a.assigned_to?.name ?? "").localeCompare(b.assigned_to?.name ?? "");
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [followUps, search, assigneeFilter, sortCol, sortDir]);
 
   const buckets = useMemo(() => {
     const pending = filtered.filter((fu) => !fu.completed_at);
@@ -595,10 +612,26 @@ function FollowUpList({
           <TableHeader>
             <TableRow className="bg-muted/50">
               <TableHead>Entity</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Priority</TableHead>
-              <TableHead>{isCompleted ? "Completed" : "Scheduled"}</TableHead>
-              <TableHead>Assigned To</TableHead>
+              <TableHead>
+                <button onClick={() => toggleSort("type")} className="flex items-center gap-1 hover:text-foreground">
+                  Type {sortCol === "type" ? (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-40" />}
+                </button>
+              </TableHead>
+              <TableHead>
+                <button onClick={() => toggleSort("priority")} className="flex items-center gap-1 hover:text-foreground">
+                  Priority {sortCol === "priority" ? (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-40" />}
+                </button>
+              </TableHead>
+              <TableHead>
+                <button onClick={() => toggleSort("scheduled_at")} className="flex items-center gap-1 hover:text-foreground">
+                  {isCompleted ? "Completed" : "Scheduled"} {sortCol === "scheduled_at" ? (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-40" />}
+                </button>
+              </TableHead>
+              <TableHead>
+                <button onClick={() => toggleSort("assigned_to")} className="flex items-center gap-1 hover:text-foreground">
+                  Assigned To {sortCol === "assigned_to" ? (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-40" />}
+                </button>
+              </TableHead>
               <TableHead>Notes</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>

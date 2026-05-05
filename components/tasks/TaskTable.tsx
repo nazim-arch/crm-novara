@@ -22,7 +22,7 @@ import { Input } from "@/components/ui/input";
 import { TaskStatusBadge, PriorityBadge } from "@/components/shared/LeadStatusBadge";
 import { formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, Clock, Search } from "lucide-react";
+import { AlertTriangle, Clock, Search, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { startOfDay, endOfDay, addDays } from "date-fns";
 
 type Task = {
@@ -52,17 +52,26 @@ interface TaskTableProps {
 
 const ACTIVE_STATUSES = ["Todo", "InProgress"];
 
+const PRIORITY_ORDER: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+
 export function TaskTable({ tasks, users, clients }: TaskTableProps) {
   const [search, setSearch] = useState("");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [clientFilter, setClientFilter] = useState("all");
+  const [sortCol, setSortCol] = useState("due_date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const toggleSort = (col: string) => {
+    if (sortCol === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortCol(col); setSortDir("asc"); }
+  };
 
   const today = new Date();
   const todayStart = startOfDay(today);
   const todayEnd = endOfDay(today);
 
   const filtered = useMemo(() => {
-    return tasks.filter((t) => {
+    const list = tasks.filter((t) => {
       if (assigneeFilter !== "all" && t.assigned_to.id !== assigneeFilter) return false;
       if (clientFilter !== "all") {
         if (clientFilter === "none") { if (t.client !== null) return false; }
@@ -74,7 +83,16 @@ export function TaskTable({ tasks, users, clients }: TaskTableProps) {
       }
       return true;
     });
-  }, [tasks, search, assigneeFilter, clientFilter]);
+    return [...list].sort((a, b) => {
+      let cmp = 0;
+      if (sortCol === "due_date") cmp = new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+      else if (sortCol === "title") cmp = a.title.localeCompare(b.title);
+      else if (sortCol === "priority") cmp = (PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9);
+      else if (sortCol === "status") cmp = a.status.localeCompare(b.status);
+      else if (sortCol === "assigned_to") cmp = a.assigned_to.name.localeCompare(b.assigned_to.name);
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [tasks, search, assigneeFilter, clientFilter, sortCol, sortDir]);
 
   const buckets = useMemo(() => {
     const overdue = filtered.filter(
@@ -186,7 +204,7 @@ export function TaskTable({ tasks, users, clients }: TaskTableProps) {
 
         {(["overdue", "today", "next3", "next7", "allActive", "done"] as const).map((key) => (
           <TabsContent key={key} value={key} className="mt-4">
-            <TaskGrid tasks={buckets[key]} />
+            <TaskGrid tasks={buckets[key]} sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
           </TabsContent>
         ))}
       </Tabs>
@@ -194,17 +212,28 @@ export function TaskTable({ tasks, users, clients }: TaskTableProps) {
   );
 }
 
-function TaskGrid({ tasks }: { tasks: Task[] }) {
+function SortBtn({ col, label, sortCol, sortDir, onSort }: { col: string; label: string; sortCol: string; sortDir: string; onSort: (c: string) => void }) {
+  const active = sortCol === col;
+  return (
+    <button onClick={() => onSort(col)} className="flex items-center gap-1 hover:text-foreground whitespace-nowrap">
+      {label}
+      {active ? (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-40" />}
+    </button>
+  );
+}
+
+function TaskGrid({ tasks, sortCol, sortDir, onSort }: { tasks: Task[]; sortCol: string; sortDir: string; onSort: (c: string) => void }) {
+  const sh = (col: string, label: string) => <SortBtn col={col} label={label} sortCol={sortCol} sortDir={sortDir} onSort={onSort} />;
   return (
     <div className="rounded-lg border bg-card overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/50">
-            <TableHead>Task</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Priority</TableHead>
-            <TableHead>Due Date</TableHead>
-            <TableHead>Assigned To</TableHead>
+            <TableHead>{sh("title", "Task")}</TableHead>
+            <TableHead>{sh("status", "Status")}</TableHead>
+            <TableHead>{sh("priority", "Priority")}</TableHead>
+            <TableHead>{sh("due_date", "Due Date")}</TableHead>
+            <TableHead>{sh("assigned_to", "Assigned To")}</TableHead>
             <TableHead>Client</TableHead>
             <TableHead>Linked To</TableHead>
           </TableRow>
