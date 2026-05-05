@@ -2,10 +2,60 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { leadScopeFilter } from "@/lib/rbac";
-import { startOfDay, endOfDay, differenceInCalendarDays, subDays } from "date-fns";
+import { startOfDay, endOfDay, subDays, differenceInCalendarDays } from "date-fns";
 import { SalesDashboardClient } from "@/components/dashboard/SalesDashboardClient";
 
-type SearchParams = Promise<{ stale_days?: string }>;
+// ── Period resolution ──────────────────────────────────────────────────────
+
+type SalesPeriod = "today" | "yesterday" | "this_week" | "this_month" | "ytd" | "custom";
+
+function resolveSalesPeriod(
+  period: string,
+  from: string | undefined,
+  to: string | undefined,
+  today: Date,
+): { rangeStart: Date; rangeEnd: Date; label: string; period: SalesPeriod } {
+  const todayStart = startOfDay(today);
+  const todayEnd = endOfDay(today);
+
+  switch (period as SalesPeriod) {
+    case "today":
+      return { rangeStart: todayStart, rangeEnd: todayEnd, label: "Today", period: "today" };
+    case "yesterday": {
+      const yd = subDays(todayStart, 1);
+      return { rangeStart: startOfDay(yd), rangeEnd: endOfDay(yd), label: "Yesterday", period: "yesterday" };
+    }
+    case "this_week": {
+      const dow = today.getDay();
+      const daysToMon = dow === 0 ? 6 : dow - 1;
+      const weekStart = startOfDay(subDays(today, daysToMon));
+      return { rangeStart: weekStart, rangeEnd: todayEnd, label: "This Week", period: "this_week" };
+    }
+    case "this_month": {
+      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+      return { rangeStart: startOfDay(monthStart), rangeEnd: todayEnd, label: "This Month", period: "this_month" };
+    }
+    case "ytd": {
+      const yearStart = new Date(today.getFullYear(), 0, 1);
+      return { rangeStart: startOfDay(yearStart), rangeEnd: todayEnd, label: `YTD ${today.getFullYear()}`, period: "ytd" };
+    }
+    case "custom": {
+      const s = from ? new Date(from + "T00:00:00") : todayStart;
+      const e = to ? new Date(to + "T23:59:59") : todayEnd;
+      const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      const label = `${s.getDate()} ${months[s.getMonth()]} – ${e.getDate()} ${months[e.getMonth()]} ${e.getFullYear()}`;
+      return { rangeStart: s, rangeEnd: e, label, period: "custom" };
+    }
+    default: {
+      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+      return { rangeStart: startOfDay(monthStart), rangeEnd: todayEnd, label: "This Month", period: "this_month" };
+    }
+  }
+}
+
+// ── Page ───────────────────────────────────────────────────────────────────
+
+type SearchParams = Promise<{ period?: string; from?: string; to?: string; stale_days?: string }>;
 
 const STALE_DEFAULT = 7;
 
@@ -20,181 +70,176 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
   const todayEnd = endOfDay(today);
   const staleDays = Math.max(1, Number(sp.stale_days ?? String(STALE_DEFAULT)));
 
+  const { rangeStart, rangeEnd, label: rangeLabel, period } = resolveSalesPeriod(
+    sp.period ?? "this_month",
+    sp.from,
+    sp.to,
+    today,
+  );
+
   const userId = session.user.id;
   const role = session.user.role;
   const leadScope = leadScopeFilter(role, userId);
 
-  // Base where builder — handles scope for Sales role
-  const leadWhere = (extra: object = {}) => ({
+  const leadWhere = (extra: object = {}): object => ({
     deleted_at: null as null,
     ...(leadScope ?? {}),
     ...extra,
   });
 
-  // Where builder for queries that need their own OR clause (combines with scope via AND)
-  const leadWhereWithOr = (ors: object[], extra: object = {}) => {
+  // Combines Sales scope OR with filter OR safely using AND
+  const leadWhereWithOr = (ors: object[], extra: object = {}): object => {
     if (leadScope) {
       return { deleted_at: null as null, AND: [leadScope, { OR: ors }], ...extra };
     }
     return { deleted_at: null as null, OR: ors, ...extra };
   };
 
-  const closedStatuses = ["Won", "Lost", "InvalidLead", "Recycle"] as const;
-  const activeWhere = { status: { notIn: [...closedStatuses] } };
+  const closedStatuses = ["Won", "Lost", "InvalidLead", "Recycle"];
+  const activeFilter = { status: { notIn: closedStatuses } };
+  const periodFilter = { created_at: { gte: rangeStart, lte: rangeEnd } };
 
+  // ── Parallel queries ───────────────────────────────────────────────────────
   const [
-    totalLeads,
-    hotLeads,
-    _activeLeads,
-    _wonLeads,
-    _lostLeads,
-    _newLeadsInRange,
-    _wonLeadsInRange,
-    todayFollowUpsCount,
-    overdueFollowUpsCount,
-    leadsToday,
+    // Period KPIs
+    leadsReceived,
     leadsActioned,
-    pendingFirstAction,
+    // Live KPIs
+    hotLeads,
     warmLeads,
     coldLeads,
-    toActionToday,
-    noActivityLeads,
+    pendingFirstAction,
     staleLeads,
+    toActionToday,
+    todayFollowUpsCount,
+    overdueFollowUpsCount,
+    noActivityLeads,
+    // Charts (all-time)
     stageDistribution,
     temperatureDistribution,
+    // Charts (period)
     sourceDistribution,
-    _pipelineAgg,
+    // Lists (live)
     todayLeadsList,
     overdueLeadsList,
-    _staleHotLeads,
-    _revenueAgg,
-    _expenseAgg,
-    _topOpportunities,
-    _expensesByOpp,
-    _oppByBreakdownRaw,
-    _recentActivities,
-    _taskByStatus,
-    _overdueTasksCount,
-    _taskByClient,
+    // Sales owner & opportunity (all-time active)
     salesOwnerGroupBy,
     leadsPerOppRaw,
-    hotLeadsBySourceThisWeek,
+    // Insights: hot sources in period
+    hotLeadsBySource,
+    // Won in period via stage history
+    wonInPeriod,
   ] = await Promise.all([
-    // All-time pipeline health
-    prisma.lead.count({ where: leadWhere() }),
-    prisma.lead.count({ where: leadWhere({ temperature: "Hot", ...activeWhere }) }),
-    prisma.lead.count({ where: leadWhere(activeWhere) }),
-    prisma.lead.count({ where: leadWhere({ status: "Won" }) }),
-    prisma.lead.count({ where: leadWhere({ status: "Lost" }) }),
-    // Range
-    prisma.lead.count({ where: leadWhere() }),
-    prisma.lead.count({ where: leadWhereInRange({ status: "Won" }) }),
-    // Today follow-ups
-    prisma.lead.count({ where: leadWhere({ ...activeWhere, next_followup_date: { gte: todayStart, lte: todayEnd } }) }),
-    prisma.lead.count({ where: leadWhere({ ...activeWhere, next_followup_date: { lt: todayStart } }) }),
+    // ── Period: received ──────────────────────────────────────────────────
+    prisma.lead.count({ where: leadWhere(periodFilter) }),
 
-    // New KPIs
-    prisma.lead.count({ where: leadWhere({ created_at: { gte: todayStart, lte: todayEnd } }) }),
-    prisma.lead.count({ where: leadWhereWithOr([{ stage_history: { some: {} } }, { followups: { some: {} } }]) }),
-    prisma.lead.count({ where: leadWhere({ status: "New", stage_history: { none: {} }, followups: { none: {} } }) }),
-    prisma.lead.count({ where: leadWhere({ temperature: "Warm", ...activeWhere }) }),
-    prisma.lead.count({ where: leadWhere({ temperature: "Cold", ...activeWhere }) }),
-    prisma.lead.count({ where: leadWhereWithOr([
-      { next_followup_date: { lte: todayEnd }, ...activeWhere },
-      { status: "New", stage_history: { none: {} }, followups: { none: {} } },
-    ]) }),
-    prisma.lead.count({ where: leadWhere({ stage_history: { none: {} }, followups: { none: {} } }) }),
-    prisma.lead.count({ where: leadWhere({ updated_at: { lt: subDays(todayStart, staleDays) }, ...activeWhere }) }),
+    // ── Period: actioned (created in period AND has history or follow-up) ─
+    // A lead is "actioned" only when something changes after creation.
+    // Proxy: has at least one stage_history entry OR at least one followup.
+    prisma.lead.count({
+      where: leadWhereWithOr(
+        [{ stage_history: { some: {} } }, { followups: { some: {} } }],
+        periodFilter,
+      ),
+    }),
 
-    // Charts (range-filtered)
+    // ── Live: temperature breakdown (active pipeline) ─────────────────────
+    prisma.lead.count({ where: leadWhere({ temperature: "Hot", ...activeFilter }) }),
+    prisma.lead.count({ where: leadWhere({ temperature: "Warm", ...activeFilter }) }),
+    prisma.lead.count({ where: leadWhere({ temperature: "Cold", ...activeFilter }) }),
+
+    // ── Live: never actioned (status=New, no stage history, no follow-ups) ─
+    prisma.lead.count({
+      where: leadWhere({ status: "New", stage_history: { none: {} }, followups: { none: {} } }),
+    }),
+
+    // ── Live: stale (active, no update in N days) ─────────────────────────
+    prisma.lead.count({
+      where: leadWhere({ ...activeFilter, updated_at: { lt: subDays(todayStart, staleDays) } }),
+    }),
+
+    // ── Live: to action today (today follow-up OR overdue OR pending) ─────
+    prisma.lead.count({
+      where: leadWhereWithOr([
+        { next_followup_date: { lte: todayEnd }, ...activeFilter },
+        { status: "New", stage_history: { none: {} }, followups: { none: {} } },
+      ]),
+    }),
+
+    // ── Live: today follow-ups ────────────────────────────────────────────
+    prisma.lead.count({
+      where: leadWhere({ ...activeFilter, next_followup_date: { gte: todayStart, lte: todayEnd } }),
+    }),
+
+    // ── Live: overdue follow-ups ──────────────────────────────────────────
+    prisma.lead.count({
+      where: leadWhere({ ...activeFilter, next_followup_date: { lt: todayStart } }),
+    }),
+
+    // ── Live: no activity at all (any status, no stage_history, no follow-ups)
+    prisma.lead.count({
+      where: leadWhere({ stage_history: { none: {} }, followups: { none: {} } }),
+    }),
+
+    // ── Chart: stage funnel (all-time scoped) ─────────────────────────────
     prisma.lead.groupBy({
       by: ["status"],
       where: leadWhere(),
       _count: { id: true },
       _sum: { potential_lead_value: true },
     }),
+
+    // ── Chart: temperature (active pipeline) ──────────────────────────────
     prisma.lead.groupBy({
       by: ["temperature"],
-      where: leadWhere(activeWhere),
+      where: leadWhere(activeFilter),
       _count: { id: true },
     }),
+
+    // ── Chart: source in period ───────────────────────────────────────────
     prisma.lead.groupBy({
       by: ["lead_source"],
-      where: leadWhere(),
+      where: leadWhere(periodFilter),
       _count: { id: true },
       orderBy: { _count: { id: "desc" } },
       take: 8,
     }),
 
-    // Existing lists
-    prisma.lead.aggregate({ where: leadWhere(activeWhere), _sum: { potential_lead_value: true } }),
+    // ── List: today follow-ups ────────────────────────────────────────────
     prisma.lead.findMany({
-      where: leadWhere({ ...activeWhere, next_followup_date: { gte: todayStart, lte: todayEnd } }),
-      select: { id: true, full_name: true, lead_number: true, phone: true, temperature: true, status: true, potential_lead_value: true, next_followup_date: true, followup_type: true, assigned_to: { select: { name: true } } },
+      where: leadWhere({ ...activeFilter, next_followup_date: { gte: todayStart, lte: todayEnd } }),
+      select: {
+        id: true, full_name: true, lead_number: true, phone: true,
+        temperature: true, status: true, potential_lead_value: true,
+        next_followup_date: true, followup_type: true,
+        assigned_to: { select: { name: true } },
+      },
       orderBy: { potential_lead_value: { sort: "desc", nulls: "last" } },
       take: 10,
     }),
+
+    // ── List: overdue follow-ups ──────────────────────────────────────────
     prisma.lead.findMany({
-      where: leadWhere({ ...activeWhere, next_followup_date: { lt: todayStart } }),
-      select: { id: true, full_name: true, lead_number: true, temperature: true, status: true, potential_lead_value: true, next_followup_date: true, assigned_to: { select: { name: true } } },
+      where: leadWhere({ ...activeFilter, next_followup_date: { lt: todayStart } }),
+      select: {
+        id: true, full_name: true, lead_number: true,
+        temperature: true, status: true, potential_lead_value: true,
+        next_followup_date: true, assigned_to: { select: { name: true } },
+      },
       orderBy: { potential_lead_value: { sort: "desc", nulls: "last" } },
       take: 8,
     }),
-    prisma.lead.findMany({
-      where: leadWhere({ temperature: "Hot", ...activeWhere, OR: [{ next_followup_date: null }, { next_followup_date: { lt: todayStart } }] }),
-      select: { id: true, full_name: true, lead_number: true, potential_lead_value: true, next_followup_date: true, assigned_to: { select: { name: true } } },
-      orderBy: { potential_lead_value: { sort: "desc", nulls: "last" } },
-      take: 5,
-    }),
-    canViewFinancials
-      ? prisma.opportunity.aggregate({ where: { deleted_at: null }, _sum: { total_sales_value: true, possible_revenue: true, closed_revenue: true } })
-      : Promise.resolve({ _sum: { total_sales_value: null, possible_revenue: null, closed_revenue: null } }),
-    canViewFinancials
-      ? prisma.opportunityExpense.aggregate({ where: { opportunity: { deleted_at: null } }, _sum: { amount: true } })
-      : Promise.resolve({ _sum: { amount: null } }),
-    canViewFinancials
-      ? prisma.opportunity.findMany({
-          where: { deleted_at: null, status: "Active" },
-          select: { id: true, name: true, opp_number: true, possible_revenue: true, closed_revenue: true, total_sales_value: true, commission_percent: true, _count: { select: { leads: true } } },
-          orderBy: { possible_revenue: { sort: "desc", nulls: "last" } },
-          take: 5,
-        })
-      : Promise.resolve([]),
-    canViewFinancials
-      ? prisma.opportunityExpense.groupBy({ by: ["opportunity_id"], where: { opportunity: { deleted_at: null } }, _sum: { amount: true } })
-      : Promise.resolve([]),
-    canViewFinancials
-      ? prisma.opportunity.groupBy({ by: ["opportunity_by"], where: { deleted_at: null }, _count: { id: true }, _sum: { possible_revenue: true } })
-      : Promise.resolve([]),
-    prisma.activity.findMany({
-      include: { actor: { select: { name: true } } },
-      orderBy: { created_at: "desc" },
-      take: 15,
-    }),
-    prisma.task.groupBy({
-      by: ["status"],
-      where: { deleted_at: null, ...(role === "Sales" || role === "Operations" ? { assigned_to_id: userId } : {}) },
-      _count: { id: true },
-    }),
-    prisma.task.count({
-      where: { deleted_at: null, status: { notIn: ["Done", "Cancelled"] }, due_date: { lt: todayStart }, ...(role === "Sales" || role === "Operations" ? { assigned_to_id: userId } : {}) },
-    }),
-    prisma.task.groupBy({
-      by: ["client_id"],
-      where: { deleted_at: null, client_id: { not: null }, ...(role === "Sales" || role === "Operations" ? { assigned_to_id: userId } : {}) },
-      _count: { id: true },
-    }),
 
-    // Sales owner stats
+    // ── Sales owner stats (all-time active) ───────────────────────────────
     prisma.lead.groupBy({
       by: ["assigned_to_id"],
-      where: leadWhere(activeWhere),
+      where: leadWhere(activeFilter),
       _count: { id: true },
       orderBy: { _count: { id: "desc" } },
       take: 10,
     }),
 
-    // Leads per opportunity (top 8)
+    // ── Leads per opportunity (all-time) ──────────────────────────────────
     prisma.leadOpportunity.groupBy({
       by: ["opportunity_id"],
       _count: { lead_id: true },
@@ -202,20 +247,28 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
       take: 8,
     }),
 
-    // Hot lead sources this week (for smart insights)
+    // ── Insights: hot lead sources in period ──────────────────────────────
     prisma.lead.groupBy({
       by: ["lead_source"],
-      where: leadWhere({
-        temperature: "Hot",
-        created_at: { gte: subDays(todayStart, 7) },
-      }),
+      where: leadWhere({ temperature: "Hot", ...periodFilter }),
       _count: { id: true },
       orderBy: { _count: { id: "desc" } },
       take: 1,
     }),
+
+    // ── Won in period via stage history ───────────────────────────────────
+    prisma.leadStageHistory.count({
+      where: {
+        to_stage: "Won",
+        changed_at: { gte: rangeStart, lte: rangeEnd },
+        lead: leadScope
+          ? { deleted_at: null, ...leadScope }
+          : { deleted_at: null },
+      },
+    }),
   ]);
 
-  // Resolve sales owner names
+  // ── Secondary: resolve names ────────────────────────────────────────────
   const ownerIds = (salesOwnerGroupBy as Array<{ assigned_to_id: string; _count: { id: number } }>)
     .map((r) => r.assigned_to_id).filter(Boolean);
   const ownerUsers = ownerIds.length > 0
@@ -225,28 +278,31 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
   const salesOwnerStats = (salesOwnerGroupBy as Array<{ assigned_to_id: string; _count: { id: number } }>)
     .map((r) => ({ id: r.assigned_to_id, name: ownerNameMap[r.assigned_to_id] ?? "Unknown", count: r._count.id }));
 
-  // Resolve opportunity names for leads-per-opp
   const oppIds = (leadsPerOppRaw as Array<{ opportunity_id: string; _count: { lead_id: number } }>)
     .map((r) => r.opportunity_id).filter(Boolean);
   const oppRecords = oppIds.length > 0
-    ? await prisma.opportunity.findMany({ where: { id: { in: oppIds }, deleted_at: null }, select: { id: true, name: true } })
+    ? await prisma.opportunity.findMany({
+        where: { id: { in: oppIds }, deleted_at: null },
+        select: { id: true, name: true },
+      })
     : [];
   const oppNameMap = Object.fromEntries(oppRecords.map((o) => [o.id, o.name]));
   const leadsPerOpportunity = (leadsPerOppRaw as Array<{ opportunity_id: string; _count: { lead_id: number } }>)
     .map((r) => ({ id: r.opportunity_id, name: oppNameMap[r.opportunity_id] ?? "Unknown", count: r._count.lead_id }))
     .filter((r) => r.name !== "Unknown");
 
-  // Action queue: prioritized list of leads needing attention today
+  // ── Action queue ────────────────────────────────────────────────────────
   const TEMP_PRIO: Record<string, number> = { Hot: 0, Warm: 1, Cold: 2, FollowUpLater: 3 };
   const actionQueueLeads = await prisma.lead.findMany({
     where: leadWhereWithOr([
-      { next_followup_date: { lte: todayEnd }, ...activeWhere },
+      { next_followup_date: { lte: todayEnd }, ...activeFilter },
       { status: "New", stage_history: { none: {} }, followups: { none: {} } },
-      { updated_at: { lt: subDays(todayStart, staleDays) }, ...activeWhere },
-    ]),
+      { ...activeFilter, updated_at: { lt: subDays(todayStart, staleDays) } },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ]) as any,
     select: {
       id: true, full_name: true, lead_number: true, phone: true,
-      temperature: true, status: true, activity_stage: true,
+      temperature: true, status: true,
       next_followup_date: true, updated_at: true, lead_source: true,
       assigned_to: { select: { id: true, name: true } },
       opportunities: {
@@ -255,74 +311,116 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
         orderBy: { tagged_at: "desc" },
       },
     },
-    take: 30,
+    take: 50,
     orderBy: { updated_at: "asc" },
-  });
-  const sortedActionQueue = [...actionQueueLeads].sort((a, b) => {
-    const pa = TEMP_PRIO[a.temperature ?? "Cold"] ?? 3;
-    const pb = TEMP_PRIO[b.temperature ?? "Cold"] ?? 3;
-    if (pa !== pb) return pa - pb;
-    const aOverdue = a.next_followup_date && new Date(a.next_followup_date) < todayStart;
-    const bOverdue = b.next_followup_date && new Date(b.next_followup_date) < todayStart;
-    if (aOverdue && !bOverdue) return -1;
-    if (!aOverdue && bOverdue) return 1;
-    return 0;
-  }).slice(0, 20);
+  }) as Array<{
+    id: string; full_name: string; lead_number: string; phone: string | null;
+    temperature: string | null; status: string;
+    next_followup_date: Date | null; updated_at: Date; lead_source: string | null;
+    assigned_to: { id: string; name: string };
+    opportunities: Array<{ opportunity: { id: string; name: string } }>;
+  }>;
+  const sortedActionQueue = [...actionQueueLeads]
+    .sort((a, b) => {
+      const pa = TEMP_PRIO[a.temperature ?? "Cold"] ?? 3;
+      const pb = TEMP_PRIO[b.temperature ?? "Cold"] ?? 3;
+      if (pa !== pb) return pa - pb;
+      const aOver = a.next_followup_date && new Date(a.next_followup_date) < todayStart;
+      const bOver = b.next_followup_date && new Date(b.next_followup_date) < todayStart;
+      if (aOver && !bOver) return -1;
+      if (!aOver && bOver) return 1;
+      return 0;
+    })
+    .slice(0, 25);
 
-  // Smart insights
-  const topHotSource = (hotLeadsBySourceThisWeek as Array<{ lead_source: string | null; _count: { id: number } }>)[0];
+  // ── Smart insights ─────────────────────────────────────────────────────
+  const notActioned = Math.max(0, leadsReceived - leadsActioned);
+  const responseRate = leadsReceived > 0 ? Math.round((leadsActioned / leadsReceived) * 100) : 0;
+  const topHotSource = (hotLeadsBySource as Array<{ lead_source: string | null; _count: { id: number } }>)[0];
   const insights: string[] = [];
-  if (noActivityLeads > 0) insights.push(`${noActivityLeads} lead${noActivityLeads > 1 ? "s" : ""} have not been contacted yet.`);
+  if (pendingFirstAction > 0)
+    insights.push(`${pendingFirstAction} lead${pendingFirstAction > 1 ? "s" : ""} are waiting for first contact.`);
   if (topHotSource?.lead_source && topHotSource._count.id > 0)
-    insights.push(`${topHotSource.lead_source} generated ${topHotSource._count.id} hot lead${topHotSource._count.id > 1 ? "s" : ""} this week.`);
-  if (overdueFollowUpsCount > 0) insights.push(`${overdueFollowUpsCount} overdue follow-up${overdueFollowUpsCount > 1 ? "s" : ""} need attention today.`);
-  if (staleLeads > 0) insights.push(`${staleLeads} lead${staleLeads > 1 ? "s" : ""} haven't had activity in ${staleDays}+ days.`);
-  if (warmLeads > 0 && hotLeads > 0 && warmLeads > hotLeads) insights.push(`${warmLeads} warm leads ready to be moved to hot.`);
-  if (pendingFirstAction > 0) insights.push(`${pendingFirstAction} new lead${pendingFirstAction > 1 ? "s" : ""} awaiting first contact.`);
+    insights.push(`"${topHotSource.lead_source}" brought ${topHotSource._count.id} hot lead${topHotSource._count.id > 1 ? "s" : ""} ${rangeLabel.toLowerCase()}.`);
+  if (overdueFollowUpsCount > 0)
+    insights.push(`${overdueFollowUpsCount} overdue follow-up${overdueFollowUpsCount > 1 ? "s" : ""} need immediate attention.`);
+  if (staleLeads > 0)
+    insights.push(`${staleLeads} active lead${staleLeads > 1 ? "s" : ""} haven't had any update in ${staleDays}+ days.`);
+  if (notActioned > 0 && leadsReceived > 0 && responseRate < 50)
+    insights.push(`Response rate is ${responseRate}% — ${notActioned} lead${notActioned > 1 ? "s" : ""} received ${rangeLabel.toLowerCase()} haven't been worked on.`);
+  if (warmLeads > hotLeads && warmLeads > 5)
+    insights.push(`${warmLeads} warm leads are ready to be upgraded to hot.`);
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold">Sales Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Lead pipeline, activity &amp; action queue</p>
+        <p className="text-sm text-muted-foreground">Pipeline health, period performance &amp; action queue</p>
       </div>
 
       <SalesDashboardClient
+        currentPeriod={period}
+        currentFrom={sp.from}
+        currentTo={sp.to}
         staleDays={staleDays}
-        kpis={{
-          totalLeads, hotLeads, warmLeads, coldLeads,
-          leadsToday, leadsActioned, pendingFirstAction, toActionToday,
+        rangeLabel={rangeLabel}
+        periodKpis={{
+          received: leadsReceived,
+          actioned: leadsActioned,
+          notActioned,
+          responseRate,
+          wonInPeriod,
+        }}
+        liveKpis={{
+          hotLeads,
+          warmLeads,
+          coldLeads,
+          pendingFirstAction,
+          staleLeads,
+          toActionToday,
           todayFollowUps: todayFollowUpsCount,
           overdueFollowUps: overdueFollowUpsCount,
-          noActivityLeads, staleLeads,
+          noActivityLeads,
         }}
         todayLeads={todayLeadsList.map((l) => ({
           id: l.id, full_name: l.full_name, lead_number: l.lead_number, phone: l.phone,
           temperature: l.temperature, status: l.status,
           potential_lead_value: l.potential_lead_value ? Number(l.potential_lead_value) : null,
           next_followup_date: l.next_followup_date?.toISOString() ?? null,
-          followup_type: l.followup_type, assigned_to_name: l.assigned_to.name,
+          followup_type: l.followup_type,
+          assigned_to_name: l.assigned_to.name,
         }))}
         overdueLeads={overdueLeadsList.map((l) => ({
           id: l.id, full_name: l.full_name, lead_number: l.lead_number,
           temperature: l.temperature, status: l.status,
           potential_lead_value: l.potential_lead_value ? Number(l.potential_lead_value) : null,
           next_followup_date: l.next_followup_date?.toISOString() ?? null,
-          days_overdue: l.next_followup_date ? Math.abs(differenceInCalendarDays(new Date(l.next_followup_date), todayStart)) : 0,
+          days_overdue: l.next_followup_date
+            ? Math.abs(differenceInCalendarDays(new Date(l.next_followup_date), todayStart))
+            : 0,
           assigned_to_name: l.assigned_to.name,
         }))}
-        stageDistribution={stageDistribution.map((s) => ({ stage: s.status, count: s._count.id }))}
-        temperatureDistribution={temperatureDistribution.map((t) => ({ temp: t.temperature, count: t._count.id }))}
-        sourceDistribution={sourceDistribution.map((s) => ({ source: s.lead_source, count: s._count.id }))}
+        stageDistribution={stageDistribution.map((s) => ({
+          stage: s.status,
+          count: s._count.id,
+          value: Number(s._sum.potential_lead_value ?? 0),
+        }))}
+        temperatureDistribution={temperatureDistribution.map((t) => ({
+          temp: t.temperature, count: t._count.id,
+        }))}
+        sourceDistribution={sourceDistribution.map((s) => ({
+          source: s.lead_source, count: s._count.id,
+        }))}
         salesOwnerStats={salesOwnerStats}
         leadsPerOpportunity={leadsPerOpportunity}
         actionQueue={sortedActionQueue.map((l) => ({
           id: l.id, full_name: l.full_name, lead_number: l.lead_number, phone: l.phone,
           temperature: l.temperature, status: l.status,
-          activity_stage: l.activity_stage, lead_source: l.lead_source,
+          activity_stage: null, lead_source: l.lead_source,
           next_followup_date: l.next_followup_date?.toISOString() ?? null,
           updated_at: l.updated_at.toISOString(),
-          assigned_to_name: l.assigned_to.name, assigned_to_id: l.assigned_to.id,
+          assigned_to_name: l.assigned_to.name,
+          assigned_to_id: l.assigned_to.id,
           opportunity_name: l.opportunities[0]?.opportunity.name ?? null,
           opportunity_id: l.opportunities[0]?.opportunity.id ?? null,
         }))}
