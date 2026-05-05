@@ -283,7 +283,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
                   <TableCell className="text-right text-sm">
                     {lead.potential_lead_value ? formatCurrency(Number(lead.potential_lead_value)) : "—"}
                   </TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
+                  <TableCell>
                     <LeadContactActions
                       leadId={lead.id}
                       phone={lead.phone}
