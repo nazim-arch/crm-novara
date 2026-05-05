@@ -1,18 +1,11 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import { hasPermission, leadScopeFilter } from "@/lib/rbac";
+import { leadScopeFilter } from "@/lib/rbac";
 import { startOfDay, endOfDay, differenceInCalendarDays, subDays } from "date-fns";
-import { CrmDashboardClient } from "@/components/dashboard/CrmDashboardClient";
-import { DashboardFilters } from "@/components/podcast-studio/DashboardFilters";
-import { resolveDateRange, type DashboardRange } from "@/lib/date-range";
-import { Suspense } from "react";
+import { SalesDashboardClient } from "@/components/dashboard/SalesDashboardClient";
 
-function todayIST() {
-  return new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
-
-type SearchParams = Promise<{ range?: string; from?: string; to?: string; stale_days?: string }>;
+type SearchParams = Promise<{ stale_days?: string }>;
 
 const STALE_DEFAULT = 7;
 
@@ -23,20 +16,12 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
 
   const sp = await searchParams;
   const today = new Date();
-  const todayStr = todayIST();
   const todayStart = startOfDay(today);
   const todayEnd = endOfDay(today);
   const staleDays = Math.max(1, Number(sp.stale_days ?? String(STALE_DEFAULT)));
 
-  const range = (sp.range ?? "current_month") as DashboardRange;
-  const { start, end, label: rangeLabel } = resolveDateRange(range, todayStr, sp.from, sp.to);
-  const rangeStart = new Date(start + "T00:00:00");
-  const rangeEnd = new Date(end + "T23:59:59");
-
   const userId = session.user.id;
   const role = session.user.role;
-  const canViewFinancials = hasPermission(role, "financial:view");
-
   const leadScope = leadScopeFilter(role, userId);
 
   // Base where builder — handles scope for Sales role
@@ -54,26 +39,19 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
     return { deleted_at: null as null, OR: ors, ...extra };
   };
 
-  const leadWhereInRange = (extra: object = {}) => ({
-    ...leadWhere(extra),
-    created_at: { gte: rangeStart, lte: rangeEnd },
-  });
-
   const closedStatuses = ["Won", "Lost", "InvalidLead", "Recycle"] as const;
   const activeWhere = { status: { notIn: [...closedStatuses] } };
 
   const [
-    // Existing KPIs
     totalLeads,
     hotLeads,
-    activeLeads,
-    wonLeads,
-    lostLeads,
-    newLeadsInRange,
-    wonLeadsInRange,
+    _activeLeads,
+    _wonLeads,
+    _lostLeads,
+    _newLeadsInRange,
+    _wonLeadsInRange,
     todayFollowUpsCount,
     overdueFollowUpsCount,
-    // New KPIs
     leadsToday,
     leadsActioned,
     pendingFirstAction,
@@ -82,29 +60,24 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
     toActionToday,
     noActivityLeads,
     staleLeads,
-    // Charts
     stageDistribution,
     temperatureDistribution,
     sourceDistribution,
-    // Existing lists
-    pipelineAgg,
+    _pipelineAgg,
     todayLeadsList,
     overdueLeadsList,
-    staleHotLeads,
-    revenueAgg,
-    expenseAgg,
-    topOpportunities,
-    expensesByOpp,
-    oppByBreakdownRaw,
-    recentActivities,
-    taskByStatus,
-    overdueTasksCount,
-    taskByClient,
-    // New: Sales owner stats
+    _staleHotLeads,
+    _revenueAgg,
+    _expenseAgg,
+    _topOpportunities,
+    _expensesByOpp,
+    _oppByBreakdownRaw,
+    _recentActivities,
+    _taskByStatus,
+    _overdueTasksCount,
+    _taskByClient,
     salesOwnerGroupBy,
-    // New: Leads per opportunity
     leadsPerOppRaw,
-    // New: Hot lead sources this week (for insights)
     hotLeadsBySourceThisWeek,
   ] = await Promise.all([
     // All-time pipeline health
@@ -114,7 +87,7 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
     prisma.lead.count({ where: leadWhere({ status: "Won" }) }),
     prisma.lead.count({ where: leadWhere({ status: "Lost" }) }),
     // Range
-    prisma.lead.count({ where: leadWhereInRange() }),
+    prisma.lead.count({ where: leadWhere() }),
     prisma.lead.count({ where: leadWhereInRange({ status: "Won" }) }),
     // Today follow-ups
     prisma.lead.count({ where: leadWhere({ ...activeWhere, next_followup_date: { gte: todayStart, lte: todayEnd } }) }),
@@ -136,18 +109,18 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
     // Charts (range-filtered)
     prisma.lead.groupBy({
       by: ["status"],
-      where: leadWhereInRange(),
+      where: leadWhere(),
       _count: { id: true },
       _sum: { potential_lead_value: true },
     }),
     prisma.lead.groupBy({
       by: ["temperature"],
-      where: leadWhereInRange(activeWhere),
+      where: leadWhere(activeWhere),
       _count: { id: true },
     }),
     prisma.lead.groupBy({
       by: ["lead_source"],
-      where: leadWhereInRange(),
+      where: leadWhere(),
       _count: { id: true },
       orderBy: { _count: { id: "desc" } },
       take: 8,
@@ -307,35 +280,6 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
   if (warmLeads > 0 && hotLeads > 0 && warmLeads > hotLeads) insights.push(`${warmLeads} warm leads ready to be moved to hot.`);
   if (pendingFirstAction > 0) insights.push(`${pendingFirstAction} new lead${pendingFirstAction > 1 ? "s" : ""} awaiting first contact.`);
 
-  // Existing computations
-  const clientIds = (taskByClient as Array<{ client_id: string | null }>).map((c) => c.client_id).filter(Boolean) as string[];
-  const clientRecords = clientIds.length > 0
-    ? await prisma.client.findMany({ where: { id: { in: clientIds } }, select: { id: true, name: true } })
-    : [];
-  const clientNameMap = Object.fromEntries(clientRecords.map((c) => [c.id, c.name]));
-  const taskClientDistribution = (taskByClient as Array<{ client_id: string | null; _count: { id: number } }>)
-    .filter((c) => c.client_id)
-    .map((c) => ({ name: clientNameMap[c.client_id!] ?? "Unknown", count: c._count.id }));
-
-  const expenseMap = new Map(
-    (expensesByOpp as Array<{ opportunity_id: string; _sum: { amount: unknown } }>)
-      .map((e) => [e.opportunity_id, Number(e._sum.amount ?? 0)])
-  );
-
-  const totalExpense = Number(expenseAgg._sum.amount ?? 0);
-  const closedRevenue = Number(revenueAgg._sum.closed_revenue ?? 0);
-  const possibleRevenue = Number(revenueAgg._sum.possible_revenue ?? 0);
-  const totalSalesValue = Number(revenueAgg._sum.total_sales_value ?? 0);
-  const pipelineValue = Number(pipelineAgg._sum.potential_lead_value ?? 0);
-  const netProfit = closedRevenue - totalExpense;
-
-  const taskMap: Record<string, number> = {};
-  for (const t of taskByStatus) taskMap[t.status] = t._count.id;
-
-  const opportunityByBreakdown = (oppByBreakdownRaw as Array<{ opportunity_by: string | null; _count: { id: number }; _sum: { possible_revenue: unknown } }>)
-    .map((r) => ({ opportunity_by: r.opportunity_by ?? "Developer", count: r._count.id, possible_revenue: Number(r._sum.possible_revenue ?? 0) }))
-    .sort((a, b) => b.count - a.count);
-
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col gap-1">
@@ -343,33 +287,14 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
         <p className="text-sm text-muted-foreground">Lead pipeline, activity &amp; action queue</p>
       </div>
 
-      <Suspense>
-        <DashboardFilters currentRange={range} currentFrom={sp.from} currentTo={sp.to} rangeLabel={rangeLabel} />
-      </Suspense>
-
-      <CrmDashboardClient
-        canViewFinancials={canViewFinancials}
-        rangeLabel={rangeLabel}
+      <SalesDashboardClient
         staleDays={staleDays}
         kpis={{
-          totalLeads, hotLeads, activeLeads, wonLeads, lostLeads,
-          newLeadsInRange, wonLeadsInRange,
+          totalLeads, hotLeads, warmLeads, coldLeads,
+          leadsToday, leadsActioned, pendingFirstAction, toActionToday,
           todayFollowUps: todayFollowUpsCount,
           overdueFollowUps: overdueFollowUpsCount,
-          pipelineValue,
-          totalSalesValue,
-          possibleRevenue,
-          closedRevenue,
-          totalExpense,
-          netProfit,
-          leadsToday,
-          leadsActioned,
-          pendingFirstAction,
-          warmLeads,
-          coldLeads,
-          toActionToday,
-          noActivityLeads,
-          staleLeads,
+          noActivityLeads, staleLeads,
         }}
         todayLeads={todayLeadsList.map((l) => ({
           id: l.id, full_name: l.full_name, lead_number: l.lead_number, phone: l.phone,
@@ -386,39 +311,18 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
           days_overdue: l.next_followup_date ? Math.abs(differenceInCalendarDays(new Date(l.next_followup_date), todayStart)) : 0,
           assigned_to_name: l.assigned_to.name,
         }))}
-        staleHotLeads={staleHotLeads.map((l) => ({
-          id: l.id, full_name: l.full_name, lead_number: l.lead_number,
-          potential_lead_value: l.potential_lead_value ? Number(l.potential_lead_value) : null,
-          next_followup_date: l.next_followup_date?.toISOString() ?? null,
-          assigned_to_name: l.assigned_to.name,
-        }))}
-        stageDistribution={stageDistribution.map((s) => ({ stage: s.status, count: s._count.id, value: Number(s._sum.potential_lead_value ?? 0) }))}
+        stageDistribution={stageDistribution.map((s) => ({ stage: s.status, count: s._count.id }))}
         temperatureDistribution={temperatureDistribution.map((t) => ({ temp: t.temperature, count: t._count.id }))}
         sourceDistribution={sourceDistribution.map((s) => ({ source: s.lead_source, count: s._count.id }))}
-        topOpportunities={(topOpportunities as Array<{ id: string; name: string; opp_number: string; possible_revenue: unknown; closed_revenue: unknown; total_sales_value: unknown; commission_percent: unknown; _count: { leads: number } }>).map((o) => {
-          const exp = expenseMap.get(o.id) ?? 0;
-          const cr = Number(o.closed_revenue ?? 0);
-          return { id: o.id, name: o.name, opp_number: o.opp_number, possible_revenue: Number(o.possible_revenue ?? 0), closed_revenue: cr, total_expense: exp, net_profit: cr - exp, leads_count: o._count.leads };
-        })}
-        opportunityByBreakdown={opportunityByBreakdown}
-        recentActivities={recentActivities.map((a) => ({ id: a.id, action: a.action, entity_type: a.entity_type, entity_id: a.entity_id, actor_name: a.actor.name, created_at: a.created_at.toISOString() }))}
-        taskStats={{ todo: taskMap["Todo"] ?? 0, inProgress: taskMap["InProgress"] ?? 0, done: taskMap["Done"] ?? 0, overdue: overdueTasksCount }}
-        taskClientDistribution={taskClientDistribution}
         salesOwnerStats={salesOwnerStats}
         leadsPerOpportunity={leadsPerOpportunity}
         actionQueue={sortedActionQueue.map((l) => ({
-          id: l.id,
-          full_name: l.full_name,
-          lead_number: l.lead_number,
-          phone: l.phone,
-          temperature: l.temperature,
-          status: l.status,
-          activity_stage: l.activity_stage,
-          lead_source: l.lead_source,
+          id: l.id, full_name: l.full_name, lead_number: l.lead_number, phone: l.phone,
+          temperature: l.temperature, status: l.status,
+          activity_stage: l.activity_stage, lead_source: l.lead_source,
           next_followup_date: l.next_followup_date?.toISOString() ?? null,
           updated_at: l.updated_at.toISOString(),
-          assigned_to_name: l.assigned_to.name,
-          assigned_to_id: l.assigned_to.id,
+          assigned_to_name: l.assigned_to.name, assigned_to_id: l.assigned_to.id,
           opportunity_name: l.opportunities[0]?.opportunity.name ?? null,
           opportunity_id: l.opportunities[0]?.opportunity.id ?? null,
         }))}
