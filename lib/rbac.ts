@@ -57,6 +57,6 @@ export function taskScopeFilter(role: string, userId: string) {
 // Returns default landing path by role
 export function defaultLandingPath(role: string): string {
   if (role === "Operations") return "/tasks";
-  if (role === "Sales") return "/leads";
+  if (role === "Sales") return "/dashboard/command";
   return "/dashboard/crm";
 }
