@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { ExportButton } from "@/components/shared/ExportButton";
 import Link from "next/link";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -327,7 +328,8 @@ export function FollowUpsClient({
   return (
     <div className="p-4 sm:p-6 space-y-4">
       {/* Header */}
-      <div>
+      <div className="flex items-start justify-between gap-4">
+        <div>
         <h1 className="text-xl font-semibold">Follow-ups</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
           {buckets.overdue.length > 0 && (
@@ -335,6 +337,8 @@ export function FollowUpsClient({
           )}
           {buckets.today.length} today · {buckets.next7.length} next 7d · {buckets.pending.length} total pending
         </p>
+        </div>
+        <ExportButton href="/api/follow-ups/export" filename="follow-ups.xlsx" />
       </div>
 
       {/* Filters */}

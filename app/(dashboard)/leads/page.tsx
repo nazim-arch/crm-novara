@@ -16,6 +16,7 @@ import { Plus } from "lucide-react";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { LeadFilters } from "@/components/leads/LeadFilters";
 import { LeadImportModal } from "@/components/leads/LeadImportModal";
+import { ExportButton } from "@/components/shared/ExportButton";
 
 type SearchParams = Promise<{
   status?: string;
@@ -83,6 +84,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
           <p className="text-sm text-muted-foreground">{total} total leads</p>
         </div>
         <div className="flex items-center gap-2">
+          <ExportButton href="/api/leads/export" filename="leads.xlsx" />
           <LeadImportModal />
           <Button render={<Link href="/leads/new" />}>
             <Plus className="h-4 w-4 mr-1" />

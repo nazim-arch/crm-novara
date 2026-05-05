@@ -6,6 +6,7 @@ import { TaskTable } from "@/components/tasks/TaskTable";
 import { KanbanBoard } from "@/components/tasks/KanbanBoard";
 import { Plus, List, LayoutGrid } from "lucide-react";
 import { hasPermission, taskScopeFilter } from "@/lib/rbac";
+import { ExportButton } from "@/components/shared/ExportButton";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
 type SearchParams = Promise<{ view?: string }>;
@@ -71,12 +72,15 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
               <LayoutGrid className="h-4 w-4" />
             </Link>
           </div>
-          {canCreate && (
-            <Button render={<Link href="/tasks/new" />}>
-              <Plus className="h-4 w-4 mr-1" />
-              New Task
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            <ExportButton href="/api/tasks/export" filename="tasks.xlsx" />
+            {canCreate && (
+              <Button render={<Link href="/tasks/new" />}>
+                <Plus className="h-4 w-4 mr-1" />
+                New Task
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 

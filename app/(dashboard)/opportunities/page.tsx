@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table";
 import { Plus, Building2 } from "lucide-react";
 import { hasPermission } from "@/lib/rbac";
+import { ExportButton } from "@/components/shared/ExportButton";
 
 type SearchParams = Promise<{ status?: string; search?: string; page?: string }>;
 
@@ -64,12 +65,15 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
           <h1 className="text-xl font-semibold">Opportunities</h1>
           <p className="text-sm text-muted-foreground">{total} total</p>
         </div>
-        {canCreate && (
-          <Button render={<Link href="/opportunities/new" />}>
-            <Plus className="h-4 w-4 mr-1" />
-            New Opportunity
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          <ExportButton href="/api/opportunities/export" filename="opportunities.xlsx" />
+          {canCreate && (
+            <Button render={<Link href="/opportunities/new" />}>
+              <Plus className="h-4 w-4 mr-1" />
+              New Opportunity
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="rounded-lg border bg-card overflow-hidden">
