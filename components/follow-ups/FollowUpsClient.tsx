@@ -622,22 +622,22 @@ function FollowUpList({
             <TableRow className="bg-muted/50">
               <TableHead>Entity</TableHead>
               <TableHead>
-                <button onClick={() => toggleSort("type")} className="flex items-center gap-1 hover:text-foreground">
+                <button onClick={() => onSort("type")} className="flex items-center gap-1 hover:text-foreground">
                   Type {sortCol === "type" ? (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-40" />}
                 </button>
               </TableHead>
               <TableHead>
-                <button onClick={() => toggleSort("priority")} className="flex items-center gap-1 hover:text-foreground">
+                <button onClick={() => onSort("priority")} className="flex items-center gap-1 hover:text-foreground">
                   Priority {sortCol === "priority" ? (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-40" />}
                 </button>
               </TableHead>
               <TableHead>
-                <button onClick={() => toggleSort("scheduled_at")} className="flex items-center gap-1 hover:text-foreground">
+                <button onClick={() => onSort("scheduled_at")} className="flex items-center gap-1 hover:text-foreground">
                   {isCompleted ? "Completed" : "Scheduled"} {sortCol === "scheduled_at" ? (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-40" />}
                 </button>
               </TableHead>
               <TableHead>
-                <button onClick={() => toggleSort("assigned_to")} className="flex items-center gap-1 hover:text-foreground">
+                <button onClick={() => onSort("assigned_to")} className="flex items-center gap-1 hover:text-foreground">
                   Assigned To {sortCol === "assigned_to" ? (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-40" />}
                 </button>
               </TableHead>
