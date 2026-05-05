@@ -20,7 +20,7 @@ import { LeadUpdateModal } from "@/components/leads/LeadUpdateModal";
 import { ExportButton } from "@/components/shared/ExportButton";
 import { LeadContactActions } from "@/components/shared/LeadContactActions";
 import { SortableHeader } from "@/components/shared/SortableHeader";
-import { startOfDay, endOfDay, subDays } from "date-fns";
+import { startOfDay, endOfDay, subDays, startOfWeek, startOfMonth, startOfYear } from "date-fns";
 
 const SORT_MAP: Record<string, Prisma.LeadOrderByWithRelationInput> = {
   full_name:            { full_name: "asc" },
@@ -34,6 +34,7 @@ const SORT_MAP: Record<string, Prisma.LeadOrderByWithRelationInput> = {
 
 const FILTER_LABELS: Record<string, string> = {
   today:            "Leads Received Today",
+  period:           "Leads Received",
   pending_action:   "Pending First Action",
   no_activity:      "Leads With No Activity",
   stale:            "Stale Leads",
@@ -41,6 +42,34 @@ const FILTER_LABELS: Record<string, string> = {
   to_action_today:  "To Action Today",
   actioned:         "Actioned Leads",
 };
+
+function resolvePeriodRange(
+  period: string | undefined,
+  from: string | undefined,
+  to: string | undefined,
+  today: Date,
+): { gte: Date; lte: Date } | null {
+  if (!period) return null;
+  const todayStart = startOfDay(today);
+  const todayEnd = endOfDay(today);
+  switch (period) {
+    case "today":      return { gte: todayStart, lte: todayEnd };
+    case "yesterday": {
+      const yd = subDays(todayStart, 1);
+      return { gte: startOfDay(yd), lte: endOfDay(yd) };
+    }
+    case "this_week":  return { gte: startOfWeek(today, { weekStartsOn: 1 }), lte: todayEnd };
+    case "this_month": return { gte: startOfMonth(today), lte: todayEnd };
+    case "ytd":        return { gte: startOfYear(today), lte: todayEnd };
+    case "custom":
+      if (!from && !to) return null;
+      return {
+        gte: from ? new Date(from + "T00:00:00") : todayStart,
+        lte: to   ? new Date(to   + "T23:59:59") : todayEnd,
+      };
+    default: return null;
+  }
+}
 
 type SearchParams = Promise<{
   status?: string;
@@ -54,6 +83,9 @@ type SearchParams = Promise<{
   stale_days?: string;
   source?: string;
   opportunity_id?: string;
+  period?: string;
+  from?: string;
+  to?: string;
 }>;
 
 export default async function LeadsPage({ searchParams }: { searchParams: SearchParams }) {
@@ -99,15 +131,19 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     ];
   }
 
+  const periodRange = resolvePeriodRange(sp.period, sp.from, sp.to, today);
+
   // Special filter logic
   if (sp.filter === "today") {
     where.created_at = { gte: todayStart, lte: todayEnd };
+  } else if (sp.filter === "period") {
+    if (periodRange) where.created_at = periodRange;
   } else if (sp.filter === "pending_action") {
-    where.status = "New";
-    where.stage_history = { none: {} };
+    if (periodRange) where.created_at = periodRange;
+    where.stage_history = { none: { from_stage: { not: null } } };
     where.followups = { none: {} };
   } else if (sp.filter === "no_activity") {
-    where.stage_history = { none: {} };
+    where.stage_history = { none: { from_stage: { not: null } } };
     where.followups = { none: {} };
   } else if (sp.filter === "stale") {
     where.updated_at = { lt: subDays(todayStart, staleDays) };
@@ -119,8 +155,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     where.status = { notIn: ["Won", "Lost", "InvalidLead", "Recycle"] };
     where.next_followup_date = { lte: todayEnd };
   } else if (sp.filter === "actioned") {
+    if (periodRange) where.created_at = periodRange;
     where.OR = [
-      { stage_history: { some: {} } },
+      { stage_history: { some: { from_stage: { not: null } } } },
       { followups: { some: {} } },
     ];
   }
@@ -165,10 +202,15 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     <SortableHeader column={col} label={label} currentSort={sortCol} currentDir={sortDir} className={className} />
   );
 
+  const PERIOD_LABEL: Record<string, string> = {
+    today: "Today", yesterday: "Yesterday", this_week: "This Week",
+    this_month: "This Month", ytd: "YTD", custom: "Custom Range",
+  };
+  const periodSuffix = sp.period && sp.period !== "custom" ? ` — ${PERIOD_LABEL[sp.period] ?? sp.period}` : "";
   const activeFilterLabel = sp.filter
     ? sp.filter === "stale"
       ? `Stale Leads (${staleDays}+ days inactive)`
-      : FILTER_LABELS[sp.filter]
+      : (FILTER_LABELS[sp.filter] ?? sp.filter) + (["actioned", "pending_action", "period"].includes(sp.filter) ? periodSuffix : "")
     : sp.source
     ? `Source: ${sp.source}`
     : null;

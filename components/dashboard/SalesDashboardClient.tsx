@@ -322,7 +322,7 @@ export function SalesDashboardClient({
             icon={CheckCircle2}
             iconClass={periodKpis.actioned > 0 ? "text-green-600" : "text-muted-foreground"}
             valueClass={periodKpis.actioned > 0 ? "text-green-600" : ""}
-            href="/leads?filter=actioned"
+            href={`/leads?filter=actioned&period=${currentPeriod}${currentFrom ? `&from=${currentFrom}` : ""}${currentTo ? `&to=${currentTo}` : ""}`}
           />
           <KpiCard
             label="Not Yet Actioned"
@@ -331,7 +331,7 @@ export function SalesDashboardClient({
             icon={XCircle}
             iconClass={periodKpis.notActioned > 0 ? "text-amber-600" : "text-muted-foreground"}
             valueClass={periodKpis.notActioned > 0 ? "text-amber-600" : ""}
-            href="/leads?filter=pending_action"
+            href={`/leads?filter=pending_action&period=${currentPeriod}${currentFrom ? `&from=${currentFrom}` : ""}${currentTo ? `&to=${currentTo}` : ""}`}
             urgent={periodKpis.notActioned > 0 && periodKpis.received > 0 && periodKpis.responseRate < 50}
           />
           <KpiCard
