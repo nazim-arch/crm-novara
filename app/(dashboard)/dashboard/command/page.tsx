@@ -29,6 +29,7 @@ export default async function CommandCenterPage() {
     completed_at: null,
     scheduled_at: { lte: threeDaysEnd },
     lead_id: { not: null },
+    lead: { deleted_at: null },
     ...(role === "Sales"
       ? { OR: [{ assigned_to_id: userId }, { created_by_id: userId }] }
       : {}),
