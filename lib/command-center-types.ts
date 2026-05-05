@@ -1,6 +1,6 @@
 // Shared types for Sales Command Center — no Prisma imports here (safe for client use)
 
-export type ActionSource = "followup" | "task" | "lead";
+export type ActionSource = "followup" | "lead";
 export type ActionSection = "urgent" | "today" | "pipeline" | "upcoming";
 
 export interface ActionLeadRef {
@@ -19,21 +19,17 @@ export interface ActionOppRef {
 }
 
 export interface ActionItem {
-  id: string;             // `fu_${id}` | `task_${id}` | `lead_${id}`
+  id: string;             // `fu_${id}` | `lead_${id}`
   source: ActionSource;
   sourceId: string;       // actual DB id of the source entity
-  actionType: string;     // "Call" | "WhatsApp" | "Task" | "Meeting" | "Visit" | "Email" | "Internal"
+  actionType: string;     // "Call" | "WhatsApp" | "Meeting" | "Visit" | "Email" | "Internal"
   section: ActionSection;
   priorityScore: number;  // 0–100, higher = more urgent
   overdueDays: number;    // 0 when not overdue
   dueAt: string | null;   // ISO string
   lead: ActionLeadRef | null;
   opportunity: ActionOppRef | null;
-  taskId: string | null;
-  taskTitle: string | null;
-  taskStatus: string | null;
-  taskPriority: string | null;
-  context: string | null; // last note / outcome / description
+  context: string | null; // last note / outcome
   reason: string;         // human label: "Overdue follow-up (2d)", "Hot lead — no action 48h+", …
   assignedToName: string;
   assignedToId: string;
@@ -48,7 +44,7 @@ export const SECTION_META: Record<ActionSection, { label: string; color: string;
 
 export const ACTION_TYPE_ICON: Record<string, string> = {
   Call: "📞", WhatsApp: "💬", Email: "✉️", Visit: "🏠",
-  Meeting: "🤝", Task: "✅", Activity: "📋", Internal: "🔧",
+  Meeting: "🤝", Activity: "📋", Internal: "🔧",
 };
 
 export const TEMP_LABELS: Record<string, { label: string; cls: string }> = {

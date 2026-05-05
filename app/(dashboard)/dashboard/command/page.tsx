@@ -22,15 +22,19 @@ export default async function CommandCenterPage() {
   const hotStaleThreshold = subHours(now, 48);
 
   const leadScope = leadScopeFilter(role, userId);
-  const fuWhere =
-    role === "Sales" || role === "Operations"
+
+  // Follow-ups: scoped to user, lead-linked only
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fuScopeWhere: any = {
+    completed_at: null,
+    scheduled_at: { lte: threeDaysEnd },
+    lead_id: { not: null },
+    ...(role === "Sales"
       ? { OR: [{ assigned_to_id: userId }, { created_by_id: userId }] }
-      : {};
-  const taskWhere =
-    role === "Sales" || role === "Operations"
-      ? { assigned_to_id: userId }
-      : {};
-  // Attention-leads OR conditions
+      : {}),
+  };
+
+  // Attention-leads: leads with no pending follow-up already in the list
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const attentionOr: any[] = [
     { created_at: { gte: todayStart } },
@@ -44,18 +48,8 @@ export default async function CommandCenterPage() {
     ? { deleted_at: null, status: { notIn: ["Won", "Lost", "InvalidLead", "Recycle"] }, AND: [leadScope, { OR: attentionOr }] }
     : { deleted_at: null, status: { notIn: ["Won", "Lost", "InvalidLead", "Recycle"] }, OR: attentionOr };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const fuScopeWhere: any = { completed_at: null, scheduled_at: { lte: threeDaysEnd }, ...fuWhere };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const taskScopeWhere: any = {
-    deleted_at: null,
-    status: { notIn: ["Done", "Cancelled"] },
-    due_date: { lte: threeDaysEnd },
-    ...taskWhere,
-  };
-
-  const [followUps, tasks, attentionLeads] = await Promise.all([
-    // ── Pending follow-ups: overdue or due in next 3 days ─────────────────
+  const [followUps, attentionLeads] = await Promise.all([
+    // ── Lead-linked follow-ups: overdue or due in next 3 days ─────────────
     prisma.followUp.findMany({
       where: fuScopeWhere,
       include: {
@@ -72,24 +66,7 @@ export default async function CommandCenterPage() {
       take: 200,
     }),
 
-    // ── Active tasks: overdue or due in next 3 days ────────────────────────
-    prisma.task.findMany({
-      where: taskScopeWhere,
-      include: {
-        lead: {
-          select: {
-            id: true, lead_number: true, full_name: true, phone: true,
-            temperature: true, status: true, potential_lead_value: true,
-          },
-        },
-        opportunity: { select: { id: true, name: true } },
-        assigned_to: { select: { id: true, name: true } },
-      },
-      orderBy: { due_date: "asc" },
-      take: 100,
-    }),
-
-    // ── Leads needing attention (no existing follow-up covers them) ────────
+    // ── Leads needing attention (no pending follow-up already covers them) ─
     prisma.lead.findMany({
       where: attentionWhere,
       select: {
@@ -108,7 +85,7 @@ export default async function CommandCenterPage() {
     }),
   ]);
 
-  // ── Lead IDs already represented by a pending follow-up ──────────────────
+  // ── Lead IDs already covered by a pending follow-up ──────────────────────
   const fuLeadIds = new Set(
     followUps.map((f) => f.lead_id).filter((id): id is string => id !== null)
   );
@@ -138,10 +115,6 @@ export default async function CommandCenterPage() {
         ? { ...fu.lead, potential_lead_value: fu.lead.potential_lead_value ? Number(fu.lead.potential_lead_value) : null }
         : null,
       opportunity: fu.opportunity,
-      taskId: fu.task_id ?? null,
-      taskTitle: null,
-      taskStatus: null,
-      taskPriority: null,
       context: fu.outcome ?? fu.notes ?? null,
       reason: isOverdue
         ? `Overdue follow-up (${overdueDays}d)`
@@ -153,63 +126,15 @@ export default async function CommandCenterPage() {
     } satisfies ActionItem;
   });
 
-  // ── Map tasks → ActionItems ───────────────────────────────────────────────
-  const TASK_PRIO_BASE: Record<string, number> = {
-    Critical: 75, High: 68, Medium: 58, Low: 50,
-  };
-  const taskActions: ActionItem[] = tasks.map((task) => {
-    const isOverdue = task.due_date < todayStart;
-    const isToday = task.due_date >= todayStart && task.due_date <= todayEnd;
-    const overdueDays = isOverdue ? differenceInCalendarDays(todayStart, task.due_date) : 0;
-    const tempBonus =
-      task.lead?.temperature === "Hot" ? 10 : task.lead?.temperature === "Warm" ? 4 : 0;
-    const prioBase = TASK_PRIO_BASE[task.priority] ?? 58;
-    const base = isOverdue ? prioBase : isToday ? prioBase - 5 : 15;
-    const score = Math.min(100, base + tempBonus + Math.min(overdueDays * 2, 15));
-    const section =
-      score >= 60 ? "urgent" : score >= 45 ? "today" : score >= 25 ? "pipeline" : "upcoming";
-
-    return {
-      id: `task_${task.id}`,
-      source: "task",
-      sourceId: task.id,
-      actionType: "Task",
-      section,
-      priorityScore: score,
-      overdueDays,
-      dueAt: task.due_date.toISOString(),
-      lead: task.lead
-        ? { ...task.lead, potential_lead_value: task.lead.potential_lead_value ? Number(task.lead.potential_lead_value) : null }
-        : null,
-      opportunity: task.opportunity,
-      taskId: task.id,
-      taskTitle: task.title,
-      taskStatus: task.status,
-      taskPriority: task.priority,
-      context: task.notes ?? task.description ?? null,
-      reason: isOverdue
-        ? `Overdue task (${overdueDays}d)`
-        : isToday
-        ? "Task due today"
-        : "Upcoming task",
-      assignedToName: task.assigned_to.name,
-      assignedToId: task.assigned_to.id,
-    } satisfies ActionItem;
-  });
-
-  // ── Map attention leads → ActionItems (only uncovered) ───────────────────
+  // ── Map attention leads → ActionItems (only those not covered by FUs) ────
   const leadActions: ActionItem[] = attentionLeads
     .filter((lead) => !fuLeadIds.has(lead.id))
     .map((lead) => {
       const isNewToday = lead.created_at >= todayStart;
-      const isHotStale =
-        lead.temperature === "Hot" && lead.updated_at < hotStaleThreshold;
+      const isHotStale = lead.temperature === "Hot" && lead.updated_at < hotStaleThreshold;
       const isStale = lead.updated_at < staleThreshold;
-      const staleDays = isStale
-        ? differenceInCalendarDays(todayStart, lead.updated_at)
-        : 0;
-      const tempBonus =
-        lead.temperature === "Hot" ? 12 : lead.temperature === "Warm" ? 5 : 0;
+      const staleDays = isStale ? differenceInCalendarDays(todayStart, lead.updated_at) : 0;
+      const tempBonus = lead.temperature === "Hot" ? 12 : lead.temperature === "Warm" ? 5 : 0;
 
       let base = 28;
       let reason = "Needs attention";
@@ -254,15 +179,9 @@ export default async function CommandCenterPage() {
           phone: lead.phone,
           temperature: lead.temperature,
           status: lead.status,
-          potential_lead_value: lead.potential_lead_value
-            ? Number(lead.potential_lead_value)
-            : null,
+          potential_lead_value: lead.potential_lead_value ? Number(lead.potential_lead_value) : null,
         },
         opportunity: lead.opportunities[0]?.opportunity ?? null,
-        taskId: null,
-        taskTitle: null,
-        taskStatus: null,
-        taskPriority: null,
         context: null,
         reason,
         assignedToName: lead.assigned_to.name,
@@ -270,7 +189,7 @@ export default async function CommandCenterPage() {
       } satisfies ActionItem;
     });
 
-  const allActions = [...fuActions, ...taskActions, ...leadActions].sort(
+  const allActions = [...fuActions, ...leadActions].sort(
     (a, b) => b.priorityScore - a.priorityScore
   );
 

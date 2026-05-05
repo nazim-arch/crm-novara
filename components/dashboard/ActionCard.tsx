@@ -330,22 +330,13 @@ export function ActionCard({
   async function markDone() {
     setCompleting(true);
     try {
-      if (action.source === "followup") {
-        const res = await fetch(`/api/follow-ups/${action.sourceId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ completed_at: new Date().toISOString() }),
-        });
-        if (!res.ok) throw new Error();
-      } else if (action.source === "task") {
-        const res = await fetch(`/api/tasks/${action.sourceId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "Done" }),
-        });
-        if (!res.ok) throw new Error();
-      }
-      toast.success("Marked as done");
+      const res = await fetch(`/api/follow-ups/${action.sourceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed_at: new Date().toISOString() }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success("Follow-up marked as done");
       onRemove(action.id);
       router.refresh();
     } catch {
@@ -375,9 +366,9 @@ export function ActionCard({
         <span className="text-[11px] text-muted-foreground font-medium border border-border rounded px-1.5 py-0.5">
           {typeIcon} {action.actionType}
         </span>
-        {action.source !== "lead" && (
+        {action.source === "followup" && (
           <span className="text-[11px] text-muted-foreground border border-border rounded px-1.5 py-0.5">
-            {action.source === "followup" ? "Follow-up" : "Task"}
+            Follow-up
           </span>
         )}
         <div className="ml-auto flex items-center gap-1.5">
@@ -439,26 +430,6 @@ export function ActionCard({
             </span>
           )}
         </div>
-      )}
-
-      {/* Task title (for task-sourced cards without a lead) */}
-      {action.source === "task" && action.taskTitle && !action.lead && (
-        <div>
-          <p className="text-sm font-semibold">{action.taskTitle}</p>
-          {action.taskPriority && (
-            <span className="text-[10px] text-muted-foreground border border-border rounded px-1.5 py-0.5 mt-0.5 inline-block">
-              {action.taskPriority} priority
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Task title overlay for lead-linked tasks */}
-      {action.source === "task" && action.taskTitle && action.lead && (
-        <p className="text-xs text-muted-foreground">
-          📋 <span className="font-medium">{action.taskTitle}</span>
-          {action.taskPriority && ` · ${action.taskPriority}`}
-        </p>
       )}
 
       {/* ── Row 3: reason + context ───────────────────────────────── */}
@@ -551,8 +522,8 @@ export function ActionCard({
           </button>
         )}
 
-        {/* Mark Done (follow-up + task) */}
-        {(action.source === "followup" || action.source === "task") && (
+        {/* Mark Done (follow-ups only) */}
+        {action.source === "followup" && (
           <button
             onClick={markDone}
             disabled={completing}
@@ -567,7 +538,7 @@ export function ActionCard({
         {action.lead && (
           <Link
             href={`/leads/${action.lead.id}`}
-            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors ${action.source !== "followup" && action.source !== "task" ? "ml-auto" : ""}`}
+            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors ${action.source === "lead" ? "ml-auto" : ""}`}
           >
             <ExternalLink className="h-3 w-3" />
             Open
