@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
-  AlertTriangle, CalendarClock, UserPlus, Clock, Eye, RefreshCw, Zap,
+  AlertTriangle, CalendarClock, UserPlus, Clock, Eye, RefreshCw, Zap, Search, X,
 } from "lucide-react";
 import { ActionCard } from "@/components/dashboard/ActionCard";
 import { SECTION_META, type ActionItem, type ActionSection } from "@/lib/command-center-types";
@@ -103,6 +103,7 @@ export function CommandCenterClient({ actions: initialActions, agentName }: Prop
   const [kpiFilter, setKpiFilter] = useState<KpiFilter>("all");
   const [sectionFilter, setSectionFilter] = useState<ActionSection | "all">("all");
   const [refreshing, setRefreshing] = useState(false);
+  const [search, setSearch] = useState("");
 
   // ── KPI counts ────────────────────────────────────────────────────────
   const kpis = useMemo(() => ({
@@ -128,8 +129,18 @@ export function CommandCenterClient({ actions: initialActions, agentName }: Prop
       list = list.filter((a) => a.section === sectionFilter);
     }
 
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter((a) =>
+        a.lead?.full_name?.toLowerCase().includes(q) ||
+        a.lead?.lead_number?.toLowerCase().includes(q) ||
+        a.lead?.phone?.toLowerCase().includes(q) ||
+        a.opportunity?.name?.toLowerCase().includes(q)
+      );
+    }
+
     return list;
-  }, [actions, kpiFilter, sectionFilter]);
+  }, [actions, kpiFilter, sectionFilter, search]);
 
   const grouped = useMemo(
     () =>
@@ -199,6 +210,26 @@ export function CommandCenterClient({ actions: initialActions, agentName }: Prop
             <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
             Refresh
           </button>
+        </div>
+
+        {/* ── Search bar ──────────────────────────────────────────── */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name, lead number, phone, or opportunity…"
+            className="w-full rounded-xl border border-border bg-card pl-9 pr-9 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
         {/* ── KPI Cards ───────────────────────────────────────────── */}
