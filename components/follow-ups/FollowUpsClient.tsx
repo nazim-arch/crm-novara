@@ -340,6 +340,9 @@ export function FollowUpsClient({
     onMarkComplete: handleMarkComplete,
     onDelete: handleDelete,
     onAddNext: (fu: FollowUp) => setAddNextFor(fu),
+    sortCol,
+    sortDir,
+    onSort: toggleSort,
   };
 
   return (
@@ -479,6 +482,9 @@ function FollowUpList({
   onMarkComplete,
   onDelete,
   onAddNext,
+  sortCol,
+  sortDir,
+  onSort,
 }: {
   items: FollowUp[];
   emptyText: string;
@@ -490,6 +496,9 @@ function FollowUpList({
   onMarkComplete: (fu: FollowUp, andAddNext?: boolean) => void;
   onDelete: (id: string) => void;
   onAddNext: (fu: FollowUp) => void;
+  sortCol: string;
+  sortDir: "asc" | "desc";
+  onSort: (col: string) => void;
 }) {
   if (items.length === 0) {
     return (
