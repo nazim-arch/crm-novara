@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   BarChart, Bar, PieChart, Pie, Cell, ResponsiveContainer,
-  XAxis, YAxis, Tooltip, Legend, FunnelChart, Funnel, LabelList,
+  XAxis, YAxis, Tooltip, Legend,
 } from "recharts";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -413,18 +413,18 @@ export function CrmDashboardClient({
                     data={leadsPerOpportunity}
                     layout="vertical"
                     margin={{ top: 0, right: 24, bottom: 0, left: 4 }}
-                    onClick={(d) => {
-                      if (d?.activePayload?.[0]) {
-                        const oppId = leadsPerOpportunity.find((o) => o.name === d.activePayload![0].payload.name)?.id;
-                        if (oppId) router.push(`/leads?opportunity_id=${oppId}`);
-                      }
-                    }}
                   >
                     <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
                     <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={90} />
                     <Tooltip contentStyle={TooltipStyle()} formatter={(v) => [v, "Leads"]} />
-                    <Bar dataKey="count" fill="#6366f1" radius={[0, 3, 3, 0]} cursor="pointer"
-                      activeBar={{ fill: "#4f46e5" }} />
+                    <Bar
+                      dataKey="count" fill="#6366f1" radius={[0, 3, 3, 0]} cursor="pointer"
+                      activeBar={{ fill: "#4f46e5" }}
+                      onClick={(data: { id?: string; name?: string }) => {
+                        const oppId = leadsPerOpportunity.find((o) => o.name === data.name)?.id;
+                        if (oppId) router.push(`/leads?opportunity_id=${oppId}`);
+                      }}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               )}
@@ -445,18 +445,18 @@ export function CrmDashboardClient({
                     data={sourceData}
                     layout="vertical"
                     margin={{ top: 0, right: 24, bottom: 0, left: 4 }}
-                    onClick={(d) => {
-                      if (d?.activePayload?.[0]) {
-                        const src = d.activePayload[0].payload.name;
-                        if (src && src !== "Unknown") router.push(`/leads?source=${encodeURIComponent(src)}`);
-                      }
-                    }}
                   >
                     <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
                     <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={80} />
                     <Tooltip contentStyle={TooltipStyle()} formatter={(v) => [v, "Leads"]} />
-                    <Bar dataKey="value" fill="#8b5cf6" radius={[0, 3, 3, 0]} cursor="pointer"
-                      activeBar={{ fill: "#7c3aed" }} />
+                    <Bar
+                      dataKey="value" fill="#8b5cf6" radius={[0, 3, 3, 0]} cursor="pointer"
+                      activeBar={{ fill: "#7c3aed" }}
+                      onClick={(data: { name?: string }) => {
+                        if (data.name && data.name !== "Unknown")
+                          router.push(`/leads?source=${encodeURIComponent(data.name)}`);
+                      }}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               )}

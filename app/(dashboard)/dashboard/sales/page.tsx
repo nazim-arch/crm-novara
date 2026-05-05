@@ -16,7 +16,7 @@ type SearchParams = Promise<{ range?: string; from?: string; to?: string; stale_
 
 const STALE_DEFAULT = 7;
 
-export default async function CrmDashboardPage({ searchParams }: { searchParams: SearchParams }) {
+export default async function SalesDashboardPage({ searchParams }: { searchParams: SearchParams }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (session.user.role === "Operations") redirect("/tasks");
@@ -339,8 +339,8 @@ export default async function CrmDashboardPage({ searchParams }: { searchParams:
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold">CRM Overview</h1>
-        <p className="text-sm text-muted-foreground">Pipeline health, activity &amp; action queue</p>
+        <h1 className="text-xl font-semibold">Sales Dashboard</h1>
+        <p className="text-sm text-muted-foreground">Lead pipeline, activity &amp; action queue</p>
       </div>
 
       <Suspense>
