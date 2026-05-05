@@ -133,12 +133,16 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
     // ── Period: received ──────────────────────────────────────────────────
     prisma.lead.count({ where: leadWhere(periodFilter) }),
 
-    // ── Period: actioned (created in period AND has history or follow-up) ─
-    // A lead is "actioned" only when something changes after creation.
-    // Proxy: has at least one stage_history entry OR at least one followup.
+    // ── Period: actioned (created in period AND has real stage change or follow-up)
+    // Lead creation auto-inserts stage_history with from_stage=null (initial entry).
+    // "Actioned" = someone actually worked on it: from_stage IS NOT NULL means a
+    // real stage transition happened, or a follow-up was created.
     prisma.lead.count({
       where: leadWhereWithOr(
-        [{ stage_history: { some: {} } }, { followups: { some: {} } }],
+        [
+          { stage_history: { some: { from_stage: { not: null } } } },
+          { followups: { some: {} } },
+        ],
         periodFilter,
       ),
     }),
@@ -148,9 +152,12 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
     prisma.lead.count({ where: leadWhere({ temperature: "Warm", ...activeFilter }) }),
     prisma.lead.count({ where: leadWhere({ temperature: "Cold", ...activeFilter }) }),
 
-    // ── Live: never actioned (status=New, no stage history, no follow-ups) ─
+    // ── Live: never actioned (no real stage transition, no follow-ups) ────
     prisma.lead.count({
-      where: leadWhere({ status: "New", stage_history: { none: {} }, followups: { none: {} } }),
+      where: leadWhere({
+        stage_history: { none: { from_stage: { not: null } } },
+        followups: { none: {} },
+      }),
     }),
 
     // ── Live: stale (active, no update in N days) ─────────────────────────
@@ -162,7 +169,7 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
     prisma.lead.count({
       where: leadWhereWithOr([
         { next_followup_date: { lte: todayEnd }, ...activeFilter },
-        { status: "New", stage_history: { none: {} }, followups: { none: {} } },
+        { stage_history: { none: { from_stage: { not: null } } }, followups: { none: {} } },
       ]),
     }),
 
@@ -176,9 +183,12 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
       where: leadWhere({ ...activeFilter, next_followup_date: { lt: todayStart } }),
     }),
 
-    // ── Live: no activity at all (any status, no stage_history, no follow-ups)
+    // ── Live: no activity (no real stage transition, no follow-ups) ───────
     prisma.lead.count({
-      where: leadWhere({ stage_history: { none: {} }, followups: { none: {} } }),
+      where: leadWhere({
+        stage_history: { none: { from_stage: { not: null } } },
+        followups: { none: {} },
+      }),
     }),
 
     // ── Chart: stage funnel (all-time scoped) ─────────────────────────────
@@ -296,7 +306,7 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
   const actionQueueLeads = await prisma.lead.findMany({
     where: leadWhereWithOr([
       { next_followup_date: { lte: todayEnd }, ...activeFilter },
-      { status: "New", stage_history: { none: {} }, followups: { none: {} } },
+      { stage_history: { none: { from_stage: { not: null } } }, followups: { none: {} } },
       { ...activeFilter, updated_at: { lt: subDays(todayStart, staleDays) } },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ]) as any,
