@@ -18,6 +18,7 @@ import { LeadFilters } from "@/components/leads/LeadFilters";
 import { LeadImportModal } from "@/components/leads/LeadImportModal";
 import { LeadUpdateModal } from "@/components/leads/LeadUpdateModal";
 import { ExportButton } from "@/components/shared/ExportButton";
+import { LeadContactActions } from "@/components/shared/LeadContactActions";
 import { SortableHeader } from "@/components/shared/SortableHeader";
 import { startOfDay, endOfDay, subDays } from "date-fns";
 
@@ -230,12 +231,13 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
               <TableHead>Property Type</TableHead>
               <TableHead>{sh("next_followup_date", "Follow-up")}</TableHead>
               <TableHead className="text-right">{sh("potential_lead_value", "Pipeline Value", "ml-auto")}</TableHead>
+              <TableHead className="w-24">Contact</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {leads.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
                   No leads found
                 </TableCell>
               </TableRow>
@@ -266,6 +268,19 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
                   </TableCell>
                   <TableCell className="text-right text-sm">
                     {lead.potential_lead_value ? formatCurrency(Number(lead.potential_lead_value)) : "—"}
+                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <LeadContactActions
+                      leadId={lead.id}
+                      phone={lead.phone}
+                      leadName={lead.full_name}
+                      agentName={session?.user?.name ?? "Agent"}
+                      propertyType={lead.property_type}
+                      budgetMin={lead.budget_min ? Number(lead.budget_min) : null}
+                      budgetMax={lead.budget_max ? Number(lead.budget_max) : null}
+                      location={lead.location_preference}
+                      variant="compact"
+                    />
                   </TableCell>
                 </TableRow>
               ))

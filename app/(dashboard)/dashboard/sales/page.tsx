@@ -369,6 +369,7 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
       </div>
 
       <SalesDashboardClient
+        agentName={session.user.name ?? "Agent"}
         currentPeriod={period}
         currentFrom={sp.from}
         currentTo={sp.to}

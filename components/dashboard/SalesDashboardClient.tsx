@@ -5,10 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Users, Flame, CalendarClock, AlertTriangle,
-  CheckCircle2, XCircle, Clock, Eye, PhoneCall, MessageSquare,
-  Plus, Snowflake, Lightbulb, UserCheck, BarChart3, Zap, Thermometer,
+  CheckCircle2, XCircle, Clock, Eye,
+  Snowflake, Lightbulb, UserCheck, BarChart3, Zap, Thermometer,
   TrendingUp, Trophy,
 } from "lucide-react";
+import { LeadContactActions } from "@/components/shared/LeadContactActions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -67,6 +68,7 @@ export interface TempRow { temp: string | null; count: number }
 export interface StageRow { stage: string; count: number; value?: number }
 
 interface Props {
+  agentName: string;
   currentPeriod: string;
   currentFrom?: string;
   currentTo?: string;
@@ -250,6 +252,7 @@ function PeriodSelector({
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export function SalesDashboardClient({
+  agentName,
   currentPeriod, currentFrom, currentTo,
   staleDays, rangeLabel,
   periodKpis, liveKpis,
@@ -481,7 +484,7 @@ export function SalesDashboardClient({
                       <th className="text-left px-3 py-2 hidden md:table-cell">Owner</th>
                       <th className="text-left px-3 py-2">Follow-up</th>
                       <th className="text-left px-3 py-2 hidden lg:table-cell">Stage</th>
-                      <th className="text-right px-4 py-2">Actions</th>
+                      <th className="px-4 py-2">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -525,22 +528,17 @@ export function SalesDashboardClient({
                               {lead.activity_stage ?? lead.status}
                             </span>
                           </td>
-                          <td className="px-4 py-2.5 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Link href={`/leads/${lead.id}#note`} title="Add Note"
-                                className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
-                                <MessageSquare className="h-3.5 w-3.5" />
-                              </Link>
-                              <Link href={`/leads/${lead.id}#call`} title="Log Call"
-                                className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
-                                <PhoneCall className="h-3.5 w-3.5" />
-                              </Link>
-                              <Link href={`/leads/${lead.id}#followup`} title="Create Follow-Up"
-                                className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
-                                <Plus className="h-3.5 w-3.5" />
-                              </Link>
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-1">
+                              <LeadContactActions
+                                leadId={lead.id}
+                                phone={lead.phone}
+                                leadName={lead.full_name}
+                                agentName={agentName}
+                                variant="compact"
+                              />
                               <Link href={`/leads/${lead.id}`} title="Open Lead"
-                                className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+                                className="inline-flex h-7 w-7 items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
                                 <Eye className="h-3.5 w-3.5" />
                               </Link>
                             </div>

@@ -14,6 +14,7 @@ import { DeleteConfirmButton } from "@/components/shared/DeleteConfirmButton";
 import { ArrowLeft, Edit, Phone, Mail, MapPin, Calendar, IndianRupee } from "lucide-react";
 import { hasPermission } from "@/lib/rbac";
 import { FollowUpSection } from "@/components/follow-ups/FollowUpSection";
+import { LeadContactActions } from "@/components/shared/LeadContactActions";
 
 type Params = Promise<{ id: string }>;
 
@@ -92,7 +93,18 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
             <p className="text-sm text-muted-foreground font-mono">{lead.lead_number}</p>
           </div>
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex gap-2 shrink-0 flex-wrap">
+          <LeadContactActions
+            leadId={lead.id}
+            phone={lead.phone}
+            leadName={lead.full_name}
+            agentName={session?.user?.name ?? "Agent"}
+            propertyType={lead.property_type}
+            location={lead.location_preference}
+            budgetMin={lead.budget_min ? Number(lead.budget_min) : null}
+            budgetMax={lead.budget_max ? Number(lead.budget_max) : null}
+            variant="full"
+          />
           {canEdit && (
             <Button variant="outline" size="sm" render={<Link href={`/leads/${id}/edit`} />}>
               <Edit className="h-4 w-4 mr-1" />
