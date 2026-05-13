@@ -1,12 +1,12 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { startOfDay, endOfDay, subDays } from "date-fns";
 
 export async function GET() {
   const session = await auth();
-  if (!session?.user || !hasPermission(session.user.role, "report:view")) {
+  if (!session?.user || !(await hasPermissionAsync(session.user.role, "report:view"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

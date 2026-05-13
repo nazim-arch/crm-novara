@@ -1,6 +1,6 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { NextResponse } from "next/server";
 
 // DELETE /api/sales/commission/slabs/:structure_id — removes an entire slab batch
@@ -11,7 +11,7 @@ export async function DELETE(
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (!hasPermission(session.user.role, "commission:manage"))
+    if (!(await hasPermissionAsync(session.user.role, "commission:manage")))
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id: structure_id } = await params;

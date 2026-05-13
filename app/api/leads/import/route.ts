@@ -1,8 +1,8 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { generateId } from "@/lib/id-generator";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { z } from "zod";
 
 const importRowSchema = z.object({
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    if (!hasPermission(session.user.role, "lead:create")) {
+    if (!(await hasPermissionAsync(session.user.role, "lead:import"))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

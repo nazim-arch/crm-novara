@@ -596,6 +596,18 @@ model FollowUp {
 }
 
 // ─────────────────────────────────────────────
+// SYSTEM SETTINGS (key-value store for app config)
+// ─────────────────────────────────────────────
+
+model SystemSetting {
+  key        String   @id
+  value      String   @db.Text
+  updated_at DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+// ─────────────────────────────────────────────
 // SEQUENCE COUNTERS (for auto IDs)
 // ─────────────────────────────────────────────
 

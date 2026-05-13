@@ -1,8 +1,8 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { updateLeadSchema } from "@/lib/validations/lead";
-import { hasPermission, leadScopeFilter } from "@/lib/rbac";
+import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
 import { notifyLeadReassigned } from "@/lib/email-notifications";
 
 type Params = Promise<{ id: string }>;
@@ -21,7 +21,7 @@ export async function GET(_request: Request, { params }: { params: Params }) {
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (!hasPermission(session.user.role, "lead:read")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!(await hasPermissionAsync(session.user.role, "lead:read"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await params;
     if (!(await verifyLeadAccess(id, session.user.role, session.user.id))) {
@@ -53,7 +53,7 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (!hasPermission(session.user.role, "lead:update")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!(await hasPermissionAsync(session.user.role, "lead:update"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await params;
     if (!(await verifyLeadAccess(id, session.user.role, session.user.id))) {
@@ -114,7 +114,7 @@ export async function DELETE(_request: Request, { params }: { params: Params }) 
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (!hasPermission(session.user.role, "lead:delete")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!(await hasPermissionAsync(session.user.role, "lead:delete"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await params;
 

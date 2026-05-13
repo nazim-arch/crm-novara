@@ -1,13 +1,13 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { CommissionReport } from "@/components/sales-commission/CommissionReport";
 import { BarChart3 } from "lucide-react";
 
 export default async function CommissionReportPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "commission:manage")) redirect("/");
+  if (!(await hasPermissionAsync(session.user.role, "commission:manage"))) redirect("/");
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">

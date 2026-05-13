@@ -1,14 +1,14 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import * as XLSX from "xlsx";
 
 export async function GET(request: Request) {
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (!hasPermission(session.user.role, "lead:read")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!(await hasPermissionAsync(session.user.role, "lead:read"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const role = session.user.role;
     const isScoped = role === "Sales" || role === "Operations";

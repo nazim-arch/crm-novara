@@ -1,7 +1,7 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { MonthlyTargetManager } from "@/components/sales-commission/MonthlyTargetManager";
 import { CommissionSlabEditor } from "@/components/sales-commission/CommissionSlabEditor";
 import { Target } from "lucide-react";
@@ -9,7 +9,7 @@ import { Target } from "lucide-react";
 export default async function CommissionTargetsPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "commission:manage")) redirect("/");
+  if (!(await hasPermissionAsync(session.user.role, "commission:manage"))) redirect("/");
 
   const salesUsers = await prisma.user.findMany({
     where: { role: "Sales", is_active: true },

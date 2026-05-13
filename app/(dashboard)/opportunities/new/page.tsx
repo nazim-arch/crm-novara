@@ -1,11 +1,11 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { OpportunityForm } from "@/components/opportunities/OpportunityForm";
 
 export default async function NewOpportunityPage() {
   const session = await auth();
-  if (!session?.user || !hasPermission(session.user.role, "opportunity:create")) {
+  if (!session?.user || !(await hasPermissionAsync(session.user.role, "opportunity:create"))) {
     redirect("/opportunities");
   }
 

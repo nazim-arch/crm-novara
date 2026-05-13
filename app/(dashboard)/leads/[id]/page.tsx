@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -12,7 +12,7 @@ import { StageChanger } from "@/components/leads/StageChanger";
 import { NoteForm } from "@/components/leads/NoteForm";
 import { DeleteConfirmButton } from "@/components/shared/DeleteConfirmButton";
 import { ArrowLeft, Edit, Phone, Mail, MapPin, Calendar, IndianRupee } from "lucide-react";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { FollowUpSection } from "@/components/follow-ups/FollowUpSection";
 import { LeadContactActions } from "@/components/shared/LeadContactActions";
 
@@ -73,8 +73,8 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
 
   if (!lead) notFound();
 
-  const canEdit = session?.user && hasPermission(session.user.role, "lead:update");
-  const canDelete = session?.user && hasPermission(session.user.role, "lead:delete");
+  const canEdit = session?.user && await hasPermissionAsync(session.user.role, "lead:update");
+  const canDelete = session?.user && await hasPermissionAsync(session.user.role, "lead:delete");
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">

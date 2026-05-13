@@ -1,14 +1,14 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { notFound, redirect } from "next/navigation";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { TaskForm } from "@/components/tasks/TaskForm";
 
 type Params = Promise<{ id: string }>;
 
 export default async function EditTaskPage({ params }: { params: Params }) {
   const session = await auth();
-  if (!session?.user || !hasPermission(session.user.role, "task:update")) {
+  if (!session?.user || !(await hasPermissionAsync(session.user.role, "task:update"))) {
     redirect("/tasks");
   }
 

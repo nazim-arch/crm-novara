@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Plus, Building2 } from "lucide-react";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { ExportButton } from "@/components/shared/ExportButton";
 import { SortableHeader } from "@/components/shared/SortableHeader";
 import type { Prisma } from "@/lib/generated/prisma/client";
@@ -74,8 +74,8 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
     }),
   ]);
 
-  const canCreate = session?.user && hasPermission(session.user.role, "opportunity:create");
-  const canViewFinancials = session?.user && hasPermission(session.user.role, "financial:view");
+  const canCreate = session?.user && await hasPermissionAsync(session.user.role, "opportunity:create");
+  const canViewFinancials = session?.user && await hasPermissionAsync(session.user.role, "financial:view");
 
   const sh = (col: string, label: string) => (
     <SortableHeader column={col} label={label} currentSort={sortCol} currentDir={sortDir} />

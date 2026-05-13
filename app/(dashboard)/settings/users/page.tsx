@@ -1,12 +1,12 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { UserManagementClient } from "@/components/settings/UserManagementClient";
 
 export default async function UsersSettingsPage() {
   const session = await auth();
-  if (!session?.user || !hasPermission(session.user.role, "user:manage")) {
+  if (!session?.user || !(await hasPermissionAsync(session.user.role, "user:manage"))) {
     redirect("/dashboard/crm");
   }
 

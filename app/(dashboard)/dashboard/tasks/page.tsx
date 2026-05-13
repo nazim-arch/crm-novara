@@ -1,6 +1,6 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TaskStatsCards } from "@/components/dashboard/TaskStatsCards";
@@ -20,7 +20,7 @@ type SearchParams = Promise<{ range?: string; from?: string; to?: string }>;
 
 export default async function TaskDashboardPage({ searchParams }: { searchParams: SearchParams }) {
   const session = await auth();
-  if (!session?.user || !hasPermission(session.user.role, "task:read")) redirect("/");
+  if (!session?.user || !(await hasPermissionAsync(session.user.role, "task:read"))) redirect("/");
 
   const sp = await searchParams;
   const todayStr = todayIST();

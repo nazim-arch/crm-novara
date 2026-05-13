@@ -1,8 +1,8 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { updateTaskSchema } from "@/lib/validations/task";
-import { hasPermission, taskScopeFilter } from "@/lib/rbac";
+import { hasPermissionAsync, taskScopeFilter } from "@/lib/rbac";
 import { notifyTaskReassigned } from "@/lib/email-notifications";
 
 type Params = Promise<{ id: string }>;
@@ -21,7 +21,7 @@ export async function GET(_request: Request, { params }: { params: Params }) {
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (!hasPermission(session.user.role, "task:read")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!(await hasPermissionAsync(session.user.role, "task:read"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await params;
     if (!(await verifyTaskAccess(id, session.user.role, session.user.id))) {
@@ -51,7 +51,7 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (!hasPermission(session.user.role, "task:update")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!(await hasPermissionAsync(session.user.role, "task:update"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await params;
     if (!(await verifyTaskAccess(id, session.user.role, session.user.id))) {
@@ -105,7 +105,7 @@ export async function DELETE(_request: Request, { params }: { params: Params }) 
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (!hasPermission(session.user.role, "task:delete")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!(await hasPermissionAsync(session.user.role, "task:delete"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await params;
     await prisma.task.update({ where: { id, deleted_at: null }, data: { deleted_at: new Date() } });

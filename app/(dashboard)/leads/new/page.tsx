@@ -1,12 +1,12 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { LeadForm } from "@/components/leads/LeadForm";
 
 export default async function NewLeadPage() {
   const session = await auth();
-  if (!session?.user || !hasPermission(session.user.role, "lead:create")) {
+  if (!session?.user || !(await hasPermissionAsync(session.user.role, "lead:create"))) {
     redirect("/leads");
   }
 

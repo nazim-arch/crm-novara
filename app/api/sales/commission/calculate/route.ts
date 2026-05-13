@@ -1,6 +1,6 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { NextResponse } from "next/server";
 import {
   calcMonthlyRevenue,
@@ -14,8 +14,8 @@ export async function GET(request: Request) {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const canManage = hasPermission(session.user.role, "commission:manage");
-    const canView = hasPermission(session.user.role, "commission:view");
+    const canManage = await hasPermissionAsync(session.user.role, "commission:manage");
+    const canView = await hasPermissionAsync(session.user.role, "commission:view");
     if (!canManage && !canView)
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 

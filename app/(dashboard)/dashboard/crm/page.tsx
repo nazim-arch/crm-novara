@@ -1,7 +1,7 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import { hasPermission, leadScopeFilter } from "@/lib/rbac";
+import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
 import { startOfDay, endOfDay, differenceInCalendarDays } from "date-fns";
 import { CrmDashboardClient } from "@/components/dashboard/CrmDashboardClient";
 import { DashboardFilters } from "@/components/podcast-studio/DashboardFilters";
@@ -32,7 +32,7 @@ export default async function CrmDashboardPage({ searchParams }: { searchParams:
 
   const userId = session.user.id;
   const role = session.user.role;
-  const canViewFinancials = hasPermission(role, "financial:view");
+  const canViewFinancials = await hasPermissionAsync(role, "financial:view");
 
   const leadScope = leadScopeFilter(role, userId);
   const leadWhere = (extra: object = {}) => ({

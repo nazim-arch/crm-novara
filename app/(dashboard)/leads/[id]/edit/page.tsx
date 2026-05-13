@@ -1,14 +1,14 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { notFound, redirect } from "next/navigation";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { LeadForm } from "@/components/leads/LeadForm";
 
 type Params = Promise<{ id: string }>;
 
 export default async function EditLeadPage({ params }: { params: Params }) {
   const session = await auth();
-  if (!session?.user || !hasPermission(session.user.role, "lead:update")) {
+  if (!session?.user || !(await hasPermissionAsync(session.user.role, "lead:update"))) {
     redirect("/leads");
   }
 

@@ -1,9 +1,9 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { generateId } from "@/lib/id-generator";
 import { createLeadSchema } from "@/lib/validations/lead";
-import { hasPermission, leadScopeFilter } from "@/lib/rbac";
+import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { notifyLeadAssigned, notifyLeadCreatedAdmins } from "@/lib/email-notifications";
 
@@ -13,7 +13,7 @@ export async function GET(request: Request) {
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    if (!hasPermission(session.user.role, "lead:read")) {
+    if (!(await hasPermissionAsync(session.user.role, "lead:read"))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    if (!hasPermission(session.user.role, "lead:create")) {
+    if (!(await hasPermissionAsync(session.user.role, "lead:create"))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

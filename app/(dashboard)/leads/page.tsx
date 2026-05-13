@@ -20,6 +20,7 @@ import { LeadUpdateModal } from "@/components/leads/LeadUpdateModal";
 import { ExportButton } from "@/components/shared/ExportButton";
 import { LeadContactActions } from "@/components/shared/LeadContactActions";
 import { SortableHeader } from "@/components/shared/SortableHeader";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { startOfDay, endOfDay, subDays, startOfWeek, startOfMonth, startOfYear } from "date-fns";
 
 const SORT_MAP: Record<string, Prisma.LeadOrderByWithRelationInput> = {
@@ -91,6 +92,7 @@ type SearchParams = Promise<{
 export default async function LeadsPage({ searchParams }: { searchParams: SearchParams }) {
   const session = await auth();
   const sp = await searchParams;
+  const canImport = session?.user ? await hasPermissionAsync(session.user.role, "lead:import") : false;
 
   const today = new Date();
   const todayStart = startOfDay(today);
@@ -236,8 +238,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
         </div>
         <div className="flex items-center gap-2">
           <ExportButton href="/api/leads/export" filename="leads.xlsx" />
-          <LeadImportModal />
-          <LeadUpdateModal />
+          {canImport && <LeadImportModal />}
+          {canImport && <LeadUpdateModal />}
           <Button render={<Link href="/leads/new" />}>
             <Plus className="h-4 w-4 mr-1" />
             New Lead

@@ -1,8 +1,8 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { updateOpportunitySchema } from "@/lib/validations/opportunity";
-import { hasPermission, leadScopeFilter } from "@/lib/rbac";
+import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
 import { z } from "zod";
 import { notifyLeadTaggedToOpportunity } from "@/lib/email-notifications";
 
@@ -21,7 +21,7 @@ export async function GET(_request: Request, { params }: { params: Params }) {
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (!hasPermission(session.user.role, "opportunity:read")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!(await hasPermissionAsync(session.user.role, "opportunity:read"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await params;
 
@@ -63,7 +63,7 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (!hasPermission(session.user.role, "opportunity:update")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!(await hasPermissionAsync(session.user.role, "opportunity:update"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await params;
     const body = await request.json();
@@ -162,7 +162,7 @@ export async function DELETE(_request: Request, { params }: { params: Params }) 
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (!hasPermission(session.user.role, "opportunity:delete")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!(await hasPermissionAsync(session.user.role, "opportunity:delete"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await params;
     const now = new Date();

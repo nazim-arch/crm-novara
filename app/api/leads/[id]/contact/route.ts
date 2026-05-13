@@ -1,7 +1,7 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { z } from "zod";
 
 const schema = z.object({
@@ -14,7 +14,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (!hasPermission(session.user.role, "lead:update"))
+    if (!(await hasPermissionAsync(session.user.role, "lead:update")))
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await params;

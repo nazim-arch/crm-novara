@@ -1,7 +1,7 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { z } from "zod";
 
 type Params = Promise<{ id: string }>;
@@ -13,7 +13,7 @@ const reassignSchema = z.object({
 export async function GET(_req: Request, { params }: { params: Params }) {
   try {
     const session = await auth();
-    if (!session?.user || !hasPermission(session.user.role, "user:manage")) {
+    if (!session?.user || !(await hasPermissionAsync(session.user.role, "user:manage"))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     const { id } = await params;
@@ -30,7 +30,7 @@ export async function GET(_req: Request, { params }: { params: Params }) {
 
 export async function POST(request: Request, { params }: { params: Params }) {
   const session = await auth();
-  if (!session?.user || !hasPermission(session.user.role, "user:manage")) {
+  if (!session?.user || !(await hasPermissionAsync(session.user.role, "user:manage"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id } = await params;

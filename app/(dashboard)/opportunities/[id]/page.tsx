@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LeadStatusBadge, TemperatureBadge } from "@/components/shared/LeadStatusBadge";
 import { ArrowLeft, Edit } from "lucide-react";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { ExpensesSection } from "@/components/opportunities/ExpensesSection";
 import { DeleteConfirmButton } from "@/components/shared/DeleteConfirmButton";
 import { FollowUpSection } from "@/components/follow-ups/FollowUpSection";
@@ -75,10 +75,10 @@ export default async function OpportunityDetailPage({ params }: { params: Params
 
   if (!opp) notFound();
 
-  const canEdit = session?.user && hasPermission(session.user.role, "opportunity:update");
-  const canDelete = session?.user && hasPermission(session.user.role, "opportunity:delete");
+  const canEdit = session?.user && await hasPermissionAsync(session.user.role, "opportunity:update");
+  const canDelete = session?.user && await hasPermissionAsync(session.user.role, "opportunity:delete");
   const isAdmin = session?.user.role === "Admin";
-  const canViewFinancials = session?.user ? hasPermission(session.user.role, "financial:view") : false;
+  const canViewFinancials = session?.user ? await hasPermissionAsync(session.user.role, "financial:view") : false;
   const canAddExpense = session?.user ? (isAdmin || session.user.role === "Sales") : false;
 
   const totalSalesValue = Number(opp.total_sales_value ?? 0);

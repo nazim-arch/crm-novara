@@ -1,14 +1,14 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { TaskForm } from "@/components/tasks/TaskForm";
 
 type SearchParams = Promise<{ lead_id?: string; opportunity_id?: string }>;
 
 export default async function NewTaskPage({ searchParams }: { searchParams: SearchParams }) {
   const session = await auth();
-  if (!session?.user || !hasPermission(session.user.role, "task:create")) {
+  if (!session?.user || !(await hasPermissionAsync(session.user.role, "task:create"))) {
     redirect("/tasks");
   }
 

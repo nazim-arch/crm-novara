@@ -1,7 +1,7 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { updateUserSchema } from "@/lib/validations/auth";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
@@ -20,7 +20,7 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
   }
 
   const { id } = await params;
-  const isAdmin = hasPermission(session.user.role, "user:manage");
+  const isAdmin = await hasPermissionAsync(session.user.role, "user:manage");
   const isSelf = session.user.id === id;
 
   if (!isAdmin && !isSelf) {
@@ -70,7 +70,7 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
 export async function DELETE(_req: Request, { params }: { params: Params }) {
   try {
     const session = await auth();
-    if (!session?.user || !hasPermission(session.user.role, "user:manage")) {
+    if (!session?.user || !(await hasPermissionAsync(session.user.role, "user:manage"))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     const { id } = await params;

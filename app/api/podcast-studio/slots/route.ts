@@ -1,6 +1,6 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { NextResponse } from "next/server";
 import { STUDIO_SLOTS, getOccupiedSlots, dateRange } from "@/lib/podcast-studio";
 
@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (!hasPermission(session.user.role, "podcast_studio:manage"))
+    if (!(await hasPermissionAsync(session.user.role, "podcast_studio:manage")))
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { searchParams } = new URL(request.url);

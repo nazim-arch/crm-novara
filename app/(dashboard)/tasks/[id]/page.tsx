@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { TaskStatusBadge, PriorityBadge } from "@/components/shared/LeadStatusBadge";
 import { ActivityTimeline } from "@/components/shared/ActivityTimeline";
 import { formatDate, formatDateTime, formatCurrency } from "@/lib/utils";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { TaskStatusChanger } from "@/components/tasks/TaskStatusChanger";
 import { NoteForm } from "@/components/leads/NoteForm";
 import { DeleteConfirmButton } from "@/components/shared/DeleteConfirmButton";
@@ -52,8 +52,8 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
 
   if (!task) notFound();
 
-  const canEdit = session?.user && hasPermission(session.user.role, "task:update");
-  const canDelete = session?.user && hasPermission(session.user.role, "task:delete");
+  const canEdit = session?.user && await hasPermissionAsync(session.user.role, "task:update");
+  const canDelete = session?.user && await hasPermissionAsync(session.user.role, "task:delete");
 
   const isOverdue =
     new Date(task.due_date) < new Date() &&

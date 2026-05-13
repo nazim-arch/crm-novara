@@ -1,11 +1,11 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { TaskTable } from "@/components/tasks/TaskTable";
 import { KanbanBoard } from "@/components/tasks/KanbanBoard";
 import { Plus, List, LayoutGrid } from "lucide-react";
-import { hasPermission, taskScopeFilter } from "@/lib/rbac";
+import { hasPermissionAsync, taskScopeFilter } from "@/lib/rbac";
 import { ExportButton } from "@/components/shared/ExportButton";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
@@ -47,7 +47,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
     }),
   ]);
 
-  const canCreate = session?.user && hasPermission(session.user.role, "task:create");
+  const canCreate = session?.user && await hasPermissionAsync(session.user.role, "task:create");
   const isScoped = !!scope;
 
   return (

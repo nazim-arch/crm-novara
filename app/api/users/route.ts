@@ -1,7 +1,7 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { createUserSchema } from "@/lib/validations/auth";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
@@ -12,7 +12,7 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://crm.dealstackhq.com"
 
 export async function GET() {
   const session = await auth();
-  if (!session?.user || !hasPermission(session.user.role, "user:manage")) {
+  if (!session?.user || !(await hasPermissionAsync(session.user.role, "user:manage"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -35,7 +35,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const session = await auth();
-  if (!session?.user || !hasPermission(session.user.role, "user:manage")) {
+  if (!session?.user || !(await hasPermissionAsync(session.user.role, "user:manage"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

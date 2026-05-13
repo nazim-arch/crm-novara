@@ -1,7 +1,7 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { AdminCommissionDashboard } from "@/components/sales-commission/AdminCommissionDashboard";
 import { SalesCommissionDashboard } from "@/components/sales-commission/SalesCommissionDashboard";
 import { DashboardFilters } from "@/components/podcast-studio/DashboardFilters";
@@ -19,8 +19,8 @@ export default async function SalesCommissionPage({ searchParams }: { searchPara
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const canManage = hasPermission(session.user.role, "commission:manage");
-  const canView = hasPermission(session.user.role, "commission:view");
+  const canManage = await hasPermissionAsync(session.user.role, "commission:manage");
+  const canView = await hasPermissionAsync(session.user.role, "commission:view");
   if (!canManage && !canView) redirect("/");
 
   const sp = await searchParams;

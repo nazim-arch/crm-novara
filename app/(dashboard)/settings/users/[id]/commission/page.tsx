@@ -1,7 +1,7 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect, notFound } from "next/navigation";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { CommissionSlabEditor } from "@/components/sales-commission/CommissionSlabEditor";
 import { TrendingUp, ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -13,7 +13,7 @@ export default async function UserCommissionPage({
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "commission:manage")) redirect("/");
+  if (!(await hasPermissionAsync(session.user.role, "commission:manage"))) redirect("/");
 
   const { id: userId } = await params;
 
