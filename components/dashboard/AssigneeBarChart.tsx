@@ -11,9 +11,10 @@ import {
 
 interface AssigneeBarChartProps {
   data: { name: string; count: number }[];
+  color?: string;
 }
 
-export function AssigneeBarChart({ data }: AssigneeBarChartProps) {
+export function AssigneeBarChart({ data, color = "#6366f1" }: AssigneeBarChartProps) {
   const sorted = [...data].sort((a, b) => b.count - a.count).slice(0, 10);
 
   return (
@@ -25,7 +26,7 @@ export function AssigneeBarChart({ data }: AssigneeBarChartProps) {
           formatter={(value) => [value, "Tasks"]}
           labelStyle={{ fontWeight: 600 }}
         />
-        <Bar dataKey="count" fill="#6366f1" radius={[0, 4, 4, 0]} />
+        <Bar dataKey="count" fill={color} radius={[0, 4, 4, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );

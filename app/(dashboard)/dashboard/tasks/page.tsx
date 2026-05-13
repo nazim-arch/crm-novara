@@ -1,4 +1,4 @@
-﻿import { auth } from "@/lib/auth";
+import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermissionAsync } from "@/lib/rbac";
 import { redirect } from "next/navigation";
@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TaskStatsCards } from "@/components/dashboard/TaskStatsCards";
 import { AssigneeBarChart } from "@/components/dashboard/AssigneeBarChart";
 import { ClientBarChart } from "@/components/dashboard/ClientBarChart";
+import { UserKanbanBoard } from "@/components/dashboard/UserKanbanBoard";
 import { DashboardFilters } from "@/components/podcast-studio/DashboardFilters";
 import { resolveDateRange, type DashboardRange } from "@/lib/date-range";
 import { startOfDay, endOfDay } from "date-fns";
@@ -35,23 +36,25 @@ export default async function TaskDashboardPage({ searchParams }: { searchParams
 
   const isScoped = session.user.role === "Sales" || session.user.role === "Operations";
   const scopeFilter = isScoped ? { assigned_to_id: session.user.id } : {};
-
-  // Range filter: tasks due within the selected range
   const rangeFilter = { due_date: { gte: rangeStart, lte: rangeEnd } };
 
   const [
-    // All-time active counts
     totalTasks,
     overdueTasks,
     dueTodayTasks,
     myTasks,
-    // Range-filtered counts
     totalInRange,
     completedInRange,
-    // Charts
+    // Active tasks charts
     byAssignee,
     revenueAtRisk,
     byClient,
+    // Completed tasks charts
+    completedByAssignee,
+    completedByClient,
+    // Kanban by user
+    kanbanTasks,
+    allActiveUsers,
   ] = await Promise.all([
     prisma.task.count({ where: { deleted_at: null, ...scopeFilter, status: { notIn: ["Done", "Cancelled"] } } }),
     prisma.task.count({
@@ -63,10 +66,9 @@ export default async function TaskDashboardPage({ searchParams }: { searchParams
     prisma.task.count({
       where: { deleted_at: null, assigned_to_id: session.user.id, status: { notIn: ["Done", "Cancelled"] } },
     }),
-    // Range-filtered
     prisma.task.count({ where: { deleted_at: null, ...scopeFilter, ...rangeFilter } }),
     prisma.task.count({ where: { deleted_at: null, ...scopeFilter, ...rangeFilter, status: "Done" } }),
-    // Charts scoped to range
+    // Active task charts (by range)
     prisma.task.groupBy({
       by: ["assigned_to_id"],
       where: { deleted_at: null, ...scopeFilter, ...rangeFilter, status: { notIn: ["Done", "Cancelled"] } },
@@ -84,14 +86,53 @@ export default async function TaskDashboardPage({ searchParams }: { searchParams
       where: { deleted_at: null, ...scopeFilter, ...rangeFilter, status: { notIn: ["Done", "Cancelled"] }, client_id: { not: null } },
       _count: { id: true },
     }),
+    // Completed task charts (by range)
+    prisma.task.groupBy({
+      by: ["assigned_to_id"],
+      where: { deleted_at: null, ...scopeFilter, ...rangeFilter, status: "Done" },
+      _count: { id: true },
+    }),
+    prisma.task.groupBy({
+      by: ["client_id"],
+      where: { deleted_at: null, ...scopeFilter, ...rangeFilter, status: "Done", client_id: { not: null } },
+      _count: { id: true },
+    }),
+    // Kanban by user — all active (non-scoped only)
+    !isScoped ? prisma.task.findMany({
+      where: { deleted_at: null, status: { in: ["Todo", "InProgress"] } },
+      select: {
+        id: true,
+        task_number: true,
+        title: true,
+        status: true,
+        priority: true,
+        due_date: true,
+        assigned_to_id: true,
+        lead: { select: { lead_number: true } },
+        client: { select: { name: true } },
+      },
+      orderBy: { due_date: "asc" },
+    }) : Promise.resolve([]),
+    !isScoped ? prisma.user.findMany({
+      where: { is_active: true },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }) : Promise.resolve([]),
   ]);
 
-  const assigneeIds = byAssignee.map(a => a.assigned_to_id);
-  const clientIds = byClient.map(c => c.client_id).filter(Boolean) as string[];
+  // Resolve names for all groupBy results
+  const allAssigneeIds = [...new Set([
+    ...byAssignee.map(a => a.assigned_to_id),
+    ...completedByAssignee.map(a => a.assigned_to_id),
+  ])];
+  const allClientIds = [...new Set([
+    ...byClient.map(c => c.client_id).filter(Boolean) as string[],
+    ...completedByClient.map(c => c.client_id).filter(Boolean) as string[],
+  ])];
 
   const [users, clientRecords] = await Promise.all([
-    prisma.user.findMany({ where: { id: { in: assigneeIds } }, select: { id: true, name: true } }),
-    prisma.client.findMany({ where: { id: { in: clientIds } }, select: { id: true, name: true } }),
+    prisma.user.findMany({ where: { id: { in: allAssigneeIds } }, select: { id: true, name: true } }),
+    prisma.client.findMany({ where: { id: { in: allClientIds } }, select: { id: true, name: true } }),
   ]);
 
   const userMap = Object.fromEntries(users.map(u => [u.id, u.name]));
@@ -99,6 +140,8 @@ export default async function TaskDashboardPage({ searchParams }: { searchParams
 
   const assigneeData = byAssignee.map(a => ({ name: userMap[a.assigned_to_id] ?? "Unknown", count: a._count.id }));
   const clientData = byClient.map(c => ({ name: clientMap[c.client_id!] ?? "Unknown", count: c._count.id }));
+  const completedAssigneeData = completedByAssignee.map(a => ({ name: userMap[a.assigned_to_id] ?? "Unknown", count: a._count.id }));
+  const completedClientData = completedByClient.map(c => ({ name: clientMap[c.client_id!] ?? "Unknown", count: c._count.id }));
 
   const completionRate = totalInRange > 0 ? Math.round((completedInRange / totalInRange) * 100) : null;
 
@@ -148,18 +191,15 @@ export default async function TaskDashboardPage({ searchParams }: { searchParams
         revenueAtRisk={Number(revenueAtRisk._sum.revenue_amount ?? 0)}
       />
 
-      <div className={`grid grid-cols-1 gap-6 ${!isScoped ? "lg:grid-cols-2" : ""}`}>
-        {!isScoped && (
+      {/* Active tasks charts */}
+      <div className={`grid grid-cols-1 gap-6 ${!isScoped && (assigneeData.length > 0 || clientData.length > 0) ? "lg:grid-cols-2" : ""}`}>
+        {!isScoped && assigneeData.length > 0 && (
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-medium">Active Tasks by Assignee — {rangeLabel}</CardTitle>
             </CardHeader>
             <CardContent>
-              {assigneeData.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No active tasks in this period.</p>
-              ) : (
-                <AssigneeBarChart data={assigneeData} />
-              )}
+              <AssigneeBarChart data={assigneeData} />
             </CardContent>
           </Card>
         )}
@@ -173,33 +213,73 @@ export default async function TaskDashboardPage({ searchParams }: { searchParams
             </CardContent>
           </Card>
         )}
+      </div>
 
-        <Card className={isScoped ? "max-w-md" : ""}>
+      {/* Completed tasks charts */}
+      {(completedAssigneeData.length > 0 || completedClientData.length > 0) && (
+        <div className={`grid grid-cols-1 gap-6 ${!isScoped && completedAssigneeData.length > 0 && completedClientData.length > 0 ? "lg:grid-cols-2" : ""}`}>
+          {!isScoped && completedAssigneeData.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-medium text-emerald-700">Completed Tasks by User — {rangeLabel}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <AssigneeBarChart data={completedAssigneeData} color="#10b981" />
+              </CardContent>
+            </Card>
+          )}
+          {completedClientData.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-medium text-emerald-700">Completed Tasks by Client — {rangeLabel}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ClientBarChart data={completedClientData} color="#10b981" />
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Kanban by User (Admin/Manager only) */}
+      {!isScoped && (
+        <Card>
           <CardHeader>
-            <CardTitle className="text-sm font-medium">Quick Links</CardTitle>
+            <CardTitle className="text-sm font-medium">Team Kanban — Active Tasks by Assignee</CardTitle>
+            <p className="text-xs text-muted-foreground">Drag cards between columns to reassign tasks</p>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-3">
-            <Link href={isScoped ? `/tasks?assigned_to=${session.user.id}` : "/tasks"} className="p-3 border rounded-lg hover:bg-muted transition-colors text-sm">
-              <p className="font-medium">{isScoped ? "My Tasks" : "All Tasks"}</p>
-              <p className="text-muted-foreground text-xs mt-0.5">View &amp; filter</p>
-            </Link>
-            <Link href={`/tasks?view=kanban${isScoped ? `&assigned_to=${session.user.id}` : ""}`} className="p-3 border rounded-lg hover:bg-muted transition-colors text-sm">
-              <p className="font-medium">Kanban View</p>
-              <p className="text-muted-foreground text-xs mt-0.5">Drag &amp; drop</p>
-            </Link>
-            <Link href="/tasks/new" className="p-3 border rounded-lg hover:bg-muted transition-colors text-sm">
-              <p className="font-medium">New Task</p>
-              <p className="text-muted-foreground text-xs mt-0.5">Create a task</p>
-            </Link>
-            {!isScoped && (
-              <Link href={`/tasks?assigned_to=${session.user.id}`} className="p-3 border rounded-lg hover:bg-muted transition-colors text-sm">
-                <p className="font-medium">My Tasks</p>
-                <p className="text-muted-foreground text-xs mt-0.5">Assigned to me</p>
-              </Link>
-            )}
+          <CardContent>
+            <UserKanbanBoard users={allActiveUsers} initialTasks={kanbanTasks} />
           </CardContent>
         </Card>
-      </div>
+      )}
+
+      {/* Quick Links */}
+      <Card className={isScoped ? "max-w-md" : ""}>
+        <CardHeader>
+          <CardTitle className="text-sm font-medium">Quick Links</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 gap-3">
+          <Link href={isScoped ? `/tasks?assigned_to=${session.user.id}` : "/tasks"} className="p-3 border rounded-lg hover:bg-muted transition-colors text-sm">
+            <p className="font-medium">{isScoped ? "My Tasks" : "All Tasks"}</p>
+            <p className="text-muted-foreground text-xs mt-0.5">View &amp; filter</p>
+          </Link>
+          <Link href={`/tasks?view=kanban${isScoped ? `&assigned_to=${session.user.id}` : ""}`} className="p-3 border rounded-lg hover:bg-muted transition-colors text-sm">
+            <p className="font-medium">Kanban by Status</p>
+            <p className="text-muted-foreground text-xs mt-0.5">Drag &amp; drop</p>
+          </Link>
+          <Link href="/tasks/new" className="p-3 border rounded-lg hover:bg-muted transition-colors text-sm">
+            <p className="font-medium">New Task</p>
+            <p className="text-muted-foreground text-xs mt-0.5">Create a task</p>
+          </Link>
+          {!isScoped && (
+            <Link href={`/tasks?assigned_to=${session.user.id}`} className="p-3 border rounded-lg hover:bg-muted transition-colors text-sm">
+              <p className="font-medium">My Tasks</p>
+              <p className="text-muted-foreground text-xs mt-0.5">Assigned to me</p>
+            </Link>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
