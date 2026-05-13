@@ -15,6 +15,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
   const session = await auth();
   const sp = await searchParams;
   const view = sp.view ?? "list";
+  const canExport = session?.user ? await hasPermissionAsync(session.user.role, "task:export") : false;
 
   const scope = session?.user ? taskScopeFilter(session.user.role, session.user.id) : null;
 
@@ -73,7 +74,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
             </Link>
           </div>
           <div className="flex items-center gap-2">
-            <ExportButton href="/api/tasks/export" filename="tasks.xlsx" />
+            {canExport && <ExportButton href="/api/tasks/export" filename="tasks.xlsx" />}
             {canCreate && (
               <Button render={<Link href="/tasks/new" />}>
                 <Plus className="h-4 w-4 mr-1" />

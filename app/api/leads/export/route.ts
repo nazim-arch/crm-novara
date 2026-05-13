@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (!(await hasPermissionAsync(session.user.role, "lead:read"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!(await hasPermissionAsync(session.user.role, "lead:export"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");

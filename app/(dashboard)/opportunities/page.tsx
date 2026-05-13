@@ -37,6 +37,7 @@ const SORT_MAP: Record<string, Prisma.OpportunityOrderByWithRelationInput> = {
 export default async function OpportunitiesPage({ searchParams }: { searchParams: SearchParams }) {
   const session = await auth();
   const sp = await searchParams;
+  const canExport = session?.user ? await hasPermissionAsync(session.user.role, "opportunity:export") : false;
 
   const page = Math.max(1, Number(sp.page ?? "1"));
   const limit = 20;
@@ -89,7 +90,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
           <p className="text-sm text-muted-foreground">{total} total</p>
         </div>
         <div className="flex items-center gap-2">
-          <ExportButton href="/api/opportunities/export" filename="opportunities.xlsx" />
+          {canExport && <ExportButton href="/api/opportunities/export" filename="opportunities.xlsx" />}
           {canCreate && (
             <Button render={<Link href="/opportunities/new" />}>
               <Plus className="h-4 w-4 mr-1" />

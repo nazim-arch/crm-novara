@@ -93,6 +93,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
   const session = await auth();
   const sp = await searchParams;
   const canImport = session?.user ? await hasPermissionAsync(session.user.role, "lead:import") : false;
+  const canExport = session?.user ? await hasPermissionAsync(session.user.role, "lead:export") : false;
 
   const today = new Date();
   const todayStart = startOfDay(today);
@@ -237,7 +238,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
           <p className="text-sm text-muted-foreground">{total} total leads</p>
         </div>
         <div className="flex items-center gap-2">
-          <ExportButton href="/api/leads/export" filename="leads.xlsx" />
+          {canExport && <ExportButton href="/api/leads/export" filename="leads.xlsx" />}
           {canImport && <LeadImportModal />}
           {canImport && <LeadUpdateModal />}
           <Button render={<Link href="/leads/new" />}>
