@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermissionAsync } from "@/lib/rbac";
@@ -99,7 +101,7 @@ export default async function TaskDashboardPage({ searchParams }: { searchParams
     }),
     // Kanban by user — all active (non-scoped only)
     !isScoped ? prisma.task.findMany({
-      where: { deleted_at: null, status: { in: ["Todo", "InProgress"] } },
+      where: { deleted_at: { equals: null }, status: { in: ["Todo", "InProgress"] } },
       select: {
         id: true,
         task_number: true,
