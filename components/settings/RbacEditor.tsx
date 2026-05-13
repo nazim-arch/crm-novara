@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ROLES, PERMISSION_GROUPS, PERMISSION_LABELS, type Permission, type Role } from "@/lib/rbac";
+import { ROLES, PERMISSION_GROUPS, PERMISSION_LABELS, type Permission, type Role } from "@/lib/rbac-constants";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";

@@ -1,7 +1,8 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import { hasPermissionAsync, DEFAULT_PERMS, type Permission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
+import { DEFAULT_PERMS, type Permission } from "@/lib/rbac-constants";
 import { RbacEditor } from "@/components/settings/RbacEditor";
 
 export default async function RolesPage() {

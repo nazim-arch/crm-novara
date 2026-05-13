@@ -1,7 +1,8 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { hasPermissionAsync, DEFAULT_PERMS, ALL_PERMISSIONS, type Permission } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
+import { DEFAULT_PERMS, ALL_PERMISSIONS, type Permission } from "@/lib/rbac-constants";
 
 export async function GET() {
   const session = await auth();
