@@ -91,6 +91,35 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
       },
     });
 
+    // Sync FollowUp record when next_followup_date is set on the lead
+    if (lead.next_followup_date) {
+      const existing = await prisma.followUp.findFirst({
+        where: { lead_id: id, completed_at: null },
+        orderBy: { scheduled_at: "asc" },
+        select: { id: true },
+      });
+      if (existing) {
+        await prisma.followUp.update({
+          where: { id: existing.id },
+          data: {
+            scheduled_at: lead.next_followup_date,
+            ...(lead.assigned_to_id && { assigned_to_id: lead.assigned_to_id }),
+          },
+        });
+      } else {
+        await prisma.followUp.create({
+          data: {
+            lead_id: id,
+            assigned_to_id: lead.assigned_to_id,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            type: (lead.followup_type ?? "Call") as any,
+            scheduled_at: lead.next_followup_date,
+            created_by_id: session.user.id,
+          },
+        });
+      }
+    }
+
     // Email new assignee if reassigned
     const newAssigneeId = cleanData.assigned_to_id as string | undefined;
     if (newAssigneeId && existingLead && newAssigneeId !== existingLead.assigned_to_id && newAssigneeId !== session.user.id) {

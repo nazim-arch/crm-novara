@@ -87,7 +87,7 @@ export async function POST(request: Request) {
     const existingLeads = await prisma.lead.findMany({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       where: scopeWhere as any,
-      select: { id: true, lead_number: true, status: true, temperature: true },
+      select: { id: true, lead_number: true, status: true, temperature: true, assigned_to_id: true },
     });
     const leadByNumber = new Map(existingLeads.map(l => [l.lead_number, l]));
 
@@ -229,6 +229,36 @@ export async function POST(request: Request) {
                 created_by_id: userId,
               },
             });
+          }
+
+          // Sync FollowUp record when next_followup_date is being set
+          if (fuDate) {
+            const finalAssigneeId = assigneeId ?? lead.assigned_to_id;
+            const existing = await tx.followUp.findFirst({
+              where: { lead_id: lead.id, completed_at: null },
+              orderBy: { scheduled_at: "asc" },
+              select: { id: true },
+            });
+            if (existing) {
+              await tx.followUp.update({
+                where: { id: existing.id },
+                data: {
+                  scheduled_at: fuDate,
+                  ...(finalAssigneeId && { assigned_to_id: finalAssigneeId }),
+                },
+              });
+            } else {
+              await tx.followUp.create({
+                data: {
+                  lead_id: lead.id,
+                  assigned_to_id: finalAssigneeId ?? null,
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  type: (rawFuType ?? "Call") as any,
+                  scheduled_at: fuDate,
+                  created_by_id: userId,
+                },
+              });
+            }
           }
 
           // Activity log
