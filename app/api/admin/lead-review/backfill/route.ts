@@ -68,11 +68,11 @@ export async function POST() {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             trigger_type: "StageChange" as any,
             trigger_context: {
+              // Always show the lead's CURRENT status as destination
               from_stage: history?.from_stage ?? null,
-              to_stage: history?.to_stage ?? lead.status,
+              to_stage: lead.status,
               activity_stage: lead.activity_stage ?? null,
               notes: history?.notes ?? null,
-              current_status: lead.status,
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
             } as any,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
