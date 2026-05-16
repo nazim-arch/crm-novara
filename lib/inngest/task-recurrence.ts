@@ -12,8 +12,7 @@ export type TaskCompletedEventData = {
 };
 
 export const taskRecurrenceFunction = inngest.createFunction(
-  { id: "task-recurrence", name: "Task: Create Recurring Instance", retries: 2 },
-  { event: "task/completed.recurring" },
+  { id: "task-recurrence", name: "Task: Create Recurring Instance", retries: 2, triggers: { event: "task/completed.recurring" } },
   async ({ event }) => {
     const { taskId, recurrence, dueDate, completedById } = event.data as TaskCompletedEventData;
 
