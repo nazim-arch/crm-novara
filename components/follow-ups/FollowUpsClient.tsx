@@ -55,6 +55,7 @@ interface FollowUpsClientProps {
   isAdmin: boolean;
   currentUserId: string;
   role: string;
+  defaultTab?: string;
 }
 
 // ── Relative date display ────────────────────────────────────────
@@ -230,6 +231,7 @@ export function FollowUpsClient({
   isAdmin,
   currentUserId,
   role,
+  defaultTab,
 }: FollowUpsClientProps) {
   const showFocusQueue = role === "Sales" || isManagerOrAdmin;
   const [followUps, setFollowUps] = useState<FollowUp[]>(initialFollowUps);
@@ -402,7 +404,7 @@ export function FollowUpsClient({
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="overdue">
+      <Tabs defaultValue={defaultTab ?? "overdue"}>
         <TabsList className="flex flex-wrap h-auto gap-1 justify-start">
           <TabsTrigger value="overdue" className="gap-1 text-xs sm:text-sm">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />

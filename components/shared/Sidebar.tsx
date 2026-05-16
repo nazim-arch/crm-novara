@@ -1,18 +1,23 @@
 "use client";
 
 import { useState } from "react";
+import React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   BarChart3, Users, Building2, CheckSquare, CalendarClock,
   Settings, LayoutDashboard, Radar, Menu, Briefcase, Mic2, SlidersHorizontal,
-  TrendingUp, FileText, Zap, ShieldCheck,
+  TrendingUp, FileText, Zap, ShieldCheck, Target, ClipboardCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-const NAV_CONFIG = [
+type NavChild = { href: string; label: string; tab: string; roles: string[] };
+type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; roles: string[]; children?: NavChild[] };
+type NavSection = { label: string; items: NavItem[] };
+
+const NAV_CONFIG: NavSection[] = [
   {
     label: "Dashboards",
     items: [
@@ -27,7 +32,14 @@ const NAV_CONFIG = [
     items: [
       { href: "/leads", label: "Leads", icon: Users, roles: ["Admin", "Manager", "Sales", "Viewer"] },
       { href: "/opportunities", label: "Opportunities", icon: Building2, roles: ["Admin", "Manager", "Sales", "Viewer"] },
-      { href: "/follow-ups", label: "Follow-ups", icon: CalendarClock, roles: ["Admin", "Manager", "Sales", "Operations", "Viewer"] },
+      {
+        href: "/follow-ups", label: "Follow-ups", icon: CalendarClock,
+        roles: ["Admin", "Manager", "Sales", "Operations", "Viewer"],
+        children: [
+          { href: "/follow-ups?tab=focus_queue", tab: "focus_queue", label: "Focus Queue", roles: ["Admin", "Manager", "Sales"] },
+          { href: "/follow-ups?tab=review_queue", tab: "review_queue", label: "Review Queue", roles: ["Admin"] },
+        ],
+      },
     ],
   },
   {
@@ -83,6 +95,8 @@ interface NavProps {
 
 function SidebarNav({ role, onNavigate }: NavProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const currentTab = searchParams.get("tab") ?? "";
 
   const visibleNav = NAV_CONFIG
     .map((section) => ({
@@ -101,21 +115,46 @@ function SidebarNav({ role, onNavigate }: NavProps) {
           {section.items.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+            const visibleChildren = item.children?.filter((c) => c.roles.includes(role)) ?? [];
+
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onNavigate}
-                className={cn(
-                  "flex items-center gap-2.5 px-2 py-2 rounded-md text-sm transition-colors",
-                  isActive
-                    ? "bg-primary/10 text-primary font-medium"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              <div key={item.href}>
+                <Link
+                  href={item.href}
+                  onClick={onNavigate}
+                  className={cn(
+                    "flex items-center gap-2.5 px-2 py-2 rounded-md text-sm transition-colors",
+                    isActive
+                      ? "bg-primary/10 text-primary font-medium"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {item.label}
+                </Link>
+                {isActive && visibleChildren.length > 0 && (
+                  <div className="ml-4 mt-0.5 mb-1 border-l border-border pl-3 space-y-0.5">
+                    {visibleChildren.map((child) => {
+                      const isChildActive = pathname === "/follow-ups" && currentTab === child.tab;
+                      return (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          onClick={onNavigate}
+                          className={cn(
+                            "block py-1.5 px-2 rounded-md text-xs transition-colors",
+                            isChildActive
+                              ? "text-primary font-medium bg-primary/5"
+                              : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                          )}
+                        >
+                          {child.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
                 )}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                {item.label}
-              </Link>
+              </div>
             );
           })}
         </div>

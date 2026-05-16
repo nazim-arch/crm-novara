@@ -2,7 +2,12 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { FollowUpsClient } from "@/components/follow-ups/FollowUpsClient";
 
-export default async function FollowUpsPage() {
+export default async function FollowUpsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
+  const { tab } = await searchParams;
   const session = await auth();
   const role = session?.user.role ?? "";
   const isScoped = role === "Sales" || role === "Operations";
@@ -55,6 +60,7 @@ export default async function FollowUpsPage() {
       isAdmin={isAdmin}
       currentUserId={session?.user.id ?? ""}
       role={role}
+      defaultTab={tab}
     />
   );
 }
