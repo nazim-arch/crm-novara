@@ -268,6 +268,11 @@ export function FollowUpsClient({
         const order: Record<string, number> = { High: 0, Medium: 1, Low: 2 };
         cmp = (order[a.priority] ?? 9) - (order[b.priority] ?? 9);
       } else if (sortCol === "assigned_to") cmp = (a.assigned_to?.name ?? "").localeCompare(b.assigned_to?.name ?? "");
+      else if (sortCol === "entity") {
+        const aName = a.lead?.full_name ?? a.opportunity?.name ?? "";
+        const bName = b.lead?.full_name ?? b.opportunity?.name ?? "";
+        cmp = aName.localeCompare(bName);
+      }
       return sortDir === "asc" ? cmp : -cmp;
     });
   }, [followUps, search, assigneeFilter, sortCol, sortDir]);
@@ -620,7 +625,11 @@ function FollowUpList({
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
-              <TableHead>Entity</TableHead>
+              <TableHead>
+                <button onClick={() => onSort("entity")} className="flex items-center gap-1 hover:text-foreground">
+                  Entity {sortCol === "entity" ? (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-40" />}
+                </button>
+              </TableHead>
               <TableHead>
                 <button onClick={() => onSort("type")} className="flex items-center gap-1 hover:text-foreground">
                   Type {sortCol === "type" ? (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-40" />}

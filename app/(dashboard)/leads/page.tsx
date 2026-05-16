@@ -29,6 +29,7 @@ const SORT_MAP: Record<string, Prisma.LeadOrderByWithRelationInput> = {
   temperature:          { temperature: "asc" },
   next_followup_date:   { next_followup_date: "asc" },
   potential_lead_value: { potential_lead_value: "asc" },
+  assigned_to:          { assigned_to: { name: "asc" } },
   created_at:           { created_at: "asc" },
   updated_at:           { updated_at: "asc" },
 };
@@ -280,7 +281,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
               <TableHead>Phone</TableHead>
               <TableHead>{sh("status", "Status")}</TableHead>
               <TableHead>{sh("temperature", "Temp")}</TableHead>
-              <TableHead>Assigned To</TableHead>
+              <TableHead>{sh("assigned_to", "Assigned To")}</TableHead>
               <TableHead>Property Type</TableHead>
               <TableHead>{sh("next_followup_date", "Follow-up")}</TableHead>
               <TableHead className="text-right">{sh("potential_lead_value", "Pipeline Value", "ml-auto")}</TableHead>

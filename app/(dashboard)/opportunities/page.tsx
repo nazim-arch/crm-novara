@@ -14,6 +14,7 @@ import { Plus, Building2 } from "lucide-react";
 import { hasPermissionAsync } from "@/lib/rbac";
 import { ExportButton } from "@/components/shared/ExportButton";
 import { SortableHeader } from "@/components/shared/SortableHeader";
+import { OppFilters } from "@/components/opportunities/OppFilters";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
 type SearchParams = Promise<{ status?: string; search?: string; page?: string; sort?: string; dir?: string }>;
@@ -82,6 +83,8 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
     <SortableHeader column={col} label={label} currentSort={sortCol} currentDir={sortDir} />
   );
 
+  const totalPages = Math.ceil(total / limit);
+
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
@@ -99,6 +102,8 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
           )}
         </div>
       </div>
+
+      <OppFilters currentSearch={sp.search} currentStatus={sp.status} />
 
       <div className="rounded-lg border bg-card overflow-hidden">
         <Table>
@@ -158,6 +163,24 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
           </TableBody>
         </Table>
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}</span>
+          <div className="flex gap-2">
+            {page > 1 && (
+              <Button variant="outline" size="sm" render={<Link href={`/opportunities?${new URLSearchParams({ ...Object.fromEntries(Object.entries(sp).filter(([, v]) => v !== undefined) as [string, string][]), page: String(page - 1) })}`} />}>
+                Previous
+              </Button>
+            )}
+            {page < totalPages && (
+              <Button variant="outline" size="sm" render={<Link href={`/opportunities?${new URLSearchParams({ ...Object.fromEntries(Object.entries(sp).filter(([, v]) => v !== undefined) as [string, string][]), page: String(page + 1) })}`} />}>
+                Next
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
