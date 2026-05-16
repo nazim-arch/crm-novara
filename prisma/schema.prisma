@@ -143,6 +143,30 @@ enum NotificationType {
   NoteAdded
 }
 
+enum LeadReviewStatus {
+  Pending
+  Reviewed
+  Parked
+  Escalated
+  AskAgent
+}
+
+enum LeadReviewQuality {
+  Excellent
+  Good
+  Average
+  Poor
+}
+
+enum LeadReviewActionType {
+  StageChange
+  FollowUpAdded
+  TemperatureChanged
+  AssigneeChanged
+  NoteAdded
+  FieldUpdated
+}
+
 // ─────────────────────────────────────────────
 // USER
 // ─────────────────────────────────────────────
@@ -183,6 +207,9 @@ model User {
   monthly_targets_set      SalesMonthlyTarget[]    @relation("TargetsSetBy")
   commission_records       SalesCommissionRecord[] @relation("CommissionRecords")
   commission_records_final SalesCommissionRecord[] @relation("RecordsFinalized")
+
+  review_events_triggered  LeadReviewEvent[]  @relation("ReviewEventTriggeredBy")
+  review_events_actioned   LeadReviewEvent[]  @relation("ReviewEventActionedBy")
 
   @@map("users")
 }
@@ -269,10 +296,11 @@ model Lead {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  opportunities LeadOpportunity[]
-  tasks         Task[]
-  stage_history LeadStageHistory[]
-  followups     FollowUp[]
+  opportunities  LeadOpportunity[]
+  tasks          Task[]
+  stage_history  LeadStageHistory[]
+  followups      FollowUp[]
+  review_events  LeadReviewEvent[]
 
   @@index([phone])
   @@index([email])
@@ -321,6 +349,7 @@ model Opportunity {
   tasks          Task[]
   expenses       OpportunityExpense[]
   follow_ups     FollowUp[]
+  review_events  LeadReviewEvent[]
 
   @@index([status])
   @@index([property_type])
@@ -752,6 +781,38 @@ model PodcastStudioRate {
   updated_at              DateTime @updatedAt
 
   @@map("podcast_studio_rates")
+}
+
+// ─────────────────────────────────────────────
+// LEAD REVIEW EVENT (Admin Review Queue)
+// ─────────────────────────────────────────────
+
+model LeadReviewEvent {
+  id                String               @id @default(cuid())
+  lead_id           String
+  opportunity_id    String?
+  triggered_by_id   String
+  trigger_type      LeadReviewActionType
+  trigger_context   Json                 @default("{}")
+  review_status     LeadReviewStatus     @default(Pending)
+  quality_score     LeadReviewQuality?
+  review_notes      String?
+  park_until        DateTime?
+  escalation_reason String?
+  actioned_by_id    String?
+  actioned_at       DateTime?
+  created_at        DateTime             @default(now())
+
+  lead         Lead         @relation(fields: [lead_id],         references: [id], onDelete: Cascade)
+  opportunity  Opportunity? @relation(fields: [opportunity_id],  references: [id], onDelete: SetNull)
+  triggered_by User         @relation("ReviewEventTriggeredBy", fields: [triggered_by_id], references: [id])
+  actioned_by  User?        @relation("ReviewEventActionedBy",  fields: [actioned_by_id],  references: [id])
+
+  @@index([lead_id])
+  @@index([triggered_by_id])
+  @@index([review_status])
+  @@index([created_at])
+  @@map("lead_review_events")
 }
 
 // IntentRadar Module - Prisma Schema

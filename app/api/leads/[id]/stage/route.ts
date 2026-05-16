@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { changeStageSchema } from "@/lib/validations/lead";
 import { hasPermissionAsync } from "@/lib/rbac";
 import { notifyLeadStageChanged, notifyLeadWon, notifyLeadLost } from "@/lib/email-notifications";
+import { createLeadReviewEvent } from "@/lib/lead-review-events";
 
 type Params = Promise<{ id: string }>;
 
@@ -100,6 +101,19 @@ export async function POST(request: Request, { params }: { params: Params }) {
           ]
         : []),
     ]);
+
+    // Enqueue for Admin review
+    createLeadReviewEvent({
+      lead_id: id,
+      triggered_by_id: session.user.id,
+      trigger_type: "StageChange",
+      trigger_context: {
+        from_status: lead.status,
+        to_stage: to_stage ?? null,
+        activity_stage: activity_stage ?? null,
+        notes: notes ?? null,
+      },
+    });
 
     // Recalculate closed_revenue when Won state changes
     if (to_stage === "Won" || lead.status === "Won") {

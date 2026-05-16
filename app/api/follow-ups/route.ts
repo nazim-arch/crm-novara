@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { createLeadReviewEvent } from "@/lib/lead-review-events";
 
 const FOLLOW_UP_TYPES = ["Call", "Email", "WhatsApp", "Visit", "Meeting", "Activity", "Internal"] as const;
 
@@ -104,6 +105,21 @@ export async function POST(request: Request) {
       assigned_to: { select: { id: true, name: true } },
     },
   });
+
+  // Enqueue for Admin review if linked to a lead
+  if (lead_id) {
+    createLeadReviewEvent({
+      lead_id,
+      triggered_by_id: session.user.id,
+      trigger_type: "FollowUpAdded",
+      trigger_context: {
+        followup_type: type,
+        scheduled_at: scheduled_at,
+        priority,
+        notes: notes ?? null,
+      },
+    });
+  }
 
   // Sync lead's next_followup_date if linked to a lead
   if (lead_id) {
