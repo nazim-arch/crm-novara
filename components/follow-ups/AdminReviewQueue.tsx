@@ -149,12 +149,14 @@ function ReviewCard({
   index,
   total,
   onAction,
+  onDirectReview,
   submitting,
 }: {
   event: ReviewEvent;
   index: number;
   total: number;
   onAction: (type: ActionType) => void;
+  onDirectReview: () => void;
   submitting: boolean;
 }) {
   const theme = getLeadReviewTheme(event.lead?.temperature);
@@ -301,7 +303,7 @@ function ReviewCard({
             size="sm"
             variant="outline"
             className="flex-1 gap-1 text-emerald-700 border-emerald-200 hover:bg-emerald-50 text-xs"
-            onClick={() => onAction("reviewed")}
+            onClick={onDirectReview}
             disabled={submitting}
           >
             <CheckCircle className="h-3.5 w-3.5" />
@@ -514,6 +516,34 @@ export function AdminReviewQueue({ users }: { users: { id: string; name: string 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [queue.data.length]);
+
+  async function handleDirectReview() {
+    if (!currentEvent || submitting) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/admin/lead-review/${currentEvent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reviewed" }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error((err as { error?: string }).error ?? "Action failed");
+        return;
+      }
+      toast.success("Marked as reviewed");
+      setQueue((prev) => {
+        const next = prev.data.filter((e) => e.id !== currentEvent.id);
+        return { ...prev, data: next, total: prev.total - 1 };
+      });
+      setCardIndex((i) => Math.max(0, Math.min(i, queue.data.length - 2)));
+      void fetchStats();
+    } catch {
+      toast.error("Something went wrong");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   function openModal(type: ActionType) {
     if (!currentEvent) return;
@@ -745,6 +775,7 @@ export function AdminReviewQueue({ users }: { users: { id: string; name: string 
                     index={cardIndex}
                     total={queue.data.length}
                     onAction={openModal}
+                    onDirectReview={handleDirectReview}
                     submitting={submitting}
                   />
                 </div>
@@ -848,8 +879,8 @@ export function AdminReviewQueue({ users }: { users: { id: string; name: string 
                 </p>
               )}
 
-              {/* Quality score — for reviewed and client_followup */}
-              {(actionModal === "reviewed" || actionModal === "client_followup") && (
+              {/* Quality score — for client_followup only */}
+              {actionModal === "client_followup" && (
                 <div className="space-y-1.5">
                   <Label className="text-xs">Quality Score</Label>
                   <QualityPicker value={quality} onChange={setQuality} />
