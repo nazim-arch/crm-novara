@@ -361,6 +361,30 @@ export function AdminReviewQueue({ users }: { users: { id: string; name: string 
   const [histPage, setHistPage] = useState(1);
   const [histStatus, setHistStatus] = useState("Reviewed");
 
+  const [backfilling, setBackfilling] = useState(false);
+
+  async function handleBackfill() {
+    setBackfilling(true);
+    try {
+      const res = await fetch("/api/admin/lead-review/backfill", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) { toast.error(json.error ?? "Backfill failed"); return; }
+      if (json.created === 0) { toast.info("No new events found for this week"); return; }
+      toast.success(
+        `Synced ${json.created} event${json.created === 1 ? "" : "s"} — ` +
+        `${json.breakdown.stage_changes} stage changes, ` +
+        `${json.breakdown.followups_added} follow-ups, ` +
+        `${json.breakdown.temperature_changes} temp changes`
+      );
+      void fetchStats();
+      void fetchQueue();
+    } catch {
+      toast.error("Something went wrong");
+    } finally {
+      setBackfilling(false);
+    }
+  }
+
   // Action modal state
   const [actionModal, setActionModal] = useState<ActionType | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -514,6 +538,23 @@ export function AdminReviewQueue({ users }: { users: { id: string; name: string 
           ))}
         </div>
       )}
+
+      {/* Sync this week */}
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">
+          Review events are auto-created on stage changes and follow-up additions.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleBackfill}
+          disabled={backfilling}
+          className="text-xs h-7 gap-1.5"
+        >
+          {backfilling ? <Loader2 className="h-3 w-3 animate-spin" /> : <Clock className="h-3 w-3" />}
+          Sync this week
+        </Button>
+      </div>
 
       {/* Inner Tabs: Queue | History */}
       <Tabs defaultValue="queue">
