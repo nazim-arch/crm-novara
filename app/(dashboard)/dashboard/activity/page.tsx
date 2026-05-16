@@ -14,7 +14,7 @@ export default async function ActivityCalendarPage() {
 
   const users = isManagerOrAdmin
     ? await prisma.user.findMany({
-        where: { active: true },
+        where: { is_active: true },
         select: { id: true, name: true },
         orderBy: { name: "asc" },
       })
