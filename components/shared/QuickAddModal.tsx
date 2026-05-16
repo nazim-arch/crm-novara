@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useReducer } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Users, Building2, CheckSquare, CalendarClock, Loader2, Pencil, Receipt } from "lucide-react";
+import { Plus, Users, Building2, CheckSquare, CalendarClock, Loader2, Pencil, Receipt, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,6 +37,47 @@ const EXPENSE_CATEGORIES = ["Meta Ads", "Google Ads", "Ads", "Marketing", "Site 
 
 type Mode = "new" | "edit";
 
+// ── Form state consolidated into one reducer ───────────────────────────────
+
+type FormState = {
+  leadMode: Mode; oppMode: Mode; taskMode: Mode; fuMode: Mode;
+  editLeadId: string; editOppId: string; editTaskId: string;
+  leadName: string; leadPhone: string; leadSource: string; leadTemperature: string;
+  oppName: string; oppProject: string; oppPropertyType: string; oppLocation: string; oppCommission: string;
+  taskTitle: string; taskAssignedTo: string; taskDueDate: string;
+  taskLeadId: string; taskOppId: string; taskSector: string; taskClientId: string;
+  fuLinkType: "lead" | "opportunity" | "task";
+  fuLeadId: string; fuOppId: string; fuTaskId: string;
+  fuType: string; fuPriority: string; fuAssignedTo: string; fuDate: string; fuNotes: string;
+  expOppId: string; expCategory: string; expAmount: string; expDate: string; expDescription: string;
+};
+
+type FormAction =
+  | { type: "SET"; patch: Partial<FormState> }
+  | { type: "RESET"; currentUserId: string };
+
+function initialForm(currentUserId: string): FormState {
+  return {
+    leadMode: "new", oppMode: "new", taskMode: "new", fuMode: "new",
+    editLeadId: "none", editOppId: "none", editTaskId: "none",
+    leadName: "", leadPhone: "", leadSource: "", leadTemperature: "Cold",
+    oppName: "", oppProject: "", oppPropertyType: "", oppLocation: "", oppCommission: "",
+    taskTitle: "", taskAssignedTo: currentUserId, taskDueDate: "",
+    taskLeadId: "none", taskOppId: "none", taskSector: "", taskClientId: "none",
+    fuLinkType: "lead", fuLeadId: "none", fuOppId: "none", fuTaskId: "none",
+    fuType: "Call", fuPriority: "Medium", fuAssignedTo: currentUserId, fuDate: "", fuNotes: "",
+    expOppId: "none", expCategory: "", expAmount: "",
+    expDate: new Date().toISOString().split("T")[0], expDescription: "",
+  };
+}
+
+function formReducer(state: FormState, action: FormAction): FormState {
+  switch (action.type) {
+    case "SET":   return { ...state, ...action.patch };
+    case "RESET": return initialForm(action.currentUserId);
+  }
+}
+
 function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
   return (
     <div className="flex rounded-md border overflow-hidden text-sm mb-1">
@@ -68,66 +109,29 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
   const [opps, setOpps] = useState<OppItem[]>([]);
   const [clients, setClients] = useState<ClientItem[]>([]);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [dataLoading, setDataLoading] = useState(false);
 
-  // Mode per tab
-  const [leadMode, setLeadMode] = useState<Mode>("new");
-  const [oppMode, setOppMode] = useState<Mode>("new");
-  const [taskMode, setTaskMode] = useState<Mode>("new");
-  const [fuMode, setFuMode] = useState<Mode>("new");
-
-  // Edit selections
-  const [editLeadId, setEditLeadId] = useState("none");
-  const [editOppId, setEditOppId] = useState("none");
-  const [editTaskId, setEditTaskId] = useState("none");
-
-  // Lead form
-  const [leadName, setLeadName] = useState("");
-  const [leadPhone, setLeadPhone] = useState("");
-  const [leadSource, setLeadSource] = useState("");
-  const [leadTemperature, setLeadTemperature] = useState("Cold");
-
-  // Opportunity form
-  const [oppName, setOppName] = useState("");
-  const [oppProject, setOppProject] = useState("");
-  const [oppPropertyType, setOppPropertyType] = useState("");
-  const [oppLocation, setOppLocation] = useState("");
-  const [oppCommission, setOppCommission] = useState("");
-
-  // Task form
-  const [taskTitle, setTaskTitle] = useState("");
-  const [taskAssignedTo, setTaskAssignedTo] = useState(currentUserId);
-  const [taskDueDate, setTaskDueDate] = useState("");
-  const [taskLeadId, setTaskLeadId] = useState("none");
-  const [taskOppId, setTaskOppId] = useState("none");
-  const [taskSector, setTaskSector] = useState("");
-  const [taskClientId, setTaskClientId] = useState("none");
-
-  // Follow-up form
-  const [fuLinkType, setFuLinkType] = useState<"lead" | "opportunity" | "task">("lead");
-  const [fuLeadId, setFuLeadId] = useState("none");
-  const [fuOppId, setFuOppId] = useState("none");
-  const [fuTaskId, setFuTaskId] = useState("none");
-  const [fuType, setFuType] = useState("Call");
-  const [fuPriority, setFuPriority] = useState("Medium");
-  const [fuAssignedTo, setFuAssignedTo] = useState(currentUserId);
-  const [fuDate, setFuDate] = useState("");
-  const [fuNotes, setFuNotes] = useState("");
-
-  // Expense form
-  const [expOppId, setExpOppId] = useState("none");
-  const [expCategory, setExpCategory] = useState("");
-  const [expAmount, setExpAmount] = useState("");
-  const [expDate, setExpDate] = useState(new Date().toISOString().split("T")[0]);
-  const [expDescription, setExpDescription] = useState("");
+  const [form, dispatch] = useReducer(formReducer, undefined, () => initialForm(currentUserId));
+  const set = (patch: Partial<FormState>) => dispatch({ type: "SET", patch });
+  const {
+    leadMode, oppMode, taskMode, fuMode,
+    editLeadId, editOppId, editTaskId,
+    leadName, leadPhone, leadSource, leadTemperature,
+    oppName, oppProject, oppPropertyType, oppLocation, oppCommission,
+    taskTitle, taskAssignedTo, taskDueDate, taskLeadId, taskOppId, taskSector, taskClientId,
+    fuLinkType, fuLeadId, fuOppId, fuTaskId, fuType, fuPriority, fuAssignedTo, fuDate, fuNotes,
+    expOppId, expCategory, expAmount, expDate, expDescription,
+  } = form;
 
   const loadData = useCallback(async () => {
     if (dataLoaded) return;
+    setDataLoading(true);
     try {
       const [usersRes, leadsRes, tasksRes, oppsRes, clientsRes] = await Promise.all([
         fetch("/api/users/assignable"),
-        fetch("/api/leads?page=1&limit=200"),
-        fetch("/api/tasks?page=1&limit=200&status=Todo,InProgress"),
-        fetch("/api/opportunities?status=Active&limit=200"),
+        fetch("/api/leads?page=1&limit=50"),
+        fetch("/api/tasks?page=1&limit=50&status=Todo,InProgress"),
+        fetch("/api/opportunities?status=Active&limit=50"),
         fetch("/api/clients"),
       ]);
       if (usersRes.ok) {
@@ -170,8 +174,10 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
       }
     } catch {
       // silent — forms still work, just no dropdown data
+    } finally {
+      setDataLoading(false);
+      setDataLoaded(true);
     }
-    setDataLoaded(true);
   }, [dataLoaded]);
 
   useEffect(() => {
@@ -179,13 +185,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
   }, [open, loadData]);
 
   function resetForms() {
-    setLeadMode("new"); setOppMode("new"); setTaskMode("new"); setFuMode("new");
-    setEditLeadId("none"); setEditOppId("none"); setEditTaskId("none");
-    setLeadName(""); setLeadPhone(""); setLeadSource(""); setLeadTemperature("Cold");
-    setOppName(""); setOppProject(""); setOppPropertyType(""); setOppLocation(""); setOppCommission("");
-    setTaskTitle(""); setTaskAssignedTo(currentUserId); setTaskDueDate(""); setTaskLeadId("none"); setTaskOppId("none"); setTaskSector(""); setTaskClientId("none");
-    setFuLinkType("lead"); setFuLeadId("none"); setFuOppId("none"); setFuTaskId("none"); setFuType("Call"); setFuPriority("Medium"); setFuAssignedTo(currentUserId); setFuDate(""); setFuNotes("");
-    setExpOppId("none"); setExpCategory(""); setExpAmount(""); setExpDate(new Date().toISOString().split("T")[0]); setExpDescription("");
+    dispatch({ type: "RESET", currentUserId });
   }
 
   function navigateToEdit(path: string) {
@@ -365,6 +365,13 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
           <DialogTitle>Quick Add</DialogTitle>
         </DialogHeader>
 
+        {dataLoading && !dataLoaded && (
+          <div className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground">
+            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+            Loading…
+          </div>
+        )}
+
         {/* Admin: Lead / Opp / Task / Follow-up / Expense  (5 tabs)
             Sales:  Lead / Task / Follow-up / Expense         (4 tabs)
             Ops:    Task only                                  (1 tab)  */}
@@ -383,13 +390,13 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
 
           {/* ── LEAD ── */}
           <TabsContent value="lead" className="space-y-3 mt-4">
-            <ModeToggle mode={leadMode} onChange={setLeadMode} />
+            <ModeToggle mode={leadMode} onChange={(m) => set({ leadMode: m })} />
 
             {leadMode === "edit" ? (
               <div className="space-y-3">
                 <div className="space-y-1.5">
                   <Label>Select Lead to Edit</Label>
-                  <Select value={editLeadId} onValueChange={(v) => v && setEditLeadId(v)}>
+                  <Select value={editLeadId} onValueChange={(v) => v && set({ editLeadId: v })}>
                     <SelectTrigger className="w-full">
                       <SelectValue>
                         {editLeadId === "none" ? "Select a lead" : leads.find((l) => l.id === editLeadId) ? `${leads.find((l) => l.id === editLeadId)!.lead_number} – ${leads.find((l) => l.id === editLeadId)!.full_name}` : "Select a lead"}
@@ -411,15 +418,15 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
               <>
                 <div className="space-y-1.5">
                   <Label>Full Name *</Label>
-                  <Input value={leadName} onChange={(e) => setLeadName(e.target.value)} placeholder="e.g. Ravi Sharma" />
+                  <Input value={leadName} onChange={(e) => set({ leadName: e.target.value })} placeholder="e.g. Ravi Sharma" />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Phone *</Label>
-                  <Input value={leadPhone} onChange={(e) => setLeadPhone(e.target.value)} placeholder="+91 98765 43210" type="tel" />
+                  <Input value={leadPhone} onChange={(e) => set({ leadPhone: e.target.value })} placeholder="+91 98765 43210" type="tel" />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Lead Source *</Label>
-                  <Select value={leadSource} onValueChange={(v) => v && setLeadSource(v)}>
+                  <Select value={leadSource} onValueChange={(v) => v && set({ leadSource: v })}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select source">{leadSource || "Select source"}</SelectValue>
                     </SelectTrigger>
@@ -430,7 +437,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
                 </div>
                 <div className="space-y-1.5">
                   <Label>Temperature</Label>
-                  <Select value={leadTemperature} onValueChange={(v) => v && setLeadTemperature(v)}>
+                  <Select value={leadTemperature} onValueChange={(v) => v && set({ leadTemperature: v })}>
                     <SelectTrigger><SelectValue>{leadTemperature}</SelectValue></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Hot">Hot</SelectItem>
@@ -450,13 +457,13 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
 
           {/* ── OPPORTUNITY ── */}
           <TabsContent value="opportunity" className="space-y-3 mt-4">
-            <ModeToggle mode={oppMode} onChange={setOppMode} />
+            <ModeToggle mode={oppMode} onChange={(m) => set({ oppMode: m })} />
 
             {oppMode === "edit" ? (
               <div className="space-y-3">
                 <div className="space-y-1.5">
                   <Label>Select Opportunity to Edit</Label>
-                  <Select value={editOppId} onValueChange={(v) => v && setEditOppId(v)}>
+                  <Select value={editOppId} onValueChange={(v) => v && set({ editOppId: v })}>
                     <SelectTrigger className="w-full">
                       <SelectValue>
                         {editOppId === "none" ? "Select an opportunity" : opps.find((o) => o.id === editOppId) ? `${opps.find((o) => o.id === editOppId)!.opp_number} – ${opps.find((o) => o.id === editOppId)!.name}` : "Select an opportunity"}
@@ -478,16 +485,16 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
               <>
                 <div className="space-y-1.5">
                   <Label>Opportunity Name *</Label>
-                  <Input value={oppName} onChange={(e) => setOppName(e.target.value)} placeholder="e.g. 2BHK in Wakad" />
+                  <Input value={oppName} onChange={(e) => set({ oppName: e.target.value })} placeholder="e.g. 2BHK in Wakad" />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Project *</Label>
-                  <Input value={oppProject} onChange={(e) => setOppProject(e.target.value)} placeholder="e.g. Novara Heights" />
+                  <Input value={oppProject} onChange={(e) => set({ oppProject: e.target.value })} placeholder="e.g. Novara Heights" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label>Property Type *</Label>
-                    <Select value={oppPropertyType} onValueChange={(v) => v && setOppPropertyType(v)}>
+                    <Select value={oppPropertyType} onValueChange={(v) => v && set({ oppPropertyType: v })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Type">{oppPropertyType || "Type"}</SelectValue>
                       </SelectTrigger>
@@ -498,12 +505,12 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
                   </div>
                   <div className="space-y-1.5">
                     <Label>Commission % *</Label>
-                    <Input value={oppCommission} onChange={(e) => setOppCommission(e.target.value)} placeholder="e.g. 2.5" type="number" step="0.1" />
+                    <Input value={oppCommission} onChange={(e) => set({ oppCommission: e.target.value })} placeholder="e.g. 2.5" type="number" step="0.1" />
                   </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Location *</Label>
-                  <Input value={oppLocation} onChange={(e) => setOppLocation(e.target.value)} placeholder="e.g. Wakad, Pune" />
+                  <Input value={oppLocation} onChange={(e) => set({ oppLocation: e.target.value })} placeholder="e.g. Wakad, Pune" />
                 </div>
                 <Button className="w-full" onClick={submitOpportunity} disabled={loading}>
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -515,13 +522,13 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
 
           {/* ── TASK ── */}
           <TabsContent value="task" className="space-y-3 mt-4">
-            <ModeToggle mode={taskMode} onChange={setTaskMode} />
+            <ModeToggle mode={taskMode} onChange={(m) => set({ taskMode: m })} />
 
             {taskMode === "edit" ? (
               <div className="space-y-3">
                 <div className="space-y-1.5">
                   <Label>Select Task to Edit</Label>
-                  <Select value={editTaskId} onValueChange={(v) => v && setEditTaskId(v)}>
+                  <Select value={editTaskId} onValueChange={(v) => v && set({ editTaskId: v })}>
                     <SelectTrigger className="w-full">
                       <SelectValue>
                         {editTaskId === "none" ? "Select a task" : tasks.find((t) => t.id === editTaskId) ? `${tasks.find((t) => t.id === editTaskId)!.task_number} – ${tasks.find((t) => t.id === editTaskId)!.title}` : "Select a task"}
@@ -543,12 +550,12 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
               <>
                 <div className="space-y-1.5">
                   <Label>Title *</Label>
-                  <Input value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} placeholder="Task title" />
+                  <Input value={taskTitle} onChange={(e) => set({ taskTitle: e.target.value })} placeholder="Task title" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label>Assigned To</Label>
-                    <Select value={taskAssignedTo} onValueChange={(v) => v && setTaskAssignedTo(v)}>
+                    <Select value={taskAssignedTo} onValueChange={(v) => v && set({ taskAssignedTo: v })}>
                       <SelectTrigger><SelectValue>{taskAssigneeName}</SelectValue></SelectTrigger>
                       <SelectContent>
                         {users.map((u) => (<SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>))}
@@ -557,12 +564,12 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
                   </div>
                   <div className="space-y-1.5">
                     <Label>Due Date *</Label>
-                    <Input value={taskDueDate} onChange={(e) => setTaskDueDate(e.target.value)} type="date" />
+                    <Input value={taskDueDate} onChange={(e) => set({ taskDueDate: e.target.value })} type="date" />
                   </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Sector</Label>
-                  <Select value={taskSector} onValueChange={(v) => v && setTaskSector(v)}>
+                  <Select value={taskSector} onValueChange={(v) => v && set({ taskSector: v })}>
                     <SelectTrigger className="w-full"><SelectValue>{taskSector || "Select sector"}</SelectValue></SelectTrigger>
                     <SelectContent className="w-full">
                       {SECTORS.map((s) => (<SelectItem key={s} value={s}>{s}</SelectItem>))}
@@ -571,7 +578,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
                 </div>
                 <div className="space-y-1.5">
                   <Label>Link to Lead</Label>
-                  <Select value={taskLeadId} onValueChange={(v) => v && setTaskLeadId(v)}>
+                  <Select value={taskLeadId} onValueChange={(v) => v && set({ taskLeadId: v })}>
                     <SelectTrigger className="w-full"><SelectValue>{taskLeadLabel}</SelectValue></SelectTrigger>
                     <SelectContent className="w-full">
                       <SelectItem value="none">No lead</SelectItem>
@@ -581,7 +588,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
                 </div>
                 <div className="space-y-1.5">
                   <Label>Link to Opportunity</Label>
-                  <Select value={taskOppId} onValueChange={(v) => v && setTaskOppId(v)}>
+                  <Select value={taskOppId} onValueChange={(v) => v && set({ taskOppId: v })}>
                     <SelectTrigger className="w-full"><SelectValue>{taskOppLabel}</SelectValue></SelectTrigger>
                     <SelectContent className="w-full">
                       <SelectItem value="none">No opportunity</SelectItem>
@@ -592,7 +599,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
                 {clients.length > 0 && (
                   <div className="space-y-1.5">
                     <Label>Client</Label>
-                    <Select value={taskClientId} onValueChange={(v) => v && setTaskClientId(v)}>
+                    <Select value={taskClientId} onValueChange={(v) => v && set({ taskClientId: v })}>
                       <SelectTrigger className="w-full">
                         <SelectValue>{taskClientId === "none" ? "No client" : clients.find((c) => c.id === taskClientId)?.name ?? "Select client"}</SelectValue>
                       </SelectTrigger>
@@ -619,7 +626,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
                 <button
                   key={lt}
                   type="button"
-                  onClick={() => setFuLinkType(lt)}
+                  onClick={() => set({ fuLinkType: lt })}
                   className={`flex-1 py-1.5 text-center capitalize transition-colors ${fuLinkType === lt ? "bg-primary text-primary-foreground" : "bg-transparent hover:bg-muted"}`}
                 >
                   {lt === "opportunity" ? "Opp" : lt.charAt(0).toUpperCase() + lt.slice(1)}
@@ -630,7 +637,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
             {fuLinkType === "lead" && (
               <div className="space-y-1.5">
                 <Label>Lead</Label>
-                <Select value={fuLeadId} onValueChange={(v) => v && setFuLeadId(v)}>
+                <Select value={fuLeadId} onValueChange={(v) => v && set({ fuLeadId: v })}>
                   <SelectTrigger className="w-full"><SelectValue>{fuLeadLabel}</SelectValue></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No lead</SelectItem>
@@ -642,7 +649,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
             {fuLinkType === "opportunity" && (
               <div className="space-y-1.5">
                 <Label>Opportunity</Label>
-                <Select value={fuOppId} onValueChange={(v) => v && setFuOppId(v)}>
+                <Select value={fuOppId} onValueChange={(v) => v && set({ fuOppId: v })}>
                   <SelectTrigger className="w-full"><SelectValue>{fuOppLabel}</SelectValue></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No opportunity</SelectItem>
@@ -654,7 +661,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
             {fuLinkType === "task" && (
               <div className="space-y-1.5">
                 <Label>Task</Label>
-                <Select value={fuTaskId} onValueChange={(v) => v && setFuTaskId(v)}>
+                <Select value={fuTaskId} onValueChange={(v) => v && set({ fuTaskId: v })}>
                   <SelectTrigger className="w-full"><SelectValue>{fuTaskLabel}</SelectValue></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No task</SelectItem>
@@ -667,7 +674,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Type</Label>
-                <Select value={fuType} onValueChange={(v) => v && setFuType(v)}>
+                <Select value={fuType} onValueChange={(v) => v && set({ fuType: v })}>
                   <SelectTrigger><SelectValue>{fuType}</SelectValue></SelectTrigger>
                   <SelectContent>
                     {FOLLOW_UP_TYPES.map((t) => (<SelectItem key={t} value={t}>{t}</SelectItem>))}
@@ -676,7 +683,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
               </div>
               <div className="space-y-1.5">
                 <Label>Priority</Label>
-                <Select value={fuPriority} onValueChange={(v) => v && setFuPriority(v)}>
+                <Select value={fuPriority} onValueChange={(v) => v && set({ fuPriority: v })}>
                   <SelectTrigger><SelectValue>{fuPriority}</SelectValue></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="High">High</SelectItem>
@@ -688,12 +695,12 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
             </div>
             <div className="space-y-1.5">
               <Label>Date &amp; Time *</Label>
-              <Input value={fuDate} onChange={(e) => setFuDate(e.target.value)} type="datetime-local" />
+              <Input value={fuDate} onChange={(e) => set({ fuDate: e.target.value })} type="datetime-local" />
             </div>
             {users.length > 0 && (
               <div className="space-y-1.5">
                 <Label>Assign To</Label>
-                <Select value={fuAssignedTo} onValueChange={(v) => v && setFuAssignedTo(v)}>
+                <Select value={fuAssignedTo} onValueChange={(v) => v && set({ fuAssignedTo: v })}>
                   <SelectTrigger className="w-full"><SelectValue>{fuAssigneeName}</SelectValue></SelectTrigger>
                   <SelectContent>
                     {users.map((u) => (<SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>))}
@@ -703,7 +710,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
             )}
             <div className="space-y-1.5">
               <Label>Notes</Label>
-              <Input value={fuNotes} onChange={(e) => setFuNotes(e.target.value)} placeholder="Optional notes" />
+              <Input value={fuNotes} onChange={(e) => set({ fuNotes: e.target.value })} placeholder="Optional notes" />
             </div>
             <Button className="w-full" onClick={submitFollowUp} disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -716,7 +723,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
             <TabsContent value="expense" className="space-y-3 mt-4">
               <div className="space-y-1.5">
                 <Label>Opportunity <span className="text-destructive">*</span></Label>
-                <Select value={expOppId} onValueChange={(v) => v && setExpOppId(v)}>
+                <Select value={expOppId} onValueChange={(v) => v && set({ expOppId: v })}>
                   <SelectTrigger className="w-full">
                     <SelectValue>
                       {expOppId === "none" ? "Select opportunity" : opps.find(o => o.id === expOppId) ? `${opps.find(o => o.id === expOppId)!.opp_number} – ${opps.find(o => o.id === expOppId)!.name}` : "Select opportunity"}
@@ -730,7 +737,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
               </div>
               <div className="space-y-1.5">
                 <Label>Category <span className="text-destructive">*</span></Label>
-                <Select value={expCategory || "__none__"} onValueChange={(v) => setExpCategory(!v || v === "__none__" ? "" : v)}>
+                <Select value={expCategory || "__none__"} onValueChange={(v) => set({ expCategory: !v || v === "__none__" ? "" : v })}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
@@ -743,16 +750,16 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>Amount (₹) <span className="text-destructive">*</span></Label>
-                  <Input type="number" min="0" value={expAmount} onChange={(e) => setExpAmount(e.target.value)} placeholder="0" />
+                  <Input type="number" min="0" value={expAmount} onChange={(e) => set({ expAmount: e.target.value })} placeholder="0" />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Date <span className="text-destructive">*</span></Label>
-                  <Input type="date" value={expDate} onChange={(e) => setExpDate(e.target.value)} />
+                  <Input type="date" value={expDate} onChange={(e) => set({ expDate: e.target.value })} />
                 </div>
               </div>
               <div className="space-y-1.5">
                 <Label>Description</Label>
-                <Input value={expDescription} onChange={(e) => setExpDescription(e.target.value)} placeholder="Optional note" />
+                <Input value={expDescription} onChange={(e) => set({ expDescription: e.target.value })} placeholder="Optional note" />
               </div>
               <Button className="w-full" onClick={submitExpense} disabled={loading}>
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

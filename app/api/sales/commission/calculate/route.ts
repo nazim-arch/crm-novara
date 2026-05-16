@@ -8,6 +8,7 @@ import {
   calcCommission,
   calcAchievementPct,
 } from "@/lib/sales-commission";
+import { CommissionRecordStatus } from "@/lib/commission-utils";
 
 export async function GET(request: Request) {
   try {
@@ -39,7 +40,7 @@ export async function GET(request: Request) {
     const existing = await prisma.salesCommissionRecord.findUnique({
       where: { user_id_year_month: { user_id: userId, year, month } },
     });
-    if (existing?.rec_status === "Finalized")
+    if (existing?.rec_status === CommissionRecordStatus.FINALIZED)
       return NextResponse.json({ data: existing });
 
     // Recalculate
@@ -71,7 +72,7 @@ export async function GET(request: Request) {
         slab_to,
         slab_pct,
         commission_amount,
-        rec_status: "Live",
+        rec_status: CommissionRecordStatus.LIVE,
       },
       update: {
         closed_revenue,

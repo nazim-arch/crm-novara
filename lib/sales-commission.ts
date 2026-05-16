@@ -105,8 +105,7 @@ export async function calcMonthlyRevenue(
   for (const lead of wonLeads) {
     leads_won++;
     if (lead.settlement_value != null && lead.deal_commission_percent != null) {
-      const rev =
-        Number(lead.settlement_value) * Number(lead.deal_commission_percent) / 100;
+      const rev = lead.settlement_value.mul(lead.deal_commission_percent).div(100).toNumber();
       closed_revenue += rev;
     } else {
       leads_won_no_value++;

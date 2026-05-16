@@ -108,32 +108,39 @@ export async function POST(request: Request, { params }: { params: Params }) {
         select: { opportunity_id: true },
       });
 
-      for (const { opportunity_id } of linkedOpps) {
-        const wonLeads = await prisma.leadOpportunity.findMany({
-          where: { opportunity_id },
-          include: {
+      const oppIds = linkedOpps.map((lo) => lo.opportunity_id);
+      if (oppIds.length > 0) {
+        const allLinkedLeads = await prisma.leadOpportunity.findMany({
+          where: { opportunity_id: { in: oppIds } },
+          select: {
+            opportunity_id: true,
             lead: {
               select: { status: true, settlement_value: true, deal_commission_percent: true, deleted_at: true },
             },
           },
         });
 
-        const closedRevenue = wonLeads.reduce((sum, lo) => {
+        const revenueByOpp = new Map<string, number>(oppIds.map((oid) => [oid, 0]));
+        for (const lo of allLinkedLeads) {
           if (
             lo.lead.deleted_at === null &&
             lo.lead.status === "Won" &&
             lo.lead.settlement_value !== null &&
             lo.lead.deal_commission_percent !== null
           ) {
-            return sum + (Number(lo.lead.settlement_value) * Number(lo.lead.deal_commission_percent)) / 100;
+            const prev = revenueByOpp.get(lo.opportunity_id) ?? 0;
+            revenueByOpp.set(
+              lo.opportunity_id,
+              prev + lo.lead.settlement_value.mul(lo.lead.deal_commission_percent).div(100).toNumber(),
+            );
           }
-          return sum;
-        }, 0);
+        }
 
-        await prisma.opportunity.update({
-          where: { id: opportunity_id },
-          data: { closed_revenue: closedRevenue },
-        });
+        await Promise.all(
+          Array.from(revenueByOpp.entries()).map(([oid, closedRevenue]) =>
+            prisma.opportunity.update({ where: { id: oid }, data: { closed_revenue: closedRevenue } }),
+          ),
+        );
       }
 
       if (to_stage === "Won" && settlement_value !== undefined && deal_commission_percent !== undefined) {

@@ -1,3 +1,9 @@
+export const CommissionRecordStatus = {
+  LIVE: "Live",
+  FINALIZED: "Finalized",
+} as const;
+export type CommissionRecordStatusType = typeof CommissionRecordStatus[keyof typeof CommissionRecordStatus];
+
 export type CommissionStatus = "Above Target" | "On Track" | "Below Target" | "No Target";
 
 export function calcAchievementPct(

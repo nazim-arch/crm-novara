@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { updateTaskSchema } from "@/lib/validations/task";
 import { hasPermissionAsync, taskScopeFilter } from "@/lib/rbac";
 import { notifyTaskReassigned } from "@/lib/email-notifications";
+import { inngest } from "@/lib/inngest/client";
 
 type Params = Promise<{ id: string }>;
 
@@ -81,6 +82,19 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
         metadata: { fields: Object.keys(parsed.data), ...(parsed.data.status && { status: parsed.data.status }) },
       },
     });
+
+    // Queue next recurring instance when a recurring task is completed
+    if (parsed.data.status === "Done" && existing.recurrence !== "None" && existing.recurrence) {
+      await inngest.send({
+        name: "task/completed.recurring",
+        data: {
+          taskId: id,
+          recurrence: existing.recurrence,
+          dueDate: (existing.due_date ?? new Date()).toISOString(),
+          completedById: session.user.id,
+        },
+      });
+    }
 
     // Email new assignee if reassigned to someone other than the actor
     if (parsed.data.assigned_to_id && parsed.data.assigned_to_id !== existing.assigned_to_id && parsed.data.assigned_to_id !== session.user.id) {

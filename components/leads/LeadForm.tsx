@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { createLeadSchema, type CreateLeadInput } from "@/lib/validations/lead";
+import { createLeadSchema, updateLeadSchema, type CreateLeadInput } from "@/lib/validations/lead";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -92,7 +92,7 @@ export function LeadForm({
     formState: { errors },
   } = useForm<CreateLeadInput>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(createLeadSchema) as any,
+    resolver: zodResolver(isEditing ? updateLeadSchema : createLeadSchema) as any,
     defaultValues: {
       lead_owner_id: currentUserId,
       assigned_to_id: currentUserId,
@@ -105,6 +105,7 @@ export function LeadForm({
   const email = watch("email");
   const fullName = watch("full_name");
   const nextFollowupDate = watch("next_followup_date");
+  const unitType = watch("unit_type");
 
   // ── When opportunity changes, auto-fill property_type and clear unit_type ─
   useEffect(() => {
@@ -496,7 +497,7 @@ export function LeadForm({
                     </Label>
                     {selectedOpp && unitTypeOptions.length > 0 ? (
                       <Select
-                        value={watch("unit_type") || "__none__"}
+                        value={unitType || "__none__"}
                         onValueChange={(v) => setValue("unit_type", !v || v === "__none__" ? "" : v)}
                       >
                         <SelectTrigger>

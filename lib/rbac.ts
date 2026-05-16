@@ -38,7 +38,13 @@ export async function hasPermissionAsync(role: string, perm: Permission): Promis
 // Returns additional WHERE clause for lead queries based on role
 export function leadScopeFilter(role: string, userId: string) {
   if (role === "Sales") {
-    return { OR: [{ assigned_to_id: userId }, { lead_owner_id: userId }] };
+    return {
+      OR: [
+        { assigned_to_id: userId },
+        { lead_owner_id: userId },
+        { created_by_id: userId },
+      ],
+    };
   }
   return null;
 }

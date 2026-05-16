@@ -1,3 +1,4 @@
+import "@/lib/env"; // validate required env vars at startup
 import { PrismaClient } from "@/lib/generated/prisma/client";
 import { PrismaNeon } from "@prisma/adapter-neon";
 

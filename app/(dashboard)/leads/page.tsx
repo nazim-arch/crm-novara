@@ -20,7 +20,7 @@ import { LeadUpdateModal } from "@/components/leads/LeadUpdateModal";
 import { ExportButton } from "@/components/shared/ExportButton";
 import { LeadContactActions } from "@/components/shared/LeadContactActions";
 import { SortableHeader } from "@/components/shared/SortableHeader";
-import { hasPermissionAsync } from "@/lib/rbac";
+import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
 import { startOfDay, endOfDay, subDays, startOfWeek, startOfMonth, startOfYear } from "date-fns";
 
 const SORT_MAP: Record<string, Prisma.LeadOrderByWithRelationInput> = {
@@ -112,26 +112,19 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     ...(sp.assigned_to && sp.assigned_to !== "all" && { assigned_to_id: sp.assigned_to }),
     ...(sp.search && {
       OR: [
-        { full_name: { contains: sp.search, mode: "insensitive" } },
-        { phone: { contains: sp.search } },
-        { lead_number: { contains: sp.search, mode: "insensitive" } },
+        { full_name: { contains: sp.search.slice(0, 100), mode: "insensitive" } },
+        { phone: { contains: sp.search.slice(0, 100) } },
+        { lead_number: { contains: sp.search.slice(0, 100), mode: "insensitive" } },
       ],
     }),
     ...(sp.source && { lead_source: sp.source }),
     ...(sp.opportunity_id && { opportunities: { some: { opportunity_id: sp.opportunity_id } } }),
   };
 
-  // Role-based scope
-  if (session?.user.role === "Sales") {
-    where.AND = [
-      {
-        OR: [
-          { assigned_to_id: session.user.id },
-          { lead_owner_id: session.user.id },
-          { created_by_id: session.user.id },
-        ],
-      },
-    ];
+  // Role-based scope — single source of truth via leadScopeFilter
+  const scope = leadScopeFilter(session.user.role, session.user.id);
+  if (scope) {
+    where.AND = [scope];
   }
 
   const periodRange = resolvePeriodRange(sp.period, sp.from, sp.to, today);

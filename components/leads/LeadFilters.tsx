@@ -32,10 +32,13 @@ export function LeadFilters({ users, currentParams }: LeadFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
 
+  const { status, temperature, assigned_to, search, filter, source } = currentParams;
+
   const updateParam = useCallback(
     (key: string, value: string) => {
       const params = new URLSearchParams(
-        Object.entries(currentParams).filter(([, v]) => v) as [string, string][]
+        Object.entries({ status, temperature, assigned_to, search, filter, source })
+          .filter(([, v]) => v) as [string, string][]
       );
       if (value && value !== "all") {
         params.set(key, value);
@@ -45,7 +48,7 @@ export function LeadFilters({ users, currentParams }: LeadFiltersProps) {
       params.delete("page");
       router.push(`${pathname}?${params.toString()}`);
     },
-    [router, pathname, currentParams]
+    [router, pathname, status, temperature, assigned_to, search, filter, source]
   );
 
   const handleSearch = useDebouncedCallback((value: string) => {

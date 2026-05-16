@@ -204,7 +204,7 @@ export function LeadContactActions({
             </ActionLink>
           )}
 
-          <LogDialog open={logOpen} onClose={() => setLogOpen(false)} leadId={leadId} contactType={contactType} leadName={leadName} />
+          {logOpen && <LogDialog open={logOpen} onClose={() => setLogOpen(false)} leadId={leadId} contactType={contactType} leadName={leadName} />}
         </div>
       </TooltipProvider>
     );

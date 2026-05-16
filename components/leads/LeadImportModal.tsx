@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import * as XLSX from "xlsx";
 import { Upload, Download, X, CheckCircle2, AlertCircle, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -112,7 +111,8 @@ function mapHeaders(rawHeaders: string[]): Record<string, string> {
   return map;
 }
 
-function downloadTemplate() {
+async function downloadTemplate() {
+  const XLSX = await import("xlsx");
   const wb = XLSX.utils.book_new();
   const headers = [
     "Full Name*", "Phone*", "Lead Source*", "Lead Type*", "Property Type*", "Purpose*", "Potential Lead Value*",
@@ -179,7 +179,8 @@ export function LeadImportModal() {
     setResult(null);
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
+      const XLSX = await import("xlsx");
       const data = e.target?.result;
       const wb = XLSX.read(data, { type: "binary" });
       const ws = wb.Sheets[wb.SheetNames[0]];

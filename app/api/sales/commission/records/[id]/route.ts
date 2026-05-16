@@ -1,6 +1,7 @@
 ﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermissionAsync } from "@/lib/rbac";
+import { CommissionRecordStatus } from "@/lib/commission-utils";
 import { NextResponse } from "next/server";
 
 // PATCH /api/sales/commission/records/:id — finalize a commission record
@@ -18,13 +19,13 @@ export async function PATCH(
 
     const record = await prisma.salesCommissionRecord.findUnique({ where: { id } });
     if (!record) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    if (record.rec_status === "Finalized")
+    if (record.rec_status === CommissionRecordStatus.FINALIZED)
       return NextResponse.json({ error: "Already finalized" }, { status: 409 });
 
     const updated = await prisma.salesCommissionRecord.update({
       where: { id },
       data: {
-        rec_status: "Finalized",
+        rec_status: CommissionRecordStatus.FINALIZED,
         finalized_at: new Date(),
         finalized_by_id: session.user.id,
       },

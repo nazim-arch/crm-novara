@@ -11,7 +11,10 @@ type SendEmailOptions = {
 export async function sendEmail({ to, subject, html }: SendEmailOptions) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    console.warn('[Resend] RESEND_API_KEY not set — skipping email send');
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('[Resend] RESEND_API_KEY is not configured');
+    }
+    console.warn('[Resend] RESEND_API_KEY not set — skipping email send in dev');
     return null;
   }
 

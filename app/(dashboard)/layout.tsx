@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { getInitials } from "@/lib/utils";
 import { SignOutButton } from "@/components/shared/SignOutButton";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -51,8 +52,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
             </DropdownMenu>
           </div>
         </header>
-        <main className="flex-1 overflow-auto bg-muted/30">{children}</main>
-        <QuickAddModal currentUserId={user.id} role={user.role} />
+        <ErrorBoundary>
+          <main className="flex-1 overflow-auto bg-muted/30">{children}</main>
+          <QuickAddModal currentUserId={user.id} role={user.role} />
+        </ErrorBoundary>
       </div>
     </div>
   );

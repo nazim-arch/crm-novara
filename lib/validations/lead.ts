@@ -16,7 +16,7 @@ const leadBaseSchema = z.object({
   referral_source: z.string().optional().or(z.literal("")),
   budget_min: z.coerce.number().positive().optional(),
   budget_max: z.coerce.number().positive().optional(),
-  property_type: z.enum(["Residential", "Commercial", "Plot", "Villa", "Apartment", "Office"], {
+  property_type: z.enum(["Residential", "Commercial", "Plot", "Villa", "Apartment", "Office", "Land"], {
     message: "Property type is required",
   }),
   unit_type: z.string().optional().or(z.literal("")),
@@ -25,7 +25,7 @@ const leadBaseSchema = z.object({
   purpose: z.enum(["EndUse", "Investment"], {
     message: "Purpose is required",
   }),
-  next_followup_date: z.coerce.date().optional(),
+  next_followup_date: z.coerce.date().refine((d) => !isNaN(d.getTime()), "Invalid date").optional(),
   followup_type: z
     .enum(["Call", "Email", "WhatsApp", "Visit", "Meeting", "Activity", "Internal"])
     .optional(),
@@ -43,13 +43,22 @@ export const createLeadSchema = leadBaseSchema.refine(
   { message: "Budget min must be ≤ budget max", path: ["budget_min"] }
 );
 
-export const updateLeadSchema = leadBaseSchema.partial();
+export const updateLeadSchema = leadBaseSchema.partial().refine(
+  (data) =>
+    !data.budget_min ||
+    !data.budget_max ||
+    data.budget_min <= data.budget_max,
+  { message: "Budget min must be ≤ budget max", path: ["budget_min"] }
+);
 
 export const PIPELINE_STAGES = [
   "New", "Prospect", "SiteVisitCompleted", "Negotiation",
   "Won", "Lost", "InvalidLead", "OnHold", "Recycle",
 ] as const;
 
+// Call-disposition states shown on the lead detail page and dashboards.
+// Intentionally not exposed as a list filter — they represent micro-state within
+// a pipeline stage and would create noise at the list level.
 export const ACTIVITY_STAGES = [
   "New", "NoResponse", "Busy", "Unreachable",
   "Prospect", "CallBack", "NotInterested", "Junk",

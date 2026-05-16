@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     const status = searchParams.get("status");
     const temperature = searchParams.get("temperature");
     const assigned_to = searchParams.get("assigned_to");
-    const search = searchParams.get("search");
+    const search = searchParams.get("search")?.slice(0, 100) ?? null;
 
     const andConditions: Prisma.LeadWhereInput[] = [{ deleted_at: null }];
 

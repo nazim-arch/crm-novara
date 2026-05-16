@@ -6,6 +6,7 @@
 import { prisma } from '@/lib/prisma';
 import { sendEmail } from '@/lib/email';
 import * as T from '@/lib/email-templates';
+import { logger } from '@/lib/logger';
 
 async function userEmail(userId: string): Promise<{ email: string; name: string } | null> {
   return prisma.user.findUnique({
@@ -22,7 +23,7 @@ async function adminEmails(): Promise<{ id: string; email: string; name: string 
 }
 
 function fire(promise: Promise<unknown>) {
-  promise.catch((err) => console.error('[email-notifications]', err));
+  promise.catch((err) => logger.error('email-notifications send failed', { error: String(err) }));
 }
 
 // ── Leads ─────────────────────────────────────────────────────────────────────
@@ -99,6 +100,8 @@ export function notifyLeadReassigned(params: {
   })());
 }
 
+// Only notifies the assignee — admins receive dedicated emails for Won/Lost transitions.
+// Sending to all admins on every minor transition (New→Prospect, etc.) creates alert fatigue.
 export function notifyLeadStageChanged(params: {
   assignedToId: string;
   leadId: string;
@@ -110,30 +113,19 @@ export function notifyLeadStageChanged(params: {
   notes?: string | null;
 }) {
   fire((async () => {
-    const [assignee, admins] = await Promise.all([
-      userEmail(params.assignedToId),
-      adminEmails(),
-    ]);
-
-    const recipients: { email: string; name: string }[] = [];
-    if (assignee) recipients.push(assignee);
-    for (const admin of admins) {
-      if (!recipients.find((r) => r.email === admin.email)) recipients.push(admin);
-    }
-
-    await Promise.all(recipients.map((r) => {
-      const tpl = T.leadStageChanged({
-        recipientName: r.name,
-        leadName: params.leadName,
-        leadNumber: params.leadNumber,
-        leadId: params.leadId,
-        fromStage: params.fromStage,
-        toStage: params.toStage,
-        changedBy: params.changedByName,
-        notes: params.notes,
-      });
-      return sendEmail({ to: r.email, ...tpl });
-    }));
+    const assignee = await userEmail(params.assignedToId);
+    if (!assignee) return;
+    const tpl = T.leadStageChanged({
+      recipientName: assignee.name,
+      leadName: params.leadName,
+      leadNumber: params.leadNumber,
+      leadId: params.leadId,
+      fromStage: params.fromStage,
+      toStage: params.toStage,
+      changedBy: params.changedByName,
+      notes: params.notes,
+    });
+    await sendEmail({ to: assignee.email, ...tpl });
   })());
 }
 
