@@ -432,6 +432,7 @@ export function SalesFocusQueue({
   const [loading, setLoading] = useState(true);
   const [cardIdx, setCardIdx] = useState(0);
   const [activeTab, setActiveTab] = useState("focus");
+  const [queueFilter, setQueueFilter] = useState<"all" | "overdue" | "due_today">("all");
   const [agentFilter, setAgentFilter] = useState<string>(isManagerOrAdmin ? "mine" : currentUserId);
   const [modal, setModal] = useState<ModalState | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -471,7 +472,7 @@ export function SalesFocusQueue({
   }, [data?.queue.length]);
 
   function openModal(type: ModalType) {
-    const item = data?.queue[cardIdx];
+    const item = filteredQueue[cardIdx];
     if (!item) return;
     setForm({});
     setSubAction("callback_today");
@@ -479,7 +480,7 @@ export function SalesFocusQueue({
   }
 
   async function logAttempt(channel: "Call" | "WhatsApp" | "Email") {
-    const item = data?.queue[cardIdx];
+    const item = filteredQueue[cardIdx];
     if (!item) return;
     await fetch(`/api/follow-ups/${item.id}/action`, {
       method: "POST",
@@ -602,7 +603,7 @@ export function SalesFocusQueue({
               : prev.callback_pending,
           };
         });
-        setCardIdx((i) => Math.max(0, Math.min(i, (data?.queue.length ?? 2) - 2)));
+        setCardIdx((i) => Math.max(0, Math.min(i, filteredQueue.length - 2)));
         toast.success("Parked for callback today");
       } else if (resultAction === "notes_updated") {
         setData((prev) => {
@@ -626,7 +627,7 @@ export function SalesFocusQueue({
             stats: { ...prev.stats, completed_today: prev.stats.completed_today + (result.data.completed_at ? 1 : 0) },
           };
         });
-        setCardIdx((i) => Math.max(0, Math.min(i, (data?.queue.length ?? 2) - 2)));
+        setCardIdx((i) => Math.max(0, Math.min(i, filteredQueue.length - 2)));
         toast.success("Done");
       }
     } catch {
@@ -639,7 +640,16 @@ export function SalesFocusQueue({
   const f = (key: string, val: string) => setForm((p) => ({ ...p, [key]: val }));
   const stats = data?.stats;
   const queue = data?.queue ?? [];
-  const currentItem = queue[cardIdx];
+
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const todayEnd   = new Date(); todayEnd.setHours(23, 59, 59, 999);
+  const filteredQueue = queueFilter === "overdue"
+    ? queue.filter((item) => !item.callback_at && new Date(item.scheduled_at) < todayStart)
+    : queueFilter === "due_today"
+    ? queue.filter((item) => { const d = new Date(item.scheduled_at); return d >= todayStart && d <= todayEnd; })
+    : queue;
+
+  const currentItem = filteredQueue[cardIdx];
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
@@ -672,9 +682,11 @@ export function SalesFocusQueue({
       {stats && (
         <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
           <StatCard label="Overdue" value={stats.overdue} cls="text-destructive"
-            isActive={activeTab === "focus"} onClick={() => setActiveTab("focus")} />
+            isActive={activeTab === "focus" && queueFilter === "overdue"}
+            onClick={() => { setActiveTab("focus"); setQueueFilter("overdue"); setCardIdx(0); }} />
           <StatCard label="Due Today" value={stats.due_today} cls="text-orange-600"
-            isActive={activeTab === "focus"} onClick={() => setActiveTab("focus")} />
+            isActive={activeTab === "focus" && queueFilter === "due_today"}
+            onClick={() => { setActiveTab("focus"); setQueueFilter("due_today"); setCardIdx(0); }} />
           <StatCard label="Callback Today" value={stats.callback_today} cls="text-violet-600"
             isActive={activeTab === "callback"} onClick={() => setActiveTab("callback")} />
           <StatCard label="Completed Today" value={stats.completed_today} cls="text-emerald-600"
@@ -689,7 +701,7 @@ export function SalesFocusQueue({
         <TabsList className="flex flex-wrap h-auto gap-1">
           <TabsTrigger value="focus" className="gap-1 text-xs sm:text-sm">
             <Zap className="h-3.5 w-3.5" />Focus Queue
-            {queue.length > 0 && <span className="ml-0.5 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold px-1.5 leading-5">{queue.length}</span>}
+            {queue.length > 0 && <span className="ml-0.5 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold px-1.5 leading-5">{filteredQueue.length < queue.length ? `${filteredQueue.length}/${queue.length}` : queue.length}</span>}
           </TabsTrigger>
           <TabsTrigger value="callback" className="gap-1 text-xs sm:text-sm">
             <RotateCcw className="h-3.5 w-3.5" />Callback Today
@@ -710,7 +722,7 @@ export function SalesFocusQueue({
             <div className="flex items-center justify-center py-16">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-          ) : queue.length === 0 ? (
+          ) : filteredQueue.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <CheckCircle className="h-12 w-12 text-emerald-400 mb-3" />
               <p className="text-lg font-semibold">You are caught up.</p>
@@ -727,13 +739,19 @@ export function SalesFocusQueue({
                   <Button variant="outline" size="icon" className="h-7 w-7" disabled={cardIdx === 0} onClick={() => setCardIdx((i) => Math.max(0, i - 1))}>
                     <ChevronLeft className="h-3.5 w-3.5" />
                   </Button>
-                  <span className="text-xs text-muted-foreground">{cardIdx + 1} of {queue.length}</span>
-                  <Button variant="outline" size="icon" className="h-7 w-7" disabled={cardIdx >= queue.length - 1} onClick={() => setCardIdx((i) => Math.min(queue.length - 1, i + 1))}>
+                  <span className="text-xs text-muted-foreground">{cardIdx + 1} of {filteredQueue.length}</span>
+                  <Button variant="outline" size="icon" className="h-7 w-7" disabled={cardIdx >= filteredQueue.length - 1} onClick={() => setCardIdx((i) => Math.min(filteredQueue.length - 1, i + 1))}>
                     <ChevronRight className="h-3.5 w-3.5" />
                   </Button>
                   <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={fetchData}>
                     <RotateCcw className="h-3 w-3 mr-1" />Refresh
                   </Button>
+                  {queueFilter !== "all" && (
+                    <button onClick={() => { setQueueFilter("all"); setCardIdx(0); }}
+                      className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground hover:bg-muted/70 transition-colors">
+                      {queueFilter === "overdue" ? "Overdue only ×" : "Due today only ×"}
+                    </button>
+                  )}
                 </div>
                 <p className="text-[10px] text-muted-foreground hidden sm:block">← → navigate</p>
               </div>
@@ -741,15 +759,15 @@ export function SalesFocusQueue({
               {/* Card */}
               {currentItem && (
                 <div className="max-w-xl mx-auto">
-                  <FocusCard item={currentItem} idx={cardIdx} total={queue.length} onAction={openModal} onLogAttempt={logAttempt} />
+                  <FocusCard item={currentItem} idx={cardIdx} total={filteredQueue.length} onAction={openModal} onLogAttempt={logAttempt} />
                 </div>
               )}
 
               {/* Queue preview list */}
-              {queue.length > 1 && (
+              {filteredQueue.length > 1 && (
                 <div className="max-w-xl mx-auto mt-3 rounded-lg border divide-y max-h-48 overflow-y-auto text-xs">
-                  {queue.map((item, i) => {
-                    const isOverdue = !item.callback_at && new Date(item.scheduled_at) < new Date();
+                  {filteredQueue.map((item, i) => {
+                    const isOverdue = !item.callback_at && new Date(item.scheduled_at) < todayStart;
                     return (
                       <button key={item.id} onClick={() => setCardIdx(i)}
                         className={`w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/40 transition-colors ${i === cardIdx ? "bg-muted/50 font-medium" : ""}`}>
