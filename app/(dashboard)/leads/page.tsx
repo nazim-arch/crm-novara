@@ -91,9 +91,10 @@ type SearchParams = Promise<{
 
 export default async function LeadsPage({ searchParams }: { searchParams: SearchParams }) {
   const session = await auth();
+  if (!session?.user) return null;
   const sp = await searchParams;
-  const canImport = session?.user ? await hasPermissionAsync(session.user.role, "lead:import") : false;
-  const canExport = session?.user ? await hasPermissionAsync(session.user.role, "lead:export") : false;
+  const canImport = await hasPermissionAsync(session.user.role, "lead:import");
+  const canExport = await hasPermissionAsync(session.user.role, "lead:export");
 
   const today = new Date();
   const todayStart = startOfDay(today);
