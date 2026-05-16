@@ -413,6 +413,8 @@ export function AdminReviewQueue({ users }: { users: { id: string; name: string 
   const [histPage, setHistPage] = useState(1);
   const [histStatus, setHistStatus] = useState("Reviewed");
   const [backfillChecked, setBackfillChecked] = useState(false);
+  const [activeTab, setActiveTab] = useState("queue");
+  const [todayOnly, setTodayOnly] = useState(false);
 
   // Action modal state
   const [actionModal, setActionModal] = useState<ActionType | null>(null);
@@ -437,6 +439,11 @@ export function AdminReviewQueue({ users }: { users: { id: string; name: string 
     if (agentFilter !== "all") params.set("agent", agentFilter);
     if (tempFilter !== "all") params.set("temperature", tempFilter);
     if (search) params.set("search", search);
+    if (todayOnly) {
+      const today = new Date().toISOString().split("T")[0];
+      params.set("date_from", today);
+      params.set("date_to", today);
+    }
     params.set("per_page", "50");
 
     const res = await fetch(`/api/admin/lead-review?${params}`);
@@ -447,7 +454,7 @@ export function AdminReviewQueue({ users }: { users: { id: string; name: string 
     } else {
       setQueue((p) => ({ ...p, loading: false }));
     }
-  }, [statusFilter, agentFilter, tempFilter, search]);
+  }, [statusFilter, agentFilter, tempFilter, search, todayOnly]);
 
   const fetchHistory = useCallback(async () => {
     setHistory((p) => ({ ...p, loading: true }));
@@ -572,26 +579,56 @@ export function AdminReviewQueue({ users }: { users: { id: string; name: string 
       {/* Stats Row */}
       {stats && (
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-          {[
-            { label: "Pending", value: stats.pending, color: "text-foreground" },
-            { label: "Today", value: stats.today, color: "text-orange-600" },
-            { label: "Ask Agent", value: stats.ask_agent, color: "text-blue-600" },
-            { label: "Parked", value: stats.parked, color: "text-amber-600" },
-            { label: "Escalated", value: stats.escalated, color: "text-destructive" },
-            { label: "Reviewed", value: stats.reviewed, color: "text-emerald-600" },
-          ].map((s) => (
-            <Card key={s.label} className="p-0">
-              <CardContent className="py-2 px-3">
+          {([
+            {
+              label: "Pending", value: stats.pending, color: "text-foreground",
+              isActive: activeTab === "queue" && !todayOnly,
+              onClick: () => { setActiveTab("queue"); setStatusFilter("Pending"); setTodayOnly(false); },
+            },
+            {
+              label: "Today", value: stats.today, color: "text-orange-600",
+              isActive: activeTab === "queue" && todayOnly,
+              onClick: () => { setActiveTab("queue"); setStatusFilter("Pending"); setTodayOnly(true); },
+            },
+            {
+              label: "Ask Agent", value: stats.ask_agent, color: "text-blue-600",
+              isActive: activeTab === "history" && histStatus === "AskAgent",
+              onClick: () => { setActiveTab("history"); setHistStatus("AskAgent"); setHistPage(1); },
+            },
+            {
+              label: "Parked", value: stats.parked, color: "text-amber-600",
+              isActive: activeTab === "history" && histStatus === "Parked",
+              onClick: () => { setActiveTab("history"); setHistStatus("Parked"); setHistPage(1); },
+            },
+            {
+              label: "Escalated", value: stats.escalated, color: "text-destructive",
+              isActive: activeTab === "history" && histStatus === "Escalated",
+              onClick: () => { setActiveTab("history"); setHistStatus("Escalated"); setHistPage(1); },
+            },
+            {
+              label: "Reviewed", value: stats.reviewed, color: "text-emerald-600",
+              isActive: activeTab === "history" && histStatus === "Reviewed",
+              onClick: () => { setActiveTab("history"); setHistStatus("Reviewed"); setHistPage(1); },
+            },
+          ] as const).map((s) => (
+            <button
+              key={s.label}
+              onClick={s.onClick}
+              className={`text-left rounded-lg border bg-card p-0 transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                s.isActive ? "ring-2 ring-primary border-primary" : "hover:border-muted-foreground/40"
+              }`}
+            >
+              <div className="py-2 px-3">
                 <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
                 <p className="text-[11px] text-muted-foreground">{s.label}</p>
-              </CardContent>
-            </Card>
+              </div>
+            </button>
           ))}
         </div>
       )}
 
       {/* Inner Tabs: Queue | History */}
-      <Tabs defaultValue="queue">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="queue" className="gap-1 text-xs sm:text-sm">
             <Inbox className="h-3.5 w-3.5" />
@@ -612,6 +649,15 @@ export function AdminReviewQueue({ users }: { users: { id: string; name: string 
         <TabsContent value="queue" className="space-y-3 mt-3">
           {/* Filters */}
           <div className="flex flex-wrap gap-2">
+            {todayOnly && (
+              <button
+                onClick={() => setTodayOnly(false)}
+                className="flex items-center gap-1 px-2 py-1 rounded-full bg-orange-100 text-orange-700 text-xs font-medium hover:bg-orange-200 transition-colors"
+              >
+                <Clock className="h-3 w-3" />
+                Today only ×
+              </button>
+            )}
             <div className="relative flex-1 min-w-[160px]">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
