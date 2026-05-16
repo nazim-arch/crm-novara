@@ -298,56 +298,21 @@ function ReviewCard({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-wrap gap-2 pt-1 border-t">
-          <Button
-            size="sm"
-            variant="outline"
-            className="flex-1 gap-1 text-emerald-700 border-emerald-200 hover:bg-emerald-50 text-xs"
-            onClick={onDirectReview}
-            disabled={submitting}
-          >
-            <CheckCircle className="h-3.5 w-3.5" />
-            Reviewed
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1 border-t">
+          <Button size="sm" variant="outline" className="gap-1 text-emerald-700 border-emerald-200 hover:bg-emerald-50 text-xs" onClick={onDirectReview} disabled={submitting}>
+            <CheckCircle className="h-3.5 w-3.5" />Reviewed
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="flex-1 gap-1 text-amber-700 border-amber-200 hover:bg-amber-50 text-xs"
-            onClick={() => onAction("park")}
-            disabled={submitting}
-          >
-            <PauseCircle className="h-3.5 w-3.5" />
-            Park
+          <Button size="sm" variant="outline" className="gap-1 text-amber-700 border-amber-200 hover:bg-amber-50 text-xs" onClick={() => onAction("park")} disabled={submitting}>
+            <PauseCircle className="h-3.5 w-3.5" />Park
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="flex-1 gap-1 text-blue-700 border-blue-200 hover:bg-blue-50 text-xs"
-            onClick={() => onAction("ask_agent")}
-            disabled={submitting}
-          >
-            <MessageSquare className="h-3.5 w-3.5" />
-            Ask Agent
+          <Button size="sm" variant="outline" className="gap-1 text-blue-700 border-blue-200 hover:bg-blue-50 text-xs" onClick={() => onAction("ask_agent")} disabled={submitting}>
+            <MessageSquare className="h-3.5 w-3.5" />Ask Agent
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="flex-1 gap-1 text-purple-700 border-purple-200 hover:bg-purple-50 text-xs"
-            onClick={() => onAction("client_followup")}
-            disabled={submitting}
-          >
-            <UserCheck className="h-3.5 w-3.5" />
-            Follow-up
+          <Button size="sm" variant="outline" className="gap-1 text-purple-700 border-purple-200 hover:bg-purple-50 text-xs" onClick={() => onAction("client_followup")} disabled={submitting}>
+            <UserCheck className="h-3.5 w-3.5" />Follow-up
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="flex-1 gap-1 text-destructive border-destructive/30 hover:bg-destructive/10 text-xs"
-            onClick={() => onAction("escalate")}
-            disabled={submitting}
-          >
-            <AlertOctagon className="h-3.5 w-3.5" />
-            Escalate
+          <Button size="sm" variant="outline" className="col-span-2 sm:col-span-1 gap-1 text-destructive border-destructive/30 hover:bg-destructive/10 text-xs" onClick={() => onAction("escalate")} disabled={submitting}>
+            <AlertOctagon className="h-3.5 w-3.5" />Escalate
           </Button>
         </div>
       </div>
@@ -863,7 +828,7 @@ export function AdminReviewQueue({ users }: { users: { id: string; name: string 
 
       {/* ── Action Modals ── */}
       <Dialog open={!!actionModal} onOpenChange={(o) => { if (!o) setActionModal(null); }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[85dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{getModalTitle(actionModal)}</DialogTitle>
           </DialogHeader>

@@ -75,16 +75,16 @@ function inrFmt(n: number) {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 }
 
-function StatCard({ label, value, cls, onClick, isActive }: {
+function StatCard({ label, value, cls, onClick, isActive, className }: {
   label: string; value: number; cls?: string;
-  onClick?: () => void; isActive?: boolean;
+  onClick?: () => void; isActive?: boolean; className?: string;
 }) {
   return (
     <button
       onClick={onClick}
       className={`text-left rounded-lg border bg-card transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
         onClick ? "cursor-pointer hover:shadow-md" : "cursor-default"
-      } ${isActive ? "ring-2 ring-primary border-primary" : onClick ? "hover:border-muted-foreground/40" : ""}`}
+      } ${isActive ? "ring-2 ring-primary border-primary" : onClick ? "hover:border-muted-foreground/40" : ""} ${className ?? ""}`}
     >
       <div className="py-2 px-3">
         <p className={`text-xl font-bold ${cls ?? ""}`}>{value}</p>
@@ -198,10 +198,10 @@ function FocusCard({
           <a
             href={`tel:${lead?.phone ?? ""}`}
             onClick={() => onLogAttempt("Call")}
-            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold text-sm transition-colors"
+            className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold text-sm transition-colors"
           >
-            <Phone className="h-4 w-4" />
-            {lead?.phone ?? "Call"}
+            <Phone className="h-4 w-4 shrink-0" />
+            <span className="truncate">{lead?.phone ?? "Call"}</span>
           </a>
           {(lead?.whatsapp ?? lead?.phone) && (
             <a
@@ -209,10 +209,10 @@ function FocusCard({
               target="_blank"
               rel="noopener noreferrer"
               onClick={() => onLogAttempt("WhatsApp")}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-sm transition-colors"
+              className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-sm transition-colors"
             >
-              <MessageCircle className="h-4 w-4" />
-              WhatsApp
+              <MessageCircle className="h-4 w-4 shrink-0" />
+              <span className="truncate">WhatsApp</span>
             </a>
           )}
           {lead?.email && (
@@ -312,14 +312,14 @@ function FocusCard({
             </Button>
           </div>
           {/* Secondary actions */}
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
             <Button size="sm" variant="outline" className="gap-1 text-blue-700 border-blue-200 hover:bg-blue-50 text-xs h-9" onClick={() => onAction("schedule_next")}>
               <Calendar className="h-3.5 w-3.5" />Schedule Next
             </Button>
             <Button size="sm" variant="outline" className="gap-1 text-indigo-700 border-indigo-200 hover:bg-indigo-50 text-xs h-9" onClick={() => onAction("update_stage")}>
               <Zap className="h-3.5 w-3.5" />Update Stage
             </Button>
-            <Button size="sm" variant="outline" className="gap-1 text-purple-700 border-purple-200 hover:bg-purple-50 text-xs h-9" onClick={() => onAction("site_visit_done")}>
+            <Button size="sm" variant="outline" className="col-span-2 sm:col-span-1 gap-1 text-purple-700 border-purple-200 hover:bg-purple-50 text-xs h-9" onClick={() => onAction("site_visit_done")}>
               <BadgeCheck className="h-3.5 w-3.5" />Site Visit Done
             </Button>
           </div>
@@ -680,7 +680,7 @@ export function SalesFocusQueue({
 
       {/* Stats Row */}
       {stats && (
-        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
           <StatCard label="Overdue" value={stats.overdue} cls="text-destructive"
             isActive={activeTab === "focus" && queueFilter === "overdue"}
             onClick={() => { setActiveTab("focus"); setQueueFilter("overdue"); setCardIdx(0); }} />
@@ -692,6 +692,7 @@ export function SalesFocusQueue({
           <StatCard label="Completed Today" value={stats.completed_today} cls="text-emerald-600"
             isActive={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
           <StatCard label="Hot Active" value={stats.hot_active} cls="text-red-600"
+            className="col-span-2 sm:col-span-1"
             isActive={activeTab === "all"} onClick={() => setActiveTab("all")} />
         </div>
       )}
