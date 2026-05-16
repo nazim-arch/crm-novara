@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 
+function noIndex(res: NextResponse) {
+  res.headers.set("X-Robots-Tag", "noindex, nofollow");
+  return res;
+}
+
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -10,12 +15,12 @@ export async function proxy(req: NextRequest) {
     if (authorization !== `Bearer ${process.env.CRON_SECRET}`) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    return NextResponse.next();
+    return noIndex(NextResponse.next());
   }
 
   // Skip auth check for auth API routes, health, and static files
   if (pathname.startsWith("/api/auth") || pathname.startsWith("/api/health") || pathname.startsWith("/api/inngest") || pathname.startsWith("/_next") || pathname.includes(".")) {
-    return NextResponse.next();
+    return noIndex(NextResponse.next());
   }
 
   let isAuthenticated = false;
@@ -51,7 +56,7 @@ export async function proxy(req: NextRequest) {
   // Public auth routes — no login required
   const publicRoutes = ["/login", "/forgot-password", "/reset-password"];
   if (publicRoutes.includes(pathname) || publicRoutes.some(r => pathname.startsWith(r))) {
-    return NextResponse.next();
+    return noIndex(NextResponse.next());
   }
 
   // Protect all other routes
@@ -59,7 +64,7 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  return NextResponse.next();
+  return noIndex(NextResponse.next());
 }
 
 export const config = {
