@@ -613,6 +613,11 @@ model FollowUp {
   notes          String?
   outcome        String?
   created_by_id  String
+  // Focus Queue fields
+  callback_at       DateTime?         // resurface time when "Callback Again Today" is chosen
+  attempt_count     Int       @default(0)
+  no_response_count Int       @default(0)
+
   created_at     DateTime         @default(now())
   updated_at     DateTime         @default(now()) @updatedAt
 

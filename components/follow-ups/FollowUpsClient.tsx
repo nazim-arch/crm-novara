@@ -19,13 +19,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PriorityBadge } from "@/components/shared/LeadStatusBadge";
 import { AdminReviewQueue } from "./AdminReviewQueue";
+import { SalesFocusQueue } from "./SalesFocusQueue";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { startOfDay, endOfDay, addDays, differenceInCalendarDays } from "date-fns";
 import {
   Phone, Mail, MessageCircle, Home, Users, Zap, Flame,
   AlertTriangle, Clock, Search, Trash2, Loader2, Check, Plus,
   Building2, User, Calendar, CheckCircle2, ArrowUpDown, ArrowUp, ArrowDown,
-  ClipboardCheck,
+  ClipboardCheck, Target,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -53,6 +54,7 @@ interface FollowUpsClientProps {
   isManagerOrAdmin: boolean;
   isAdmin: boolean;
   currentUserId: string;
+  role: string;
 }
 
 // ── Relative date display ────────────────────────────────────────
@@ -227,7 +229,9 @@ export function FollowUpsClient({
   isManagerOrAdmin,
   isAdmin,
   currentUserId,
+  role,
 }: FollowUpsClientProps) {
+  const showFocusQueue = role === "Sales" || isManagerOrAdmin;
   const [followUps, setFollowUps] = useState<FollowUp[]>(initialFollowUps);
   const [search, setSearch] = useState("");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
@@ -434,6 +438,13 @@ export function FollowUpsClient({
             <span>Done</span>
             <span className="text-[10px] opacity-70 ml-0.5">({buckets.completed.length})</span>
           </TabsTrigger>
+          {showFocusQueue && (
+            <TabsTrigger value="focus_queue" className="gap-1 text-xs sm:text-sm">
+              <Target className="h-3.5 w-3.5 shrink-0" />
+              <span className="hidden sm:inline">Focus Queue</span>
+              <span className="sm:hidden">Focus</span>
+            </TabsTrigger>
+          )}
           {isAdmin && (
             <TabsTrigger value="review_queue" className="gap-1 text-xs sm:text-sm">
               <ClipboardCheck className="h-3.5 w-3.5 shrink-0" />
@@ -461,6 +472,17 @@ export function FollowUpsClient({
         <TabsContent value="completed">
           <FollowUpList items={buckets.completed} emptyText="No completed follow-ups" isCompleted {...sharedProps} />
         </TabsContent>
+        {showFocusQueue && (
+          <TabsContent value="focus_queue">
+            <SalesFocusQueue
+              isAdmin={isAdmin}
+              isManagerOrAdmin={isManagerOrAdmin}
+              users={users}
+              currentUserId={currentUserId}
+              role={role}
+            />
+          </TabsContent>
+        )}
         {isAdmin && (
           <TabsContent value="review_queue">
             <AdminReviewQueue users={users} />

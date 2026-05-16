@@ -54,6 +54,7 @@ export default async function FollowUpsPage() {
       isManagerOrAdmin={isManagerOrAdmin}
       isAdmin={isAdmin}
       currentUserId={session?.user.id ?? ""}
+      role={role}
     />
   );
 }
