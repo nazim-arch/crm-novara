@@ -75,14 +75,22 @@ function inrFmt(n: number) {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 }
 
-function StatCard({ label, value, cls }: { label: string; value: number; cls?: string }) {
+function StatCard({ label, value, cls, onClick, isActive }: {
+  label: string; value: number; cls?: string;
+  onClick?: () => void; isActive?: boolean;
+}) {
   return (
-    <Card className="p-0">
-      <CardContent className="py-2 px-3">
+    <button
+      onClick={onClick}
+      className={`text-left rounded-lg border bg-card transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+        onClick ? "cursor-pointer hover:shadow-md" : "cursor-default"
+      } ${isActive ? "ring-2 ring-primary border-primary" : onClick ? "hover:border-muted-foreground/40" : ""}`}
+    >
+      <div className="py-2 px-3">
         <p className={`text-xl font-bold ${cls ?? ""}`}>{value}</p>
         <p className="text-[11px] text-muted-foreground leading-tight">{label}</p>
-      </CardContent>
-    </Card>
+      </div>
+    </button>
   );
 }
 
@@ -423,6 +431,7 @@ export function SalesFocusQueue({
   const [data, setData] = useState<QueueData | null>(null);
   const [loading, setLoading] = useState(true);
   const [cardIdx, setCardIdx] = useState(0);
+  const [activeTab, setActiveTab] = useState("focus");
   const [agentFilter, setAgentFilter] = useState<string>(isManagerOrAdmin ? "mine" : currentUserId);
   const [modal, setModal] = useState<ModalState | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -662,16 +671,21 @@ export function SalesFocusQueue({
       {/* Stats Row */}
       {stats && (
         <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-          <StatCard label="Overdue" value={stats.overdue} cls="text-destructive" />
-          <StatCard label="Due Today" value={stats.due_today} cls="text-orange-600" />
-          <StatCard label="Callback Today" value={stats.callback_today} cls="text-violet-600" />
-          <StatCard label="Completed Today" value={stats.completed_today} cls="text-emerald-600" />
-          <StatCard label="Hot Active" value={stats.hot_active} cls="text-red-600" />
+          <StatCard label="Overdue" value={stats.overdue} cls="text-destructive"
+            isActive={activeTab === "focus"} onClick={() => setActiveTab("focus")} />
+          <StatCard label="Due Today" value={stats.due_today} cls="text-orange-600"
+            isActive={activeTab === "focus"} onClick={() => setActiveTab("focus")} />
+          <StatCard label="Callback Today" value={stats.callback_today} cls="text-violet-600"
+            isActive={activeTab === "callback"} onClick={() => setActiveTab("callback")} />
+          <StatCard label="Completed Today" value={stats.completed_today} cls="text-emerald-600"
+            isActive={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
+          <StatCard label="Hot Active" value={stats.hot_active} cls="text-red-600"
+            isActive={activeTab === "all"} onClick={() => setActiveTab("all")} />
         </div>
       )}
 
       {/* Inner Tabs */}
-      <Tabs defaultValue="focus">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="flex flex-wrap h-auto gap-1">
           <TabsTrigger value="focus" className="gap-1 text-xs sm:text-sm">
             <Zap className="h-3.5 w-3.5" />Focus Queue
