@@ -122,22 +122,22 @@ export default async function TaskDashboardPage({ searchParams }: { searchParams
     }) : Promise.resolve([]),
   ]);
 
-  // Resolve names for all groupBy results
-  const allAssigneeIds = [...new Set([
-    ...byAssignee.map(a => a.assigned_to_id),
-    ...completedByAssignee.map(a => a.assigned_to_id),
-  ])];
+  // For Admin/Manager (!isScoped) we already fetched allActiveUsers in the main Promise.all.
+  // Reuse that to build the assignee name map — saves one DB round-trip.
   const allClientIds = [...new Set([
     ...byClient.map(c => c.client_id).filter(Boolean) as string[],
     ...completedByClient.map(c => c.client_id).filter(Boolean) as string[],
   ])];
 
-  const [users, clientRecords] = await Promise.all([
-    prisma.user.findMany({ where: { id: { in: allAssigneeIds } }, select: { id: true, name: true } }),
-    prisma.client.findMany({ where: { id: { in: allClientIds } }, select: { id: true, name: true } }),
+  const [clientRecords] = await Promise.all([
+    allClientIds.length > 0
+      ? prisma.client.findMany({ where: { id: { in: allClientIds } }, select: { id: true, name: true } })
+      : Promise.resolve([]),
   ]);
 
-  const userMap = Object.fromEntries(users.map(u => [u.id, u.name]));
+  const userMap = !isScoped
+    ? Object.fromEntries(allActiveUsers.map(u => [u.id, u.name]))
+    : { [session.user.id]: session.user.name ?? "" };
   const clientMap = Object.fromEntries(clientRecords.map(c => [c.id, c.name]));
 
   const assigneeData = byAssignee.map(a => ({ name: userMap[a.assigned_to_id] ?? "Unknown", count: a._count.id }));

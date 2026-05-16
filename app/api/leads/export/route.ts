@@ -34,15 +34,23 @@ export async function GET(request: Request) {
     const scope = leadScopeFilter(session.user.role, session.user.id);
     if (scope) andConditions.push(scope);
 
+    const EXPORT_LIMIT = 5000;
     const leads = await prisma.lead.findMany({
       where: { AND: andConditions },
-      include: {
+      select: {
+        lead_number: true, full_name: true, phone: true, email: true, whatsapp: true,
+        lead_source: true, lead_type: true, status: true, activity_stage: true,
+        temperature: true, property_type: true, purpose: true,
+        budget_min: true, budget_max: true, location_preference: true,
+        unit_type: true, timeline_to_buy: true, potential_lead_value: true,
+        next_followup_date: true, lost_reason: true, created_at: true,
         assigned_to: { select: { name: true } },
         lead_owner: { select: { name: true } },
       },
       orderBy: { created_at: "desc" },
-      take: 10000,
+      take: EXPORT_LIMIT,
     });
+    const truncated = leads.length === EXPORT_LIMIT;
 
     const rows = leads.map((l) => ({
       "Lead ID": l.lead_number,
@@ -80,6 +88,7 @@ export async function GET(request: Request) {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "Content-Disposition": `attachment; filename="leads-${new Date().toISOString().split("T")[0]}.xlsx"`,
+        ...(truncated && { "X-Export-Truncated": "true", "X-Export-Limit": String(EXPORT_LIMIT) }),
       },
     });
   } catch (error) {

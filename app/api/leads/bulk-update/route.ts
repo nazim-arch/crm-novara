@@ -71,7 +71,10 @@ export async function POST(request: Request) {
       if (n) nameSet.add(n.toLowerCase());
     }
     const allUsers = nameSet.size > 0
-      ? await prisma.user.findMany({ select: { id: true, name: true } })
+      ? await prisma.user.findMany({
+          where: { name: { in: Array.from(nameSet), mode: "insensitive" } },
+          select: { id: true, name: true },
+        })
       : [];
     const userByName = new Map(allUsers.map(u => [u.name.toLowerCase(), u.id]));
 

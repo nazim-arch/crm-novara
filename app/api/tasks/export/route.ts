@@ -23,17 +23,22 @@ export async function GET(request: Request) {
       ...(priority && priority !== "all" && { priority: priority as Prisma.EnumTaskPriorityFilter }),
     };
 
+    const EXPORT_LIMIT = 5000;
     const tasks = await prisma.task.findMany({
       where,
-      include: {
+      select: {
+        task_number: true, title: true, description: true, priority: true,
+        status: true, due_date: true, start_date: true, completion_date: true,
+        revenue_tagged: true, revenue_amount: true, notes: true, created_at: true,
         assigned_to: { select: { name: true } },
         created_by: { select: { name: true } },
         lead: { select: { lead_number: true, full_name: true } },
         opportunity: { select: { opp_number: true, name: true } },
       },
       orderBy: { due_date: "asc" },
-      take: 10000,
+      take: EXPORT_LIMIT,
     });
+    const truncated = tasks.length === EXPORT_LIMIT;
 
     const rows = tasks.map((t) => ({
       "Task ID": t.task_number,
@@ -64,6 +69,7 @@ export async function GET(request: Request) {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "Content-Disposition": `attachment; filename="tasks-${new Date().toISOString().split("T")[0]}.xlsx"`,
+        ...(truncated && { "X-Export-Truncated": "true", "X-Export-Limit": String(EXPORT_LIMIT) }),
       },
     });
   } catch (error) {

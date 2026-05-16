@@ -279,7 +279,11 @@ model Lead {
   @@index([status])
   @@index([temperature])
   @@index([assigned_to_id])
+  @@index([lead_owner_id])
+  @@index([lead_source])
   @@index([next_followup_date])
+  @@index([created_at])
+  @@index([updated_at])
   @@index([deleted_at])
   @@map("leads")
 }
@@ -320,6 +324,8 @@ model Opportunity {
 
   @@index([status])
   @@index([property_type])
+  @@index([deleted_at])
+  @@index([created_at])
   @@map("opportunities")
 }
 
@@ -386,6 +392,7 @@ model LeadOpportunity {
   tagged_by   User        @relation(fields: [tagged_by_id],   references: [id])
 
   @@unique([lead_id, opportunity_id])
+  @@index([opportunity_id])
   @@map("lead_opportunities")
 }
 

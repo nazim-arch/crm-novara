@@ -106,7 +106,11 @@ export default async function CrmDashboardPage({ searchParams }: { searchParams:
     canViewFinancials
       ? prisma.opportunity.groupBy({ by: ["opportunity_by"], where: { deleted_at: null }, _count: { id: true }, _sum: { possible_revenue: true } })
       : Promise.resolve([]),
-    prisma.activity.findMany({ include: { actor: { select: { name: true } } }, orderBy: { created_at: "desc" }, take: 15 }),
+    prisma.activity.findMany({
+      select: { id: true, action: true, entity_type: true, entity_id: true, created_at: true, actor: { select: { name: true } } },
+      orderBy: { created_at: "desc" },
+      take: 15,
+    }),
     prisma.task.groupBy({ by: ["status"], where: { deleted_at: null, ...(role === "Sales" || role === "Operations" ? { assigned_to_id: userId } : {}) }, _count: { id: true } }),
     prisma.task.count({ where: { deleted_at: null, status: { notIn: ["Done", "Cancelled"] }, due_date: { lt: todayStart }, ...(role === "Sales" || role === "Operations" ? { assigned_to_id: userId } : {}) } }),
     prisma.task.groupBy({ by: ["client_id"], where: { deleted_at: null, client_id: { not: null }, ...(role === "Sales" || role === "Operations" ? { assigned_to_id: userId } : {}) }, _count: { id: true } }),

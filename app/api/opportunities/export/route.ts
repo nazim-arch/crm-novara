@@ -14,6 +14,7 @@ export async function GET(request: Request) {
     const status = searchParams.get("status");
     const search = searchParams.get("search");
 
+    const EXPORT_LIMIT = 5000;
     const opps = await prisma.opportunity.findMany({
       where: {
         deleted_at: null,
@@ -26,13 +27,19 @@ export async function GET(request: Request) {
           ],
         }),
       },
-      include: {
+      select: {
+        opp_number: true, name: true, project: true, developer: true,
+        opportunity_by: true, property_type: true, location: true,
+        commission_percent: true, status: true,
+        total_sales_value: true, possible_revenue: true, closed_revenue: true,
+        created_at: true,
         created_by: { select: { name: true } },
         _count: { select: { leads: true } },
       },
       orderBy: { created_at: "desc" },
-      take: 10000,
+      take: EXPORT_LIMIT,
     });
+    const truncated = opps.length === EXPORT_LIMIT;
 
     const rows = opps.map((o) => ({
       "Opp ID": o.opp_number,
@@ -62,6 +69,7 @@ export async function GET(request: Request) {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "Content-Disposition": `attachment; filename="opportunities-${new Date().toISOString().split("T")[0]}.xlsx"`,
+        ...(truncated && { "X-Export-Truncated": "true", "X-Export-Limit": String(EXPORT_LIMIT) }),
       },
     });
   } catch (error) {

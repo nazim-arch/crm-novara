@@ -35,7 +35,19 @@ export async function GET(_request: Request, { params }: { params: Params }) {
         assigned_to: { select: { id: true, name: true, email: true, avatar_url: true } },
         lead_owner: { select: { id: true, name: true, email: true } },
         created_by: { select: { id: true, name: true } },
-        opportunities: { include: { opportunity: true, tagged_by: { select: { id: true, name: true } } } },
+        opportunities: {
+          include: {
+            opportunity: {
+              select: {
+                id: true, opp_number: true, name: true, project: true,
+                location: true, property_type: true, status: true,
+                commission_percent: true, possible_revenue: true, closed_revenue: true,
+                opportunity_by: true, deleted_at: true,
+              },
+            },
+            tagged_by: { select: { id: true, name: true } },
+          },
+        },
         tasks: { where: { deleted_at: null }, include: { assigned_to: { select: { id: true, name: true } } }, orderBy: { due_date: "asc" } },
         stage_history: { include: { changed_by: { select: { id: true, name: true } } }, orderBy: { changed_at: "desc" } },
         followups: { orderBy: { scheduled_at: "desc" }, include: { created_by: { select: { id: true, name: true } } } },
