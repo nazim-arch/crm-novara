@@ -412,6 +412,7 @@ export function AdminReviewQueue({ users }: { users: { id: string; name: string 
   const [search, setSearch] = useState("");
   const [histPage, setHistPage] = useState(1);
   const [histStatus, setHistStatus] = useState("Reviewed");
+  const [backfillChecked, setBackfillChecked] = useState(false);
 
   // Action modal state
   const [actionModal, setActionModal] = useState<ActionType | null>(null);
@@ -460,27 +461,30 @@ export function AdminReviewQueue({ users }: { users: { id: string; name: string 
     }
   }, [histStatus, histPage]);
 
-  // On first open: if queue has never been actioned (0 reviewed/parked/etc),
-  // auto-rebuild from source of truth to clear stale data and seed correctly.
+  // On first open: if queue has never been actioned, auto-rebuild from source of truth.
+  // Sets backfillChecked=true when done (even on error) so the reactive effect below can fire.
   useEffect(() => {
     void (async () => {
-      const res = await fetch("/api/admin/lead-review/stats");
-      if (!res.ok) return;
-      const s: Stats = await res.json();
-      setStats(s);
-
-      const neverUsed = s.reviewed === 0 && s.parked === 0 && s.escalated === 0 && s.ask_agent === 0;
-      if (neverUsed) {
-        // Rebuild: delete stale Pending events, create one per actioned lead
-        await fetch("/api/admin/lead-review/backfill", { method: "POST" });
-        const res2 = await fetch("/api/admin/lead-review/stats");
-        if (res2.ok) setStats(await res2.json());
+      try {
+        const res = await fetch("/api/admin/lead-review/stats");
+        if (res.ok) {
+          const s: Stats = await res.json();
+          setStats(s);
+          const neverUsed = s.reviewed === 0 && s.parked === 0 && s.escalated === 0 && s.ask_agent === 0;
+          if (neverUsed) {
+            await fetch("/api/admin/lead-review/backfill", { method: "POST" });
+            const res2 = await fetch("/api/admin/lead-review/stats");
+            if (res2.ok) setStats(await res2.json());
+          }
+        }
+      } finally {
+        setBackfillChecked(true);
       }
-
-      void fetchQueue();
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // Reactive: re-fetches queue whenever search/filters change. Gated on backfillChecked
+  // so it always runs after the auto-init (and after any backfill) rather than racing it.
+  useEffect(() => { if (!backfillChecked) return; void fetchQueue(); }, [fetchQueue, backfillChecked]);
   useEffect(() => { void fetchHistory(); }, [fetchHistory]);
 
   // Keyboard shortcuts
