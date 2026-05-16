@@ -19,9 +19,9 @@ import {
   Phone, User, Calendar, TrendingUp, ArrowLeft, ArrowRight,
   CheckCircle, PauseCircle, MessageSquare, UserCheck, AlertOctagon,
   Inbox, ChevronLeft, ChevronRight, Loader2, History, Filter, Search,
-  Clock, Star,
+  Clock, Star, MapPin, Home, Target, Banknote, ArrowRight as ArrowRightIcon,
 } from "lucide-react";
-import { getLeadReviewTheme, getTriggerLabel, getTriggerDescription } from "./review-theme";
+import { getLeadReviewTheme, getTriggerLabel, getTriggerDetails } from "./review-theme";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,9 +30,16 @@ interface ReviewLead {
   lead_number: string;
   full_name: string;
   status: string;
+  activity_stage: string | null;
   temperature: string;
   phone: string;
   potential_lead_value: number | null;
+  budget_min: number | null;
+  budget_max: number | null;
+  property_type: string | null;
+  location_preference: string | null;
+  purpose: string | null;
+  lead_source: string;
   next_followup_date: string | null;
   followup_type: string | null;
   deleted_at: string | null;
@@ -152,9 +159,11 @@ function ReviewCard({
 }) {
   const theme = getLeadReviewTheme(event.lead?.temperature);
   const ctx = event.trigger_context as Record<string, unknown>;
+  const details = getTriggerDetails(event.trigger_type, ctx);
   const ageMs = Date.now() - new Date(event.created_at).getTime();
   const ageHrs = Math.floor(ageMs / 3_600_000);
   const ageLabel = ageHrs < 1 ? "< 1h ago" : ageHrs < 24 ? `${ageHrs}h ago` : `${Math.floor(ageHrs / 24)}d ago`;
+  const lead = event.lead;
 
   return (
     <div className={`rounded-xl border-2 ${theme.border} ${theme.card} overflow-hidden shadow-sm`}>
@@ -182,9 +191,11 @@ function ReviewCard({
                 </span>
               )}
               {event.lead?.status && <StatusBadge status={event.lead.status} />}
-              <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Clock className="h-3 w-3" />{ageLabel}
-              </span>
+              {event.lead?.activity_stage && (
+                <span className="text-[11px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                  {event.lead.activity_stage}
+                </span>
+              )}
             </div>
           </div>
           <div className="text-right text-xs text-muted-foreground shrink-0">
@@ -193,55 +204,96 @@ function ReviewCard({
         </div>
 
         {/* What Changed */}
-        <div className="rounded-lg bg-background/70 border border-border/60 p-3 space-y-1">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">What Changed</p>
-          <p className="text-sm font-medium">{getTriggerLabel(event.trigger_type)}</p>
-          <p className="text-sm text-muted-foreground">{getTriggerDescription(event.trigger_type, ctx)}</p>
-          {event.trigger_type === "FollowUpAdded" && !!ctx.notes && (
-            <p className="text-xs italic text-muted-foreground">"{String(ctx.notes)}"</p>
+        <div className="rounded-lg bg-background/70 border border-border/60 p-3 space-y-1.5">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">{getTriggerLabel(event.trigger_type)}</p>
+          <p className="text-sm font-semibold text-foreground">{details.headline}</p>
+          {details.sub && <p className="text-xs text-muted-foreground">{details.sub}</p>}
+          {details.notes && (
+            <p className="text-xs text-foreground/80 italic border-l-2 border-primary/30 pl-2 mt-1">"{details.notes}"</p>
           )}
+          <p className="text-[11px] text-muted-foreground pt-0.5">
+            By <span className="font-medium text-foreground">{event.triggered_by?.name}</span>
+            {" · "}{ageLabel}
+          </p>
         </div>
 
-        {/* Lead Snapshot */}
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          {event.lead?.phone && (
-            <div className="flex items-center gap-1.5 text-muted-foreground">
-              <Phone className="h-3 w-3 shrink-0" />
-              <span>{event.lead.phone}</span>
-            </div>
-          )}
-          {event.lead?.assigned_to && (
-            <div className="flex items-center gap-1.5 text-muted-foreground">
-              <User className="h-3 w-3 shrink-0" />
-              <span>{event.lead.assigned_to.name}</span>
-            </div>
-          )}
-          {event.lead?.potential_lead_value != null && (
-            <div className="flex items-center gap-1.5 text-muted-foreground">
-              <TrendingUp className="h-3 w-3 shrink-0" />
-              <span>₹{Number(event.lead.potential_lead_value).toLocaleString("en-IN")}</span>
-            </div>
-          )}
-          {event.lead?.next_followup_date && (
-            <div className="flex items-center gap-1.5 text-muted-foreground">
-              <Calendar className="h-3 w-3 shrink-0" />
-              <span>
-                Next:{" "}
-                {new Date(event.lead.next_followup_date).toLocaleDateString("en-IN", {
-                  day: "numeric", month: "short",
-                })}
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Triggered By */}
-        <p className="text-xs text-muted-foreground">
-          By <span className="font-medium text-foreground">{event.triggered_by?.name}</span>
+        {/* Deal Context */}
+        <div className="space-y-1.5">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">Deal Context</p>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+            {lead?.phone && (
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <Phone className="h-3 w-3 shrink-0" />
+                <a href={`tel:${lead.phone}`} className="hover:text-foreground">{lead.phone}</a>
+              </div>
+            )}
+            {lead?.assigned_to && (
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <User className="h-3 w-3 shrink-0" />
+                <span>{lead.assigned_to.name}</span>
+              </div>
+            )}
+            {(lead?.budget_min || lead?.budget_max) && (
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <Banknote className="h-3 w-3 shrink-0" />
+                <span>
+                  {lead.budget_min && lead.budget_max
+                    ? `₹${(lead.budget_min / 100000).toFixed(0)}L – ₹${(lead.budget_max / 100000).toFixed(0)}L`
+                    : lead.budget_max
+                    ? `Up to ₹${(lead.budget_max / 100000).toFixed(0)}L`
+                    : `₹${(lead.budget_min! / 100000).toFixed(0)}L+`}
+                </span>
+              </div>
+            )}
+            {lead?.potential_lead_value != null && (
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <TrendingUp className="h-3 w-3 shrink-0" />
+                <span>₹{(lead.potential_lead_value / 100000).toFixed(0)}L pipeline value</span>
+              </div>
+            )}
+            {lead?.property_type && (
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <Home className="h-3 w-3 shrink-0" />
+                <span>{lead.property_type}</span>
+              </div>
+            )}
+            {lead?.location_preference && (
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <MapPin className="h-3 w-3 shrink-0" />
+                <span>{lead.location_preference}</span>
+              </div>
+            )}
+            {lead?.purpose && (
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <Target className="h-3 w-3 shrink-0" />
+                <span>{lead.purpose}</span>
+              </div>
+            )}
+            {lead?.activity_stage && (
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <ArrowRightIcon className="h-3 w-3 shrink-0" />
+                <span>Activity: {lead.activity_stage}</span>
+              </div>
+            )}
+            {lead?.next_followup_date && (
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <Calendar className="h-3 w-3 shrink-0" />
+                <span>
+                  Next{lead.followup_type ? ` ${lead.followup_type}` : ""}:{" "}
+                  {new Date(lead.next_followup_date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                </span>
+              </div>
+            )}
+          </div>
           {event.opportunity && (
-            <> · Opp: <Link href={`/opportunities/${event.opportunity.id}`} className="text-primary hover:underline">{event.opportunity.name}</Link></>
+            <p className="text-xs text-muted-foreground">
+              Opp:{" "}
+              <Link href={`/opportunities/${event.opportunity.id}`} className="text-primary hover:underline">
+                {event.opportunity.name}
+              </Link>
+            </p>
           )}
-        </p>
+        </div>
 
         {/* Action Buttons */}
         <div className="flex flex-wrap gap-2 pt-1 border-t">

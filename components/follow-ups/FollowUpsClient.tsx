@@ -26,7 +26,6 @@ import {
   Phone, Mail, MessageCircle, Home, Users, Zap, Flame,
   AlertTriangle, Clock, Search, Trash2, Loader2, Check, Plus,
   Building2, User, Calendar, CheckCircle2, ArrowUpDown, ArrowUp, ArrowDown,
-  ClipboardCheck, Target,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -358,6 +357,31 @@ export function FollowUpsClient({
     onSort: toggleSort,
   };
 
+  // Sidebar sub-section views — full page, no tabs
+  if (defaultTab === "focus_queue" && showFocusQueue) {
+    return (
+      <div className="p-4 sm:p-6 space-y-4">
+        <h1 className="text-xl font-semibold">Focus Queue</h1>
+        <SalesFocusQueue
+          isAdmin={isAdmin}
+          isManagerOrAdmin={isManagerOrAdmin}
+          users={users}
+          currentUserId={currentUserId}
+          role={role}
+        />
+      </div>
+    );
+  }
+
+  if (defaultTab === "review_queue" && isAdmin) {
+    return (
+      <div className="p-4 sm:p-6 space-y-4">
+        <h1 className="text-xl font-semibold">Review Queue</h1>
+        <AdminReviewQueue users={users} />
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 sm:p-6 space-y-4">
       {/* Header */}
@@ -440,20 +464,6 @@ export function FollowUpsClient({
             <span>Done</span>
             <span className="text-[10px] opacity-70 ml-0.5">({buckets.completed.length})</span>
           </TabsTrigger>
-          {showFocusQueue && (
-            <TabsTrigger value="focus_queue" className="gap-1 text-xs sm:text-sm">
-              <Target className="h-3.5 w-3.5 shrink-0" />
-              <span className="hidden sm:inline">Focus Queue</span>
-              <span className="sm:hidden">Focus</span>
-            </TabsTrigger>
-          )}
-          {isAdmin && (
-            <TabsTrigger value="review_queue" className="gap-1 text-xs sm:text-sm">
-              <ClipboardCheck className="h-3.5 w-3.5 shrink-0" />
-              <span className="hidden sm:inline">Review Queue</span>
-              <span className="sm:hidden">Review</span>
-            </TabsTrigger>
-          )}
         </TabsList>
 
         <TabsContent value="overdue">
@@ -474,22 +484,6 @@ export function FollowUpsClient({
         <TabsContent value="completed">
           <FollowUpList items={buckets.completed} emptyText="No completed follow-ups" isCompleted {...sharedProps} />
         </TabsContent>
-        {showFocusQueue && (
-          <TabsContent value="focus_queue">
-            <SalesFocusQueue
-              isAdmin={isAdmin}
-              isManagerOrAdmin={isManagerOrAdmin}
-              users={users}
-              currentUserId={currentUserId}
-              role={role}
-            />
-          </TabsContent>
-        )}
-        {isAdmin && (
-          <TabsContent value="review_queue">
-            <AdminReviewQueue users={users} />
-          </TabsContent>
-        )}
       </Tabs>
 
       {/* Add Next Follow-up Dialog */}

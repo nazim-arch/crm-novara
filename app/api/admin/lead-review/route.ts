@@ -71,9 +71,16 @@ export async function GET(request: Request) {
               lead_number: true,
               full_name: true,
               status: true,
+              activity_stage: true,
               temperature: true,
               phone: true,
               potential_lead_value: true,
+              budget_min: true,
+              budget_max: true,
+              property_type: true,
+              location_preference: true,
+              purpose: true,
+              lead_source: true,
               next_followup_date: true,
               followup_type: true,
               deleted_at: true,
@@ -95,9 +102,9 @@ export async function GET(request: Request) {
       lead: e.lead
         ? {
             ...e.lead,
-            potential_lead_value: e.lead.potential_lead_value
-              ? Number(e.lead.potential_lead_value)
-              : null,
+            potential_lead_value: e.lead.potential_lead_value ? Number(e.lead.potential_lead_value) : null,
+            budget_min: e.lead.budget_min ? Number(e.lead.budget_min) : null,
+            budget_max: e.lead.budget_max ? Number(e.lead.budget_max) : null,
             next_followup_date: e.lead.next_followup_date?.toISOString() ?? null,
             deleted_at: e.lead.deleted_at?.toISOString() ?? null,
           }

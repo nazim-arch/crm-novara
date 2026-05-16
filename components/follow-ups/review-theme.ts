@@ -55,45 +55,64 @@ export function getLeadReviewTheme(temperature: string | null | undefined): Revi
 
 export function getTriggerLabel(triggerType: string): string {
   switch (triggerType) {
-    case "StageChange":      return "Stage Changed";
-    case "FollowUpAdded":    return "Follow-up Scheduled";
+    case "StageChange":        return "Stage Changed";
+    case "FollowUpAdded":      return "Follow-up Scheduled";
     case "TemperatureChanged": return "Temperature Changed";
-    case "AssigneeChanged":  return "Reassigned";
-    case "NoteAdded":        return "Note Added";
-    case "FieldUpdated":     return "Fields Updated";
-    default:                 return triggerType;
+    case "AssigneeChanged":    return "Reassigned";
+    case "NoteAdded":          return "Note Added";
+    case "FieldUpdated":       return "Fields Updated";
+    default:                   return triggerType;
   }
 }
 
-export function getTriggerDescription(
+// Returns structured change details for the report card
+export function getTriggerDetails(
   triggerType: string,
   ctx: Record<string, unknown>
-): string {
+): { headline: string; sub: string | null; notes: string | null } {
+  const notes = ctx.notes ? String(ctx.notes) : null;
+
   switch (triggerType) {
     case "StageChange": {
-      const parts: string[] = [];
-      if (ctx.from_status && ctx.to_stage)
-        parts.push(`Pipeline: ${ctx.from_status} → ${ctx.to_stage}`);
-      if (ctx.activity_stage)
-        parts.push(`Activity stage set to ${ctx.activity_stage}`);
-      return parts.join(" · ") || "Stage updated";
+      // Live events use from_status/to_stage; backfill uses from_stage/to_stage
+      const from = String(ctx.from_status ?? ctx.from_stage ?? "");
+      const to = String(ctx.to_stage ?? "");
+      const activity = ctx.activity_stage ? String(ctx.activity_stage) : null;
+
+      let headline = "Stage updated";
+      if (from && to && from !== to) headline = `${from} → ${to}`;
+      else if (to) headline = `Set to ${to}`;
+
+      const sub = activity ? `Activity stage: ${activity}` : null;
+      return { headline, sub, notes };
+    }
+    case "TemperatureChanged": {
+      const from = ctx.from_temp ?? ctx.from ?? "?";
+      const to = ctx.to_temp ?? ctx.to ?? "?";
+      return { headline: `${from} → ${to}`, sub: null, notes };
     }
     case "FollowUpAdded": {
-      const type = ctx.followup_type as string;
+      const type = ctx.followup_type ?? ctx.type ?? "Follow-up";
       const at = ctx.scheduled_at
         ? new Date(ctx.scheduled_at as string).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
-        : "";
-      return `${type} follow-up scheduled${at ? ` on ${at}` : ""}`;
+        : null;
+      return {
+        headline: `${type}${at ? ` on ${at}` : ""}`,
+        sub: ctx.priority ? `Priority: ${ctx.priority}` : null,
+        notes,
+      };
     }
-    case "TemperatureChanged":
-      return `Temperature: ${ctx.from_temp ?? "?"} → ${ctx.to_temp ?? "?"}`;
     case "AssigneeChanged":
-      return `Assigned from ${ctx.from_name ?? "?"} to ${ctx.to_name ?? "?"}`;
+      return { headline: `${ctx.from_name ?? "?"} → ${ctx.to_name ?? "?"}`, sub: null, notes };
     case "NoteAdded":
-      return ctx.note_preview ? `"${String(ctx.note_preview).slice(0, 80)}"` : "Note added";
-    case "FieldUpdated":
-      return `Updated: ${(ctx.fields as string[] | undefined)?.join(", ") ?? "fields"}`;
+      return { headline: "Note added", sub: null, notes: ctx.note_preview ? String(ctx.note_preview).slice(0, 120) : notes };
     default:
-      return "Activity recorded";
+      return { headline: "Activity recorded", sub: null, notes };
   }
+}
+
+// Keep for legacy compatibility
+export function getTriggerDescription(triggerType: string, ctx: Record<string, unknown>): string {
+  const d = getTriggerDetails(triggerType, ctx);
+  return d.headline + (d.sub ? ` · ${d.sub}` : "");
 }
