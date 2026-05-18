@@ -14,7 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 
 type NavChild = { href: string; label: string; tab: string; roles: string[] };
-type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; roles: string[]; children?: NavChild[] };
+type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; roles: string[]; tab?: string; children?: NavChild[] };
 type NavSection = { label: string; items: NavItem[] };
 
 const NAV_CONFIG: NavSection[] = [
@@ -25,6 +25,8 @@ const NAV_CONFIG: NavSection[] = [
       { href: "/dashboard/crm", label: "CRM Overview", icon: LayoutDashboard, roles: ["Admin", "Manager", "Viewer"] },
       { href: "/dashboard/tasks", label: "Task Overview", icon: BarChart3, roles: ["Admin", "Manager", "Sales", "Operations", "Viewer"] },
       { href: "/dashboard/activity", label: "Activity Calendar", icon: CalendarDays, roles: ["Admin", "Manager", "Sales"] },
+      { href: "/follow-ups?tab=focus_queue", tab: "focus_queue", label: "Focus Queue", icon: Target, roles: ["Admin", "Manager", "Sales"] },
+      { href: "/follow-ups?tab=review_queue", tab: "review_queue", label: "Review Queue", icon: ClipboardCheck, roles: ["Admin"] },
     ],
   },
   {
@@ -32,14 +34,7 @@ const NAV_CONFIG: NavSection[] = [
     items: [
       { href: "/leads", label: "Leads", icon: Users, roles: ["Admin", "Manager", "Sales", "Viewer"] },
       { href: "/opportunities", label: "Opportunities", icon: Building2, roles: ["Admin", "Manager", "Sales", "Viewer"] },
-      {
-        href: "/follow-ups", label: "Follow-ups", icon: CalendarClock,
-        roles: ["Admin", "Manager", "Sales", "Operations", "Viewer"],
-        children: [
-          { href: "/follow-ups?tab=focus_queue", tab: "focus_queue", label: "Focus Queue", roles: ["Admin", "Manager", "Sales"] },
-          { href: "/follow-ups?tab=review_queue", tab: "review_queue", label: "Review Queue", roles: ["Admin"] },
-        ],
-      },
+      { href: "/follow-ups", label: "Follow-ups", icon: CalendarClock, roles: ["Admin", "Manager", "Sales", "Operations", "Viewer"] },
     ],
   },
   {
@@ -114,7 +109,9 @@ function SidebarNav({ role, onNavigate }: NavProps) {
           </p>
           {section.items.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+            const isActive = item.tab
+              ? pathname === "/follow-ups" && currentTab === item.tab
+              : pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
             const visibleChildren = item.children?.filter((c) => c.roles.includes(role)) ?? [];
 
             return (
