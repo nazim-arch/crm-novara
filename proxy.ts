@@ -79,13 +79,14 @@ export async function proxy(req: NextRequest) {
   }
 
   let isAuthenticated = false;
+  let token: Awaited<ReturnType<typeof getToken>> = null;
   try {
     // next-auth v5 uses "authjs.session-token" (or __Secure- prefix on HTTPS)
     const secureCookie = req.nextUrl.protocol === "https:";
     const cookieName = secureCookie
       ? "__Secure-authjs.session-token"
       : "authjs.session-token";
-    const token = await getToken({
+    token = await getToken({
       req,
       secret: process.env.AUTH_SECRET,
       cookieName,
@@ -95,15 +96,20 @@ export async function proxy(req: NextRequest) {
     isAuthenticated = false;
   }
 
+  const role = token?.role as string | undefined;
+  const landingPage = role === "Sales"
+    ? "/follow-ups?tab=focus_queue"
+    : "/dashboard/crm";
+
   // Redirect authenticated users away from login
   if (pathname === "/login" && isAuthenticated) {
-    return NextResponse.redirect(new URL("/dashboard/crm", req.url));
+    return NextResponse.redirect(new URL(landingPage, req.url));
   }
 
   // Redirect root
   if (pathname === "/") {
     if (isAuthenticated) {
-      return NextResponse.redirect(new URL("/dashboard/crm", req.url));
+      return NextResponse.redirect(new URL(landingPage, req.url));
     }
     return NextResponse.redirect(new URL("/login", req.url));
   }
