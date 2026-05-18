@@ -1,4 +1,4 @@
-﻿import { auth } from "@/lib/auth";
+import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
@@ -14,33 +14,58 @@ function todayIST() {
 
 type SearchParams = Promise<{ range?: string; from?: string; to?: string }>;
 
-export default async function CrmDashboardPage({ searchParams }: { searchParams: SearchParams }) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role === "Operations") redirect("/tasks");
+// ── Skeleton shown while queries run ────────────────────────────────────────
 
-  const sp = await searchParams;
-  const today = new Date();
-  const todayStr = todayIST();
-  const todayStart = startOfDay(today);
-  const todayEnd = endOfDay(today);
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="h-24 rounded-xl bg-muted" />
+        ))}
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-24 rounded-xl bg-muted" />
+        ))}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="h-64 rounded-xl bg-muted" />
+        ))}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <div key={i} className="h-48 rounded-xl bg-muted" />
+        ))}
+      </div>
+    </div>
+  );
+}
 
-  const range = (sp.range ?? "current_month") as DashboardRange;
-  const { start, end, label: rangeLabel } = resolveDateRange(range, todayStr, sp.from, sp.to);
-  const rangeStart = new Date(start + "T00:00:00");
-  const rangeEnd = new Date(end + "T23:59:59");
+// ── All queries run inside this component so the shell renders first ─────────
 
-  const userId = session.user.id;
-  const role = session.user.role;
-  const canViewFinancials = await hasPermissionAsync(role, "financial:view");
+interface ContentProps {
+  userId: string;
+  role: string;
+  canViewFinancials: boolean;
+  rangeLabel: string;
+  rangeStart: Date;
+  rangeEnd: Date;
+  todayStart: Date;
+  todayEnd: Date;
+}
 
+async function CrmDashboardContent({
+  userId, role, canViewFinancials,
+  rangeLabel, rangeStart, rangeEnd, todayStart, todayEnd,
+}: ContentProps) {
   const leadScope = leadScopeFilter(role, userId);
   const leadWhere = (extra: object = {}) => ({
     deleted_at: null as null,
     ...(leadScope ?? {}),
     ...extra,
   });
-
   const leadWhereInRange = (extra: object = {}) => ({
     ...leadWhere(extra),
     created_at: { gte: rangeStart, lte: rangeEnd },
@@ -145,6 +170,76 @@ export default async function CrmDashboardPage({ searchParams }: { searchParams:
     .sort((a, b) => b.count - a.count);
 
   return (
+    <CrmDashboardClient
+      canViewFinancials={canViewFinancials}
+      rangeLabel={rangeLabel}
+      kpis={{
+        totalLeads, hotLeads, activeLeads, wonLeads, lostLeads,
+        newLeadsInRange, wonLeadsInRange,
+        todayFollowUps: todayFollowUpsCount,
+        overdueFollowUps: overdueFollowUpsCount,
+        pipelineValue, totalSalesValue, possibleRevenue, closedRevenue, totalExpense, netProfit,
+      }}
+      todayLeads={todayLeadsList.map((l) => ({
+        id: l.id, full_name: l.full_name, lead_number: l.lead_number, phone: l.phone,
+        temperature: l.temperature, status: l.status,
+        potential_lead_value: l.potential_lead_value ? Number(l.potential_lead_value) : null,
+        next_followup_date: l.next_followup_date?.toISOString() ?? null,
+        followup_type: l.followup_type, assigned_to_name: l.assigned_to.name,
+      }))}
+      overdueLeads={overdueLeadsList.map((l) => ({
+        id: l.id, full_name: l.full_name, lead_number: l.lead_number,
+        temperature: l.temperature, status: l.status,
+        potential_lead_value: l.potential_lead_value ? Number(l.potential_lead_value) : null,
+        next_followup_date: l.next_followup_date?.toISOString() ?? null,
+        days_overdue: l.next_followup_date ? Math.abs(differenceInCalendarDays(new Date(l.next_followup_date), todayStart)) : 0,
+        assigned_to_name: l.assigned_to.name,
+      }))}
+      staleHotLeads={staleHotLeads.map((l) => ({
+        id: l.id, full_name: l.full_name, lead_number: l.lead_number,
+        potential_lead_value: l.potential_lead_value ? Number(l.potential_lead_value) : null,
+        next_followup_date: l.next_followup_date?.toISOString() ?? null,
+        assigned_to_name: l.assigned_to.name,
+      }))}
+      stageDistribution={stageDistribution.map((s) => ({ stage: s.status, count: s._count.id, value: Number(s._sum.potential_lead_value ?? 0) }))}
+      temperatureDistribution={temperatureDistribution.map((t) => ({ temp: t.temperature, count: t._count.id }))}
+      sourceDistribution={sourceDistribution.map((s) => ({ source: s.lead_source, count: s._count.id }))}
+      topOpportunities={(topOpportunities as Array<{ id: string; name: string; opp_number: string; possible_revenue: unknown; closed_revenue: unknown; total_sales_value: unknown; commission_percent: unknown; _count: { leads: number } }>).map((o) => {
+        const exp = expenseMap.get(o.id) ?? 0;
+        const cr = Number(o.closed_revenue ?? 0);
+        return { id: o.id, name: o.name, opp_number: o.opp_number, possible_revenue: Number(o.possible_revenue ?? 0), closed_revenue: cr, total_expense: exp, net_profit: cr - exp, leads_count: o._count.leads };
+      })}
+      opportunityByBreakdown={opportunityByBreakdown}
+      recentActivities={recentActivities.map((a) => ({ id: a.id, action: a.action, entity_type: a.entity_type, entity_id: a.entity_id, actor_name: a.actor.name, created_at: a.created_at.toISOString() }))}
+      taskStats={{ todo: taskMap["Todo"] ?? 0, inProgress: taskMap["InProgress"] ?? 0, done: taskMap["Done"] ?? 0, overdue: overdueTasksCount }}
+      taskClientDistribution={taskClientDistribution}
+    />
+  );
+}
+
+// ── Page shell — auth only, renders immediately ──────────────────────────────
+
+export default async function CrmDashboardPage({ searchParams }: { searchParams: SearchParams }) {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  if (session.user.role === "Operations") redirect("/tasks");
+
+  const sp = await searchParams;
+  const today = new Date();
+  const todayStr = todayIST();
+  const todayStart = startOfDay(today);
+  const todayEnd = endOfDay(today);
+
+  const range = (sp.range ?? "current_month") as DashboardRange;
+  const { start, end, label: rangeLabel } = resolveDateRange(range, todayStr, sp.from, sp.to);
+  const rangeStart = new Date(start + "T00:00:00");
+  const rangeEnd = new Date(end + "T23:59:59");
+
+  const userId = session.user.id;
+  const role = session.user.role;
+  const canViewFinancials = await hasPermissionAsync(role, "financial:view");
+
+  return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold">CRM Overview</h1>
@@ -155,50 +250,18 @@ export default async function CrmDashboardPage({ searchParams }: { searchParams:
         <DashboardFilters currentRange={range} currentFrom={sp.from} currentTo={sp.to} rangeLabel={rangeLabel} />
       </Suspense>
 
-      <CrmDashboardClient
-        canViewFinancials={canViewFinancials}
-        rangeLabel={rangeLabel}
-        kpis={{
-          totalLeads, hotLeads, activeLeads, wonLeads, lostLeads,
-          newLeadsInRange, wonLeadsInRange,
-          todayFollowUps: todayFollowUpsCount,
-          overdueFollowUps: overdueFollowUpsCount,
-          pipelineValue, totalSalesValue, possibleRevenue, closedRevenue, totalExpense, netProfit,
-        }}
-        todayLeads={todayLeadsList.map((l) => ({
-          id: l.id, full_name: l.full_name, lead_number: l.lead_number, phone: l.phone,
-          temperature: l.temperature, status: l.status,
-          potential_lead_value: l.potential_lead_value ? Number(l.potential_lead_value) : null,
-          next_followup_date: l.next_followup_date?.toISOString() ?? null,
-          followup_type: l.followup_type, assigned_to_name: l.assigned_to.name,
-        }))}
-        overdueLeads={overdueLeadsList.map((l) => ({
-          id: l.id, full_name: l.full_name, lead_number: l.lead_number,
-          temperature: l.temperature, status: l.status,
-          potential_lead_value: l.potential_lead_value ? Number(l.potential_lead_value) : null,
-          next_followup_date: l.next_followup_date?.toISOString() ?? null,
-          days_overdue: l.next_followup_date ? Math.abs(differenceInCalendarDays(new Date(l.next_followup_date), todayStart)) : 0,
-          assigned_to_name: l.assigned_to.name,
-        }))}
-        staleHotLeads={staleHotLeads.map((l) => ({
-          id: l.id, full_name: l.full_name, lead_number: l.lead_number,
-          potential_lead_value: l.potential_lead_value ? Number(l.potential_lead_value) : null,
-          next_followup_date: l.next_followup_date?.toISOString() ?? null,
-          assigned_to_name: l.assigned_to.name,
-        }))}
-        stageDistribution={stageDistribution.map((s) => ({ stage: s.status, count: s._count.id, value: Number(s._sum.potential_lead_value ?? 0) }))}
-        temperatureDistribution={temperatureDistribution.map((t) => ({ temp: t.temperature, count: t._count.id }))}
-        sourceDistribution={sourceDistribution.map((s) => ({ source: s.lead_source, count: s._count.id }))}
-        topOpportunities={(topOpportunities as Array<{ id: string; name: string; opp_number: string; possible_revenue: unknown; closed_revenue: unknown; total_sales_value: unknown; commission_percent: unknown; _count: { leads: number } }>).map((o) => {
-          const exp = expenseMap.get(o.id) ?? 0;
-          const cr = Number(o.closed_revenue ?? 0);
-          return { id: o.id, name: o.name, opp_number: o.opp_number, possible_revenue: Number(o.possible_revenue ?? 0), closed_revenue: cr, total_expense: exp, net_profit: cr - exp, leads_count: o._count.leads };
-        })}
-        opportunityByBreakdown={opportunityByBreakdown}
-        recentActivities={recentActivities.map((a) => ({ id: a.id, action: a.action, entity_type: a.entity_type, entity_id: a.entity_id, actor_name: a.actor.name, created_at: a.created_at.toISOString() }))}
-        taskStats={{ todo: taskMap["Todo"] ?? 0, inProgress: taskMap["InProgress"] ?? 0, done: taskMap["Done"] ?? 0, overdue: overdueTasksCount }}
-        taskClientDistribution={taskClientDistribution}
-      />
+      <Suspense fallback={<DashboardSkeleton />}>
+        <CrmDashboardContent
+          userId={userId}
+          role={role}
+          canViewFinancials={canViewFinancials}
+          rangeLabel={rangeLabel}
+          rangeStart={rangeStart}
+          rangeEnd={rangeEnd}
+          todayStart={todayStart}
+          todayEnd={todayEnd}
+        />
+      </Suspense>
     </div>
   );
 }
