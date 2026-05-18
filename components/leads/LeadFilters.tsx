@@ -25,6 +25,7 @@ interface LeadFiltersProps {
     search?: string;
     filter?: string;
     source?: string;
+    activity_stage?: string;
   };
 }
 
@@ -32,12 +33,12 @@ export function LeadFilters({ users, currentParams }: LeadFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
 
-  const { status, temperature, assigned_to, search, filter, source } = currentParams;
+  const { status, temperature, assigned_to, search, filter, source, activity_stage } = currentParams;
 
   const updateParam = useCallback(
     (key: string, value: string) => {
       const params = new URLSearchParams(
-        Object.entries({ status, temperature, assigned_to, search, filter, source })
+        Object.entries({ status, temperature, assigned_to, search, filter, source, activity_stage })
           .filter(([, v]) => v) as [string, string][]
       );
       if (value && value !== "all") {
@@ -48,7 +49,7 @@ export function LeadFilters({ users, currentParams }: LeadFiltersProps) {
       params.delete("page");
       router.push(`${pathname}?${params.toString()}`);
     },
-    [router, pathname, status, temperature, assigned_to, search, filter, source]
+    [router, pathname, status, temperature, assigned_to, search, filter, source, activity_stage]
   );
 
   const handleSearch = useDebouncedCallback((value: string) => {
@@ -61,7 +62,8 @@ export function LeadFilters({ users, currentParams }: LeadFiltersProps) {
     currentParams.assigned_to ||
     currentParams.search ||
     currentParams.filter ||
-    currentParams.source;
+    currentParams.source ||
+    currentParams.activity_stage;
 
   return (
     <div className="flex flex-wrap gap-2 items-center">
@@ -126,6 +128,26 @@ export function LeadFilters({ users, currentParams }: LeadFiltersProps) {
               {u.name}
             </SelectItem>
           ))}
+        </SelectContent>
+      </Select>
+
+      <Select
+        value={currentParams.activity_stage ?? "all"}
+        onValueChange={(v) => updateParam("activity_stage", v ?? "all")}
+      >
+        <SelectTrigger className="w-44">
+          <SelectValue placeholder="Activity stage" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All activity stages</SelectItem>
+          <SelectItem value="New">New</SelectItem>
+          <SelectItem value="NoResponse">No Response</SelectItem>
+          <SelectItem value="Busy">Busy</SelectItem>
+          <SelectItem value="Unreachable">Unreachable</SelectItem>
+          <SelectItem value="Prospect">Prospect</SelectItem>
+          <SelectItem value="CallBack">Call Back</SelectItem>
+          <SelectItem value="NotInterested">Not Interested</SelectItem>
+          <SelectItem value="Junk">Junk</SelectItem>
         </SelectContent>
       </Select>
 

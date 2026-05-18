@@ -88,6 +88,7 @@ type SearchParams = Promise<{
   period?: string;
   from?: string;
   to?: string;
+  activity_stage?: string;
 }>;
 
 export default async function LeadsPage({ searchParams }: { searchParams: SearchParams }) {
@@ -120,6 +121,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
       ],
     }),
     ...(sp.source && { lead_source: sp.source }),
+    ...(sp.activity_stage && sp.activity_stage !== "all" && { activity_stage: sp.activity_stage as Prisma.EnumActivityStageFilter }),
     ...(sp.opportunity_id && { opportunities: { some: { opportunity_id: sp.opportunity_id } } }),
   };
 
@@ -220,6 +222,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     if (sp.temperature && sp.temperature !== "all") params.set("temperature", sp.temperature);
     if (sp.assigned_to && sp.assigned_to !== "all") params.set("assigned_to", sp.assigned_to);
     if (sp.search) params.set("search", sp.search);
+    if (sp.activity_stage && sp.activity_stage !== "all") params.set("activity_stage", sp.activity_stage);
     const qs = params.toString();
     return `/leads${qs ? `?${qs}` : ""}`;
   })();
@@ -268,6 +271,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
           search: sp.search,
           filter: sp.filter,
           source: sp.source,
+          activity_stage: sp.activity_stage,
         }}
       />
 
