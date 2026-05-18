@@ -9,7 +9,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https://*.vercel-storage.com https://*.public.blob.vercel-storage.com",
       "font-src 'self'",
-      "connect-src 'self'",
+      "connect-src 'self' https://*.neon.tech wss://*.neon.tech https://api.resend.com https://*.vercel-storage.com https://*.public.blob.vercel-storage.com https://vitals.vercel-insights.com",
       "frame-ancestors 'none'",
     ].join("; "),
   },
