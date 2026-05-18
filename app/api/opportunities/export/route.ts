@@ -2,7 +2,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { hasPermissionAsync } from "@/lib/rbac";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 export async function GET(request: Request) {
   try {
@@ -59,11 +59,15 @@ export async function GET(request: Request) {
       "Created At": o.created_at.toISOString().split("T")[0],
     }));
 
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(rows);
-    ws["!cols"] = Object.keys(rows[0] ?? {}).map(() => ({ wch: 20 }));
-    XLSX.utils.book_append_sheet(wb, ws, "Opportunities");
-    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Opportunities");
+    if (rows.length > 0) {
+      const keys = Object.keys(rows[0]);
+      ws.columns = keys.map((key) => ({ key, width: 20 }));
+      ws.addRow(keys);
+      ws.addRows(rows);
+    }
+    const buf = Buffer.from(await wb.xlsx.writeBuffer());
 
     return new Response(buf, {
       headers: {

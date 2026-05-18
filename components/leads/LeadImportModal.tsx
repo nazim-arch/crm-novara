@@ -87,6 +87,21 @@ const MANDATORY_LABELS: Record<string, string> = {
 
 type ParsedRow = Record<string, string | number | undefined>;
 
+function normalizeCellValue(v: unknown): string | number {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return v;
+  if (typeof v === "boolean") return String(v);
+  if (v instanceof Date) return v.toISOString().split("T")[0];
+  if (typeof v === "object") {
+    if ("richText" in v) return (v as { richText: Array<{ text: string }> }).richText.map((r) => r.text).join("");
+    if ("result" in v) return normalizeCellValue((v as { result: unknown }).result);
+    if ("text" in v && typeof (v as { text: unknown }).text === "string") return (v as { text: string }).text;
+    if ("error" in v) return "";
+  }
+  return String(v);
+}
+
 interface FailedRow {
   row: number;
   name: string;
@@ -112,8 +127,10 @@ function mapHeaders(rawHeaders: string[]): Record<string, string> {
 }
 
 async function downloadTemplate() {
-  const XLSX = await import("xlsx");
-  const wb = XLSX.utils.book_new();
+  const ExcelJS = await import("exceljs");
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Leads Template");
+
   const headers = [
     "Full Name*", "Phone*", "Lead Source*", "Lead Type*", "Property Type*", "Purpose*", "Potential Lead Value*",
     "Email", "WhatsApp", "Temperature", "Budget Min", "Budget Max",
@@ -139,13 +156,19 @@ async function downloadTemplate() {
     "Summer Campaign", "", "Looking for ready to move",
   ];
 
-  const ws = XLSX.utils.aoa_to_sheet([headers, notes, sampleRow]);
+  ws.addRow(headers);
+  ws.addRow(notes);
+  ws.addRow(sampleRow);
+  headers.forEach((_, i) => { ws.getColumn(i + 1).width = 22; });
 
-  // Style header row width
-  ws["!cols"] = headers.map(() => ({ wch: 22 }));
-
-  XLSX.utils.book_append_sheet(wb, ws, "Leads Template");
-  XLSX.writeFile(wb, "leads_import_template.xlsx");
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "leads_import_template.xlsx";
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export function LeadImportModal() {
@@ -181,11 +204,38 @@ export function LeadImportModal() {
 
     const reader = new FileReader();
     reader.onload = async (e) => {
-      const XLSX = await import("xlsx");
-      const data = e.target?.result;
-      const wb = XLSX.read(data, { type: "binary" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const raw: Record<string, unknown>[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+      const ExcelJS = await import("exceljs");
+      const data = e.target?.result as ArrayBuffer;
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(data);
+
+      const ws = wb.worksheets[0];
+      if (!ws || ws.rowCount < 1) {
+        setMissingMandatory(["File appears empty"]);
+        setRows([]);
+        return;
+      }
+
+      // Extract headers from row 1
+      const colCount = ws.columnCount;
+      const rawHeaders: string[] = [];
+      for (let c = 1; c <= colCount; c++) {
+        rawHeaders.push(String(ws.getRow(1).getCell(c).value ?? "").trim());
+      }
+
+      // Extract data rows (skip header row 1, skip empty rows)
+      const raw: Record<string, unknown>[] = [];
+      for (let r = 2; r <= ws.rowCount; r++) {
+        const row = ws.getRow(r);
+        const obj: Record<string, unknown> = {};
+        rawHeaders.forEach((header, i) => {
+          if (!header) return;
+          obj[header] = normalizeCellValue(row.getCell(i + 1).value);
+        });
+        if (Object.values(obj).some((v) => v !== "" && v !== null && v !== undefined)) {
+          raw.push(obj);
+        }
+      }
 
       if (raw.length === 0) {
         setMissingMandatory(["File appears empty"]);
@@ -193,7 +243,6 @@ export function LeadImportModal() {
         return;
       }
 
-      const rawHeaders = Object.keys(raw[0]);
       const map = mapHeaders(rawHeaders);
       setHeaderMap(map);
 
@@ -213,7 +262,7 @@ export function LeadImportModal() {
 
       setRows(normalized);
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   }
 
   async function handleImport() {
