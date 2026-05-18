@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -74,6 +74,7 @@ export function ExpensesSection({
   canViewFinancials = true,
 }: ExpensesSectionProps) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -113,7 +114,7 @@ export function ExpensesSection({
     toast.success("Expense added");
     reset({ expense_date: new Date().toISOString().split("T")[0] });
     setOpen(false);
-    router.refresh();
+    startTransition(() => router.refresh());
   }
 
   async function handleDelete(expenseId: string) {
@@ -130,7 +131,7 @@ export function ExpensesSection({
         return;
       }
       toast.success("Expense deleted");
-      router.refresh();
+      startTransition(() => router.refresh());
     } finally {
       setDeletingId(null);
     }

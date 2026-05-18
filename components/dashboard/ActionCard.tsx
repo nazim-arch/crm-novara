@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -304,6 +304,7 @@ export function ActionCard({
   onRemove: (id: string) => void;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [panel, setPanel] = useState<Panel>(null);
   const [completing, setCompleting] = useState(false);
 
@@ -338,7 +339,7 @@ export function ActionCard({
       if (!res.ok) throw new Error();
       toast.success("Follow-up marked as done");
       onRemove(action.id);
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch {
       toast.error("Failed to mark as done");
     } finally {
@@ -552,7 +553,7 @@ export function ActionCard({
           <p className="text-xs font-medium text-muted-foreground mb-1">Add Note</p>
           <NoteForm
             leadId={action.lead.id}
-            onDone={() => { setPanel(null); router.refresh(); }}
+            onDone={() => { setPanel(null); startTransition(() => router.refresh()); }}
           />
         </div>
       )}
@@ -562,7 +563,7 @@ export function ActionCard({
           <p className="text-xs font-medium text-muted-foreground mb-1">Schedule Follow-up</p>
           <ScheduleForm
             leadId={action.lead.id}
-            onDone={() => { setPanel(null); router.refresh(); }}
+            onDone={() => { setPanel(null); startTransition(() => router.refresh()); }}
           />
         </div>
       )}
@@ -573,7 +574,7 @@ export function ActionCard({
           <UpdateForm
             leadId={action.lead.id}
             currentTemp={action.lead.temperature}
-            onDone={() => { setPanel(null); router.refresh(); }}
+            onDone={() => { setPanel(null); startTransition(() => router.refresh()); }}
           />
         </div>
       )}

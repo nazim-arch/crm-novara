@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -29,6 +29,7 @@ interface Props {
 
 export function UserKanbanBoard({ users, initialTasks }: Props) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [tasks, setTasks] = useState(initialTasks);
   const [dragging, setDragging] = useState<string | null>(null);
 
@@ -54,7 +55,7 @@ export function UserKanbanBoard({ users, initialTasks }: Props) {
         toast.error("Failed to reassign task");
       } else {
         toast.success("Task reassigned");
-        router.refresh();
+        startTransition(() => router.refresh());
       }
     } catch {
       setTasks(initialTasks);

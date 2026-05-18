@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useReducer } from "react";
+import { useState, useEffect, useCallback, useReducer, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Plus, Users, Building2, CheckSquare, CalendarClock, Loader2, Pencil, Receipt, RefreshCw } from "lucide-react";
@@ -101,6 +101,7 @@ function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => voi
 
 export function QuickAddModal({ currentUserId, role }: { currentUserId: string; role: string }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
@@ -219,7 +220,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
       setOpen(false);
       resetForms();
       router.push(`/leads/${result.data.id}`);
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch { toast.error("Something went wrong"); }
     finally { setLoading(false); }
   }
@@ -249,7 +250,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
       setOpen(false);
       resetForms();
       router.push(`/opportunities/${result.data.id}`);
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch { toast.error("Something went wrong"); }
     finally { setLoading(false); }
   }
@@ -283,7 +284,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
       setOpen(false);
       resetForms();
       router.push(`/tasks/${result.data.id}`);
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch { toast.error("Something went wrong"); }
     finally { setLoading(false); }
   }
@@ -316,7 +317,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
       toast.success("Follow-up scheduled");
       setOpen(false);
       resetForms();
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch { toast.error("Something went wrong"); }
     finally { setLoading(false); }
   }
@@ -338,7 +339,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
       toast.success("Expense added");
       setOpen(false);
       resetForms();
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch { toast.error("Something went wrong"); }
     finally { setLoading(false); }
   }

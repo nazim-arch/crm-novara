@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
@@ -61,6 +61,7 @@ export function LeadForm({
   leadId,
 }: LeadFormProps) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [loading, setLoading] = useState(false);
   const [showDuplicates, setShowDuplicates] = useState(false);
   const [pendingSubmit, setPendingSubmit] = useState<CreateLeadInput | null>(null);
@@ -215,7 +216,7 @@ export function LeadForm({
       }
 
       router.push(`/leads/${result.data.id}`);
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch {
       toast.error("Something went wrong");
     } finally {

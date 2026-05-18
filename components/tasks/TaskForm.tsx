@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
@@ -50,6 +50,7 @@ export function TaskForm({
   defaultOpportunityId,
 }: TaskFormProps) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [loading, setLoading] = useState(false);
   const [revenueTagged, setRevenueTagged] = useState(defaultValues?.revenue_tagged ?? false);
   const [assignedToId, setAssignedToId] = useState(defaultValues?.assigned_to_id ?? currentUserId);
@@ -96,7 +97,7 @@ export function TaskForm({
       }
       toast.success(isEditing ? "Task updated" : "Task created");
       router.push(`/tasks/${result.data.id}`);
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch {
       toast.error("Something went wrong");
     } finally {

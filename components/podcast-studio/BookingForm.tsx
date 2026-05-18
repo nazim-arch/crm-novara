@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -110,6 +110,7 @@ function generateRecurringDates(
 
 export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFormProps) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const isEdit = !!editBooking;
 
   const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
@@ -322,7 +323,7 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
         if (!res.ok) { setSubmitError(json.error ?? "Failed to create bookings"); return; }
         setRecurringProgress({ created: json.summary.created, conflicts: json.summary.conflicts });
         router.push(`/podcast-studio/bookings?created=${json.summary.created}&skipped=${json.summary.conflicts}`);
-        router.refresh();
+        startTransition(() => router.refresh());
       } catch {
         setSubmitError("Network error. Please try again.");
       }
@@ -339,7 +340,7 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
       const json = await res.json();
       if (!res.ok) { setSubmitError(json.error ?? "Failed to save booking"); return; }
       router.push("/podcast-studio/bookings");
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch {
       setSubmitError("Network error. Please try again.");
     }
@@ -356,7 +357,7 @@ export function BookingForm({ defaultDate, defaultTime, editBooking }: BookingFo
       const json = await res.json();
       if (!res.ok) { setSubmitError(json.error ?? "Failed to save booking"); return; }
       router.push("/podcast-studio/bookings/new");
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch {
       setSubmitError("Network error. Please try again.");
     }

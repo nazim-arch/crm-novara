@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle, CalendarClock, UserPlus, Clock, Eye, RefreshCw, Zap, Search, X,
@@ -99,6 +99,7 @@ const SECTIONS: ActionSection[] = ["urgent", "today", "pipeline", "upcoming"];
 
 export function CommandCenterClient({ actions: initialActions, agentName }: Props) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [actions, setActions] = useState<ActionItem[]>(initialActions);
   const [kpiFilter, setKpiFilter] = useState<KpiFilter>("all");
   const [sectionFilter, setSectionFilter] = useState<ActionSection | "all">("all");
@@ -168,10 +169,11 @@ export function CommandCenterClient({ actions: initialActions, agentName }: Prop
     setKpiFilter("all");
   }
 
-  async function refresh() {
+  function refresh() {
     setRefreshing(true);
-    router.refresh();
-    // Reset local removals by re-reading the route data
+    startTransition(() => {
+      router.refresh();
+    });
     setTimeout(() => setRefreshing(false), 800);
   }
 

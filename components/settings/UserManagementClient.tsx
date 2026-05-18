@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
@@ -60,6 +60,7 @@ interface UserManagementClientProps {
 
 export function UserManagementClient({ users: initialUsers }: UserManagementClientProps) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
 
   // Create
   const [createOpen, setCreateOpen] = useState(false);
@@ -125,7 +126,7 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
       setCreateOpen(false);
       setForm(EMPTY_FORM);
       setFormErrors({});
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch {
       toast.error("Something went wrong");
     } finally {
@@ -157,7 +158,7 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
       if (!res.ok) { toast.error("Failed to update user"); return; }
       toast.success("User updated");
       setEditUser(null);
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch {
       toast.error("Something went wrong");
     } finally {
@@ -192,7 +193,7 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
       if (!res.ok) { const d = await res.json(); toast.error(d.error ?? "Failed to delete user"); return; }
       toast.success("User deleted");
       setDeleteUser(null);
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch {
       toast.error("Something went wrong");
     } finally {
@@ -251,7 +252,7 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
     });
     if (!res.ok) { toast.error("Failed to deactivate user"); return; }
     toast.success("User deactivated");
-    router.refresh();
+    startTransition(() => router.refresh());
   };
 
   const handleActivate = async (userId: string) => {
@@ -262,7 +263,7 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
     });
     if (!res.ok) { toast.error("Failed to activate user"); return; }
     toast.success("User activated");
-    router.refresh();
+    startTransition(() => router.refresh());
   };
 
   const reassignUser = reassignUserId ? initialUsers.find(u => u.id === reassignUserId) : null;

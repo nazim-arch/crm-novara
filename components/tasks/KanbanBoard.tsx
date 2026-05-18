@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -28,6 +28,7 @@ const COLUMNS = [
 
 export function KanbanBoard({ tasks }: { tasks: Task[] }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [dragging, setDragging] = useState<string | null>(null);
   const [localTasks, setLocalTasks] = useState(tasks);
 
@@ -54,7 +55,7 @@ export function KanbanBoard({ tasks }: { tasks: Task[] }) {
         setLocalTasks(tasks);
         toast.error("Failed to update task");
       } else {
-        router.refresh();
+        startTransition(() => router.refresh());
       }
     } catch {
       setLocalTasks(tasks);

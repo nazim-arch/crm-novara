@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
@@ -66,6 +66,7 @@ export function OpportunityForm({
   opportunityId,
 }: OpportunityFormProps) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [loading, setLoading] = useState(false);
   const isEditing = !!opportunityId;
 
@@ -162,7 +163,7 @@ export function OpportunityForm({
 
       toast.success(isEditing ? "Opportunity updated" : "Opportunity created");
       router.push(`/opportunities/${result.data.id}`);
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch {
       toast.error("Something went wrong. Please try again.");
     } finally {

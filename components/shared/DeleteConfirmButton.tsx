@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Trash2, Loader2 } from "lucide-react";
@@ -28,6 +28,7 @@ export function DeleteConfirmButton({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [, startTransition] = useTransition();
 
   async function handleDelete() {
     setLoading(true);
@@ -39,8 +40,10 @@ export function DeleteConfirmButton({
         return;
       }
       toast.success("Deleted successfully");
-      router.push(redirectTo);
-      router.refresh();
+      startTransition(() => {
+        router.push(redirectTo);
+        router.refresh();
+      });
     } catch {
       toast.error("Something went wrong");
     } finally {

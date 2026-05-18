@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +17,7 @@ interface ProfileFormProps {
 
 export function ProfileForm({ userId, name, email }: ProfileFormProps) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [profileForm, setProfileForm] = useState({ name, phone: "" });
   const [passwordForm, setPasswordForm] = useState({
     current_password: "",
@@ -39,7 +40,7 @@ export function ProfileForm({ userId, name, email }: ProfileFormProps) {
         return;
       }
       toast.success("Profile updated");
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch {
       toast.error("Something went wrong");
     } finally {

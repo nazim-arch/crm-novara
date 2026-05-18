@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useTransition } from "react";
 import { Upload, Download, X, CheckCircle2, AlertCircle, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -158,6 +158,7 @@ export function LeadImportModal() {
   const [result, setResult] = useState<ImportResult | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+  const [, startTransition] = useTransition();
 
   function reset() {
     setRows([]);
@@ -227,7 +228,7 @@ export function LeadImportModal() {
       });
       const data: ImportResult = await res.json();
       setResult(data);
-      if (data.created > 0) router.refresh();
+      if (data.created > 0) startTransition(() => router.refresh());
     } catch {
       setResult({ created: 0, failed: [{ row: 0, name: "", errors: ["Network error — please try again"] }] });
     } finally {

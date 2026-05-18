@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import {
@@ -70,6 +70,11 @@ interface StageChangerProps {
 export function StageChanger({ leadId, currentStage, currentActivityStage = "New" }: StageChangerProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [, startTransition] = useTransition();
+
+  // Optimistic display values — update instantly on select, revert on error
+  const [optimisticStage, setOptimisticStage] = useState(currentStage);
+  const [optimisticActivity, setOptimisticActivity] = useState(currentActivityStage);
 
   // Pending changes
   const [pendingPipeline, setPendingPipeline] = useState<string | null>(null);
@@ -99,6 +104,10 @@ export function StageChanger({ leadId, currentStage, currentActivityStage = "New
   };
 
   const submitChange = async (payload: Record<string, unknown>) => {
+    // Optimistic: update badge immediately
+    if (payload.to_stage) setOptimisticStage(payload.to_stage as string);
+    if (payload.activity_stage) setOptimisticActivity(payload.activity_stage as string);
+
     setLoading(true);
     try {
       const res = await fetch(`/api/leads/${leadId}/stage`, {
@@ -108,13 +117,19 @@ export function StageChanger({ leadId, currentStage, currentActivityStage = "New
       });
       const data = await res.json();
       if (!res.ok) {
+        // Revert optimistic update on failure
+        setOptimisticStage(currentStage);
+        setOptimisticActivity(currentActivityStage);
         toast.error(data.error ?? "Failed to update stage");
         return;
       }
       toast.success("Stage updated");
       reset();
-      router.refresh();
+      // Refresh server data without blocking the UI
+      startTransition(() => router.refresh());
     } catch {
+      setOptimisticStage(currentStage);
+      setOptimisticActivity(currentActivityStage);
       toast.error("Something went wrong");
     } finally {
       setLoading(false);
@@ -190,8 +205,8 @@ export function StageChanger({ leadId, currentStage, currentActivityStage = "New
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground font-medium">Pipeline Stage</p>
           <div className="flex items-center gap-2">
-            <LeadStatusBadge status={currentStage} />
-            <Select value={currentStage} onValueChange={handlePipelineChange}>
+            <LeadStatusBadge status={optimisticStage} />
+            <Select value={optimisticStage} onValueChange={handlePipelineChange} disabled={loading}>
               <SelectTrigger className="w-48">
                 <SelectValue />
               </SelectTrigger>
@@ -210,8 +225,8 @@ export function StageChanger({ leadId, currentStage, currentActivityStage = "New
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground font-medium">Activity Stage</p>
           <div className="flex items-center gap-2">
-            <ActivityStageBadge stage={currentActivityStage} />
-            <Select value={currentActivityStage} onValueChange={handleActivityChange}>
+            <ActivityStageBadge stage={optimisticActivity} />
+            <Select value={optimisticActivity} onValueChange={handleActivityChange} disabled={loading}>
               <SelectTrigger className="w-44">
                 <SelectValue />
               </SelectTrigger>

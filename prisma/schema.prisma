@@ -306,6 +306,7 @@ model Lead {
   @@index([email])
   @@index([status])
   @@index([temperature])
+  @@index([activity_stage])
   @@index([assigned_to_id])
   @@index([lead_owner_id])
   @@index([lead_source])
@@ -313,6 +314,10 @@ model Lead {
   @@index([created_at])
   @@index([updated_at])
   @@index([deleted_at])
+  // Composite indexes for common dashboard/filter queries
+  @@index([deleted_at, status])
+  @@index([deleted_at, temperature, status])
+  @@index([deleted_at, assigned_to_id, status])
   @@map("leads")
 }
 
@@ -633,6 +638,10 @@ model FollowUp {
   @@index([assigned_to_id])
   @@index([scheduled_at])
   @@index([completed_at])
+  // Composite indexes for focus queue queries (overdue/today/callback by agent)
+  @@index([scheduled_at, assigned_to_id, completed_at])
+  @@index([callback_at, assigned_to_id, completed_at])
+  @@index([completed_at, assigned_to_id])
   @@map("follow_ups")
 }
 

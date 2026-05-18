@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -27,9 +27,12 @@ interface TaskStatusChangerProps {
 export function TaskStatusChanger({ taskId, currentStatus }: TaskStatusChangerProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [, startTransition] = useTransition();
+  const [optimisticStatus, setOptimisticStatus] = useState(currentStatus);
 
   const handleChange = async (newStatus: string) => {
     if (newStatus === currentStatus) return;
+    setOptimisticStatus(newStatus);
     setLoading(true);
     try {
       const res = await fetch(`/api/tasks/${taskId}`, {
@@ -39,12 +42,14 @@ export function TaskStatusChanger({ taskId, currentStatus }: TaskStatusChangerPr
       });
       const result = await res.json();
       if (!res.ok) {
+        setOptimisticStatus(currentStatus);
         toast.error(result.error ?? "Failed to update status");
         return;
       }
       toast.success("Status updated");
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch {
+      setOptimisticStatus(currentStatus);
       toast.error("Something went wrong");
     } finally {
       setLoading(false);
@@ -55,7 +60,7 @@ export function TaskStatusChanger({ taskId, currentStatus }: TaskStatusChangerPr
     <div className="flex items-center gap-3">
       <Label className="text-sm text-muted-foreground shrink-0">Status</Label>
       <Select
-        defaultValue={currentStatus}
+        value={optimisticStatus}
         onValueChange={(v) => v && handleChange(v)}
         disabled={loading}
       >

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useTransition } from "react";
 import { PenSquare, Download, X, CheckCircle2, AlertCircle, FileSpreadsheet, SkipForward } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -161,6 +161,7 @@ export function LeadUpdateModal() {
   const [result, setResult]   = useState<BulkUpdateResult | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const router  = useRouter();
+  const [, startTransition] = useTransition();
 
   function reset() {
     setRows([]); setDetectedFields([]); setFileName("");
@@ -222,7 +223,7 @@ export function LeadUpdateModal() {
       });
       const data: BulkUpdateResult = await res.json();
       setResult(data);
-      if (data.updated > 0) router.refresh();
+      if (data.updated > 0) startTransition(() => router.refresh());
     } catch {
       setResult({ updated: 0, skipped: 0, failed: [{ row: 0, lead_number: "—", errors: ["Network error — please try again"] }] });
     } finally {

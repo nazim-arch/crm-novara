@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,6 +11,7 @@ export function NoteForm({ leadId, apiPath }: { leadId?: string; apiPath?: strin
   const router = useRouter();
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(false);
+  const [, startTransition] = useTransition();
 
   const notesUrl = apiPath ?? (leadId ? `/api/leads/${leadId}/notes` : null);
 
@@ -26,7 +27,7 @@ export function NoteForm({ leadId, apiPath }: { leadId?: string; apiPath?: strin
       if (res.ok) {
         setContent("");
         toast.success("Note added");
-        router.refresh();
+        startTransition(() => router.refresh());
       } else {
         toast.error("Failed to add note");
       }

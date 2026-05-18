@@ -53,24 +53,28 @@ export async function GET(request: Request) {
         where: { ...baseWhere, callback_at: null, scheduled_at: { lt: todayStart } },
         include: FU_INCLUDE,
         orderBy: { scheduled_at: "asc" },
+        take: 100,
       }),
       // 2. Callbacks whose time has arrived (callback_at <= now)
       prisma.followUp.findMany({
         where: { ...baseWhere, callback_at: { not: null, lte: now } },
         include: FU_INCLUDE,
         orderBy: { callback_at: "asc" },
+        take: 100,
       }),
       // 3. Due today (no callback_at set)
       prisma.followUp.findMany({
         where: { ...baseWhere, callback_at: null, scheduled_at: { gte: todayStart, lte: todayEnd } },
         include: FU_INCLUDE,
         orderBy: { scheduled_at: "asc" },
+        take: 100,
       }),
       // 4. Callbacks still future (parked, not yet due)
       prisma.followUp.findMany({
         where: { ...baseWhere, callback_at: { gt: now } },
         include: FU_INCLUDE,
         orderBy: { callback_at: "asc" },
+        take: 200,
       }),
       // 5. Completed today
       prisma.followUp.findMany({
