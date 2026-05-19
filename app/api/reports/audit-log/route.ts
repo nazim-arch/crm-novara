@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/lib/generated/prisma/client";
 import { NextResponse } from "next/server";
 
 const PAGE_SIZE = 50;
@@ -123,7 +124,7 @@ export async function GET(request: Request) {
     const dateTo = searchParams.get("date_to") ?? "";
     const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
 
-    const where: Parameters<typeof prisma.activity.findMany>[0]["where"] = {};
+    const where: Prisma.ActivityWhereInput = {};
 
     if (entityType && entityType !== "all") {
       where.entity_type = entityType as "Lead" | "Opportunity" | "Task" | "User";
