@@ -9,7 +9,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   BarChart3, Users, Building2, CheckSquare, CalendarClock,
   Settings, LayoutDashboard, Radar, Menu, Briefcase, Mic2, SlidersHorizontal,
-  TrendingUp, FileText, ShieldCheck, Target, ClipboardCheck, CalendarDays,
+  TrendingUp, FileText, ShieldCheck, Target, ClipboardCheck, CalendarDays, History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -79,6 +79,7 @@ const NAV_CONFIG: NavSection[] = [
       { href: "/settings/users", label: "Users", icon: Settings, roles: ["Admin"] },
       { href: "/settings/clients", label: "Clients", icon: Briefcase, roles: ["Admin"] },
       { href: "/settings/roles", label: "Role Permissions", icon: ShieldCheck, roles: ["Admin"] },
+      { href: "/reports/audit-log", label: "Audit Log", icon: History, roles: ["Admin", "Manager"] },
     ],
   },
 ];
