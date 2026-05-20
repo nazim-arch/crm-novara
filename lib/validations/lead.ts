@@ -7,31 +7,25 @@ const leadBaseSchema = z.object({
   whatsapp: z.string().optional().or(z.literal("")),
   lead_source: z.string().min(1, "Lead source is required"),
   temperature: z.enum(["Hot", "Warm", "Cold", "FollowUpLater"]).default("Cold"),
-  lead_type: z.enum(["EndUser", "Broker", "ChannelPartner", "Others"], {
-    message: "Lead type is required",
-  }),
+  lead_type: z.enum(["EndUser", "Broker", "ChannelPartner", "Others"]).optional(),
   lead_owner_id: z.string().min(1, "Lead owner is required"),
   assigned_to_id: z.string().min(1, "Assignee is required"),
   campaign_source: z.string().optional().or(z.literal("")),
   referral_source: z.string().optional().or(z.literal("")),
   budget_min: z.coerce.number().positive().optional(),
   budget_max: z.coerce.number().positive().optional(),
-  property_type: z.enum(["Residential", "Commercial", "Plot", "Villa", "Apartment", "Office", "Land"], {
-    message: "Property type is required",
-  }),
+  property_type: z.enum(["Residential", "Commercial", "Plot", "Villa", "Apartment", "Office", "Land"]).optional(),
   unit_type: z.string().optional().or(z.literal("")),
   location_preference: z.string().optional().or(z.literal("")),
   timeline_to_buy: z.string().optional().or(z.literal("")),
-  purpose: z.enum(["EndUse", "Investment"], {
-    message: "Purpose is required",
-  }),
+  purpose: z.enum(["EndUse", "Investment"]).optional(),
   next_followup_date: z.coerce.date().refine((d) => !isNaN(d.getTime()), "Invalid date").optional(),
   followup_type: z
     .enum(["Call", "Email", "WhatsApp", "Visit", "Meeting", "Activity", "Internal"])
     .optional(),
   reason_for_interest: z.string().optional().or(z.literal("")),
   notes: z.string().optional().or(z.literal("")),
-  potential_lead_value: z.coerce.number().positive("Potential lead value must be a positive number"),
+  potential_lead_value: z.coerce.number().positive("Potential lead value must be a positive number").optional(),
   financing_required: z.boolean().optional(),
 });
 
