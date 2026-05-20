@@ -67,11 +67,11 @@ export function LeadFilters({ users, currentParams }: LeadFiltersProps) {
 
   return (
     <div className="flex flex-wrap gap-2 items-center">
-      <div className="relative">
+      <div className="relative w-full sm:w-56">
         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
           placeholder="Search name, phone, ID..."
-          className="pl-8 w-56"
+          className="pl-8 w-full"
           defaultValue={currentParams.search ?? ""}
           onChange={(e) => handleSearch(e.target.value)}
         />
@@ -81,7 +81,7 @@ export function LeadFilters({ users, currentParams }: LeadFiltersProps) {
         value={currentParams.status ?? "all"}
         onValueChange={(v) => updateParam("status", v ?? "all")}
       >
-        <SelectTrigger className="w-40">
+        <SelectTrigger className="w-full sm:w-40">
           <SelectValue placeholder="All statuses" />
         </SelectTrigger>
         <SelectContent>
@@ -102,7 +102,7 @@ export function LeadFilters({ users, currentParams }: LeadFiltersProps) {
         value={currentParams.temperature ?? "all"}
         onValueChange={(v) => updateParam("temperature", v ?? "all")}
       >
-        <SelectTrigger className="w-36">
+        <SelectTrigger className="w-full sm:w-36">
           <SelectValue placeholder="Temperature" />
         </SelectTrigger>
         <SelectContent>
@@ -118,7 +118,7 @@ export function LeadFilters({ users, currentParams }: LeadFiltersProps) {
         value={currentParams.assigned_to ?? "all"}
         onValueChange={(v) => updateParam("assigned_to", v ?? "all")}
       >
-        <SelectTrigger className="w-44">
+        <SelectTrigger className="w-full sm:w-44">
           <SelectValue placeholder="Assigned to" />
         </SelectTrigger>
         <SelectContent>
@@ -135,7 +135,7 @@ export function LeadFilters({ users, currentParams }: LeadFiltersProps) {
         value={currentParams.activity_stage ?? "all"}
         onValueChange={(v) => updateParam("activity_stage", v ?? "all")}
       >
-        <SelectTrigger className="w-44">
+        <SelectTrigger className="w-full sm:w-44">
           <SelectValue placeholder="Activity stage" />
         </SelectTrigger>
         <SelectContent>

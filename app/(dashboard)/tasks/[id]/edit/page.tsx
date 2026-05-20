@@ -44,7 +44,7 @@ export default async function EditTaskPage({ params }: { params: Params }) {
   if (!task) notFound();
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <div className="p-3 sm:p-6 max-w-2xl mx-auto">
       <div className="mb-6">
         <h1 className="text-xl font-semibold">Edit Task</h1>
         <p className="text-sm text-muted-foreground font-mono">{task.task_number}</p>

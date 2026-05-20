@@ -86,18 +86,18 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
   const totalPages = Math.ceil(total / limit);
 
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="p-3 sm:p-6 space-y-3 sm:space-y-4">
+      <div className="flex items-start justify-between gap-2">
         <div>
-          <h1 className="text-xl font-semibold">Opportunities</h1>
-          <p className="text-sm text-muted-foreground">{total} total</p>
+          <h1 className="text-lg sm:text-xl font-semibold">Opportunities</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">{total} total</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {canExport && <ExportButton href="/api/opportunities/export" filename="opportunities.xlsx" />}
           {canCreate && (
-            <Button render={<Link href="/opportunities/new" />}>
-              <Plus className="h-4 w-4 mr-1" />
-              New Opportunity
+            <Button render={<Link href="/opportunities/new" />} size="sm">
+              <Plus className="h-4 w-4 sm:mr-1" />
+              <span className="hidden sm:inline">New Opportunity</span>
             </Button>
           )}
         </div>
@@ -105,7 +105,47 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
 
       <OppFilters currentSearch={sp.search} currentStatus={sp.status} />
 
-      <div className="rounded-lg border bg-card overflow-hidden">
+      {/* Mobile card view */}
+      <div className="md:hidden space-y-2">
+        {opportunities.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground text-sm">
+            <Building2 className="h-8 w-8 mx-auto mb-2 opacity-30" />
+            No opportunities yet
+          </div>
+        ) : (
+          opportunities.map((opp) => (
+            <div key={opp.id} className="rounded-xl border bg-card p-3 space-y-2 shadow-sm">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <Link href={`/opportunities/${opp.id}`} className="font-semibold text-sm hover:underline block truncate">
+                    {opp.name}
+                  </Link>
+                  <p className="text-xs text-muted-foreground truncate">{opp.project}</p>
+                  <span className="text-[11px] text-muted-foreground font-mono">{opp.opp_number}</span>
+                </div>
+                <span className={`shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                  opp.status === "Active" ? "bg-green-100 text-green-700"
+                  : opp.status === "Sold" ? "bg-blue-100 text-blue-700"
+                  : "bg-gray-100 text-gray-600"
+                }`}>
+                  {opp.status}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <span>{opp.location}</span>
+                <span>{opp.property_type}</span>
+                <span>{opp._count.leads} lead{opp._count.leads !== 1 ? "s" : ""}</span>
+                {canViewFinancials && opp.possible_revenue && (
+                  <span className="font-medium text-foreground">{formatCurrency(Number(opp.possible_revenue))}</span>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Desktop table view */}
+      <div className="hidden md:block rounded-lg border bg-card overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
@@ -165,7 +205,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
       </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <div className="flex items-center justify-between text-xs sm:text-sm text-muted-foreground">
           <span>Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}</span>
           <div className="flex gap-2">
             {page > 1 && (

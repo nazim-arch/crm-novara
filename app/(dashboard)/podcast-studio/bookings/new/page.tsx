@@ -1,4 +1,4 @@
-import { Mic2, ArrowLeft } from "lucide-react";
+﻿import { Mic2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { BookingForm } from "@/components/podcast-studio/BookingForm";
 
@@ -7,7 +7,7 @@ type SearchParams = Promise<{ date?: string; time?: string }>;
 export default async function NewBookingPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
   return (
-    <div className="p-6 max-w-screen-lg mx-auto space-y-6">
+    <div className="p-3 sm:p-6 max-w-screen-lg mx-auto space-y-6">
       <div className="flex items-center gap-3">
         <Link href="/podcast-studio/bookings" className="text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="h-5 w-5" />
@@ -27,3 +27,4 @@ export default async function NewBookingPage({ searchParams }: { searchParams: S
     </div>
   );
 }
+

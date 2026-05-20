@@ -228,35 +228,35 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
   })();
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-3 sm:p-6 space-y-3 sm:space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-2">
         <div>
-          <h1 className="text-xl font-semibold">Leads</h1>
-          <p className="text-sm text-muted-foreground">{total} total leads</p>
+          <h1 className="text-lg sm:text-xl font-semibold">Leads</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">{total} total leads</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 flex-wrap justify-end">
           {canExport && <ExportButton href="/api/leads/export" filename="leads.xlsx" />}
           {canImport && <LeadImportModal />}
           {canImport && <LeadUpdateModal />}
-          <Button render={<Link href="/leads/new" />}>
-            <Plus className="h-4 w-4 mr-1" />
-            New Lead
+          <Button render={<Link href="/leads/new" />} size="sm">
+            <Plus className="h-4 w-4 sm:mr-1" />
+            <span className="hidden sm:inline">New Lead</span>
           </Button>
         </div>
       </div>
 
       {/* Active special filter banner */}
       {activeFilterLabel && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 border border-primary/20 text-sm">
-          <span className="font-medium text-primary">{activeFilterLabel}</span>
-          <span className="text-muted-foreground">— showing {total} leads</span>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 border border-primary/20 text-xs sm:text-sm">
+          <span className="font-medium text-primary truncate">{activeFilterLabel}</span>
+          <span className="text-muted-foreground hidden sm:inline">— showing {total} leads</span>
           <Link
             href={clearFilterUrl}
-            className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground shrink-0"
           >
             <X className="h-3.5 w-3.5" />
-            Clear filter
+            Clear
           </Link>
         </div>
       )}
@@ -275,8 +275,73 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
         }}
       />
 
-      {/* Table */}
-      <div className="rounded-lg border bg-card overflow-hidden">
+      {/* Mobile card view */}
+      <div className="md:hidden space-y-2">
+        {leads.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground text-sm">No leads found</div>
+        ) : (
+          leads.map((lead) => (
+            <div key={lead.id} className="rounded-xl border bg-card p-3 space-y-2.5 shadow-sm">
+              {/* Row 1: name + badges */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <Link href={`/leads/${lead.id}`} className="font-semibold text-sm hover:underline leading-tight block truncate">
+                    {lead.full_name}
+                  </Link>
+                  <span className="text-[11px] text-muted-foreground font-mono">{lead.lead_number}</span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <TemperatureBadge temperature={lead.temperature} />
+                </div>
+              </div>
+              {/* Row 2: status + property */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <LeadStatusBadge status={lead.status} />
+                {lead.property_type && (
+                  <span className="text-[11px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                    {lead.property_type}
+                  </span>
+                )}
+                {lead.assigned_to && (
+                  <span className="text-[11px] text-muted-foreground">{lead.assigned_to.name}</span>
+                )}
+              </div>
+              {/* Row 3: follow-up date */}
+              {lead.next_followup_date && (
+                <div className="text-xs text-muted-foreground">
+                  Follow-up:{" "}
+                  <span className={new Date(lead.next_followup_date) < new Date() ? "text-destructive font-medium" : "font-medium"}>
+                    {formatDate(lead.next_followup_date)}
+                  </span>
+                </div>
+              )}
+              {/* Row 4: actions */}
+              <div className="flex items-center gap-2 pt-0.5">
+                <LeadContactActions
+                  leadId={lead.id}
+                  phone={lead.phone}
+                  leadName={lead.full_name}
+                  agentName={session?.user?.name ?? "Agent"}
+                  propertyType={lead.property_type}
+                  budgetMin={lead.budget_min ? Number(lead.budget_min) : null}
+                  budgetMax={lead.budget_max ? Number(lead.budget_max) : null}
+                  location={lead.location_preference}
+                  variant="compact"
+                />
+                <Link
+                  href={`/leads/${lead.id}`}
+                  className="ml-auto text-xs text-primary hover:underline font-medium"
+                >
+                  View →
+                </Link>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Desktop table view */}
+      <div className="hidden md:block rounded-lg border bg-card overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
@@ -349,7 +414,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <div className="flex items-center justify-between text-xs sm:text-sm text-muted-foreground">
           <span>Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}</span>
           <div className="flex gap-2">
             {page > 1 && (

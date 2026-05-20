@@ -361,7 +361,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
         <Plus className="h-6 w-6" />
       </DialogTrigger>
 
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="w-full max-w-full sm:max-w-md h-[90dvh] sm:h-auto overflow-y-auto sm:overflow-visible">
         <DialogHeader>
           <DialogTitle>Quick Add</DialogTitle>
         </DialogHeader>

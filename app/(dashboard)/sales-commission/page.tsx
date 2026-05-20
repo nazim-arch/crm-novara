@@ -71,7 +71,7 @@ export default async function SalesCommissionPage({ searchParams }: { searchPara
   const [startYear, startMonth] = start.split("-").map(Number);
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-3 sm:p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
         <div className="h-10 w-10 rounded-lg bg-violet-100 flex items-center justify-center">
           <TrendingUp className="h-5 w-5 text-violet-600" />
@@ -108,3 +108,4 @@ export default async function SalesCommissionPage({ searchParams }: { searchPara
     </div>
   );
 }
+

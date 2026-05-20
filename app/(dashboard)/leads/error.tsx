@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 export default function LeadsError({
   error,
@@ -8,7 +8,7 @@ export default function LeadsError({
   reset: () => void;
 }) {
   return (
-    <div className="p-6 space-y-3">
+    <div className="p-3 sm:p-6 space-y-3">
       <h2 className="text-lg font-semibold text-destructive">Failed to load leads</h2>
       <pre className="text-sm bg-muted p-4 rounded overflow-auto whitespace-pre-wrap">{error.message}</pre>
       {error.digest && (
@@ -32,3 +32,4 @@ export default function LeadsError({
     </div>
   );
 }
+

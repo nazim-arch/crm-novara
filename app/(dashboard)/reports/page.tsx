@@ -16,7 +16,7 @@ export default async function ReportsPage() {
   });
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 sm:p-6 space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Reports</h1>
         <p className="text-sm text-muted-foreground">Revenue and profitability analysis</p>
@@ -25,3 +25,4 @@ export default async function ReportsPage() {
     </div>
   );
 }
+

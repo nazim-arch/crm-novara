@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+﻿import { prisma } from "@/lib/prisma";
 import { Mic2, Settings } from "lucide-react";
 import { StudioRatesSettings } from "@/components/podcast-studio/StudioRatesSettings";
 
@@ -13,7 +13,7 @@ export default async function PodcastStudioSettingsPage() {
   }));
 
   return (
-    <div className="p-6 max-w-screen-lg mx-auto space-y-6">
+    <div className="p-3 sm:p-6 max-w-screen-lg mx-auto space-y-6">
       <div className="flex items-center gap-3">
         <div className="h-10 w-10 rounded-xl bg-violet-600 text-white flex items-center justify-center">
           <Settings className="h-5 w-5" />
@@ -30,3 +30,4 @@ export default async function PodcastStudioSettingsPage() {
     </div>
   );
 }
+

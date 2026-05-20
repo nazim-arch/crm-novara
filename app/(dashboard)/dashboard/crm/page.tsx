@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
@@ -240,7 +240,7 @@ export default async function CrmDashboardPage({ searchParams }: { searchParams:
   const canViewFinancials = await hasPermissionAsync(role, "financial:view");
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 sm:p-6 space-y-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold">CRM Overview</h1>
         <p className="text-sm text-muted-foreground">Pipeline health &amp; activity</p>
@@ -265,3 +265,4 @@ export default async function CrmDashboardPage({ searchParams }: { searchParams:
     </div>
   );
 }
+

@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+﻿import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -183,7 +183,7 @@ export default async function PodcastStudioDashboardPage({ searchParams }: { sea
   const chartData = { dailyData, weeklyData, monthlyData, revBreakdown, peakHoursData };
 
   return (
-    <div className="p-6 max-w-screen-xl mx-auto space-y-6">
+    <div className="p-3 sm:p-6 max-w-screen-xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -243,3 +243,4 @@ export default async function PodcastStudioDashboardPage({ searchParams }: { sea
     </div>
   );
 }
+

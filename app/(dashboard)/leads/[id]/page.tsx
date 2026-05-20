@@ -77,23 +77,23 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
   const canDelete = session?.user && await hasPermissionAsync(session.user.role, "lead:delete");
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-3 sm:p-6 max-w-6xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" render={<Link href="/leads" />}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-semibold">{lead.full_name}</h1>
+              <h1 className="text-lg sm:text-xl font-semibold">{lead.full_name}</h1>
               <LeadStatusBadge status={lead.status} />
               <TemperatureBadge temperature={lead.temperature} />
             </div>
             <p className="text-sm text-muted-foreground font-mono">{lead.lead_number}</p>
           </div>
         </div>
-        <div className="flex gap-2 shrink-0 flex-wrap">
+        <div className="flex gap-2 flex-wrap items-center">
           <LeadContactActions
             leadId={lead.id}
             phone={lead.phone}

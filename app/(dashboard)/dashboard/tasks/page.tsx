@@ -1,4 +1,4 @@
-export const dynamic = "force-dynamic";
+﻿export const dynamic = "force-dynamic";
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -148,7 +148,7 @@ export default async function TaskDashboardPage({ searchParams }: { searchParams
   const completionRate = totalInRange > 0 ? Math.round((completedInRange / totalInRange) * 100) : null;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 sm:p-6 space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Task Dashboard</h1>
         <p className="text-sm text-muted-foreground">{isScoped ? "Your task overview" : "Team task overview"}</p>
@@ -285,3 +285,4 @@ export default async function TaskDashboardPage({ searchParams }: { searchParams
     </div>
   );
 }
+

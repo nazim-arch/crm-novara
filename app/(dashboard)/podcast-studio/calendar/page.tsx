@@ -1,11 +1,11 @@
-import { Mic2, Plus } from "lucide-react";
+﻿import { Mic2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { SlotCalendar } from "@/components/podcast-studio/SlotCalendar";
 
 export default function PodcastCalendarPage() {
   return (
-    <div className="p-6 max-w-screen-xl mx-auto space-y-6">
+    <div className="p-3 sm:p-6 max-w-screen-xl mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-xl bg-violet-600 text-white flex items-center justify-center">
@@ -25,3 +25,4 @@ export default function PodcastCalendarPage() {
     </div>
   );
 }
+

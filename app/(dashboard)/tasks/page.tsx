@@ -52,13 +52,13 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
   const isScoped = !!scope;
 
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="p-3 sm:p-6 space-y-3 sm:space-y-4">
+      <div className="flex items-center justify-between gap-2">
         <div>
-          <h1 className="text-xl font-semibold">Tasks</h1>
-          <p className="text-sm text-muted-foreground">{tasks.length} tasks</p>
+          <h1 className="text-lg sm:text-xl font-semibold">Tasks</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">{tasks.length} tasks</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5 items-center">
           <div className="flex border rounded-md overflow-hidden">
             <Link
               href="/tasks?view=list"
@@ -73,15 +73,13 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
               <LayoutGrid className="h-4 w-4" />
             </Link>
           </div>
-          <div className="flex items-center gap-2">
-            {canExport && <ExportButton href="/api/tasks/export" filename="tasks.xlsx" />}
-            {canCreate && (
-              <Button render={<Link href="/tasks/new" />}>
-                <Plus className="h-4 w-4 mr-1" />
-                New Task
-              </Button>
-            )}
-          </div>
+          {canExport && <ExportButton href="/api/tasks/export" filename="tasks.xlsx" />}
+          {canCreate && (
+            <Button render={<Link href="/tasks/new" />} size="sm">
+              <Plus className="h-4 w-4 sm:mr-1" />
+              <span className="hidden sm:inline">New Task</span>
+            </Button>
+          )}
         </div>
       </div>
 

@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { leadScopeFilter } from "@/lib/rbac";
@@ -362,7 +362,7 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
     insights.push(`${warmLeads} warm leads are ready to be upgraded to hot.`);
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 sm:p-6 space-y-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold">Sales Dashboard</h1>
         <p className="text-sm text-muted-foreground">Pipeline health, period performance &amp; action queue</p>
@@ -440,3 +440,4 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
     </div>
   );
 }
+

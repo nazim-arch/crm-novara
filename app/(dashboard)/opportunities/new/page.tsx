@@ -10,7 +10,7 @@ export default async function NewOpportunityPage() {
   }
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <div className="p-3 sm:p-6 max-w-3xl mx-auto">
       <div className="mb-6">
         <h1 className="text-xl font-semibold">New Opportunity</h1>
         <p className="text-sm text-muted-foreground">Add a new property opportunity</p>
@@ -19,3 +19,4 @@ export default async function NewOpportunityPage() {
     </div>
   );
 }
+

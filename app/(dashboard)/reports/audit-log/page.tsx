@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { AuditLogClient } from "@/components/reports/AuditLogClient";
@@ -15,7 +15,7 @@ export default async function AuditLogPage() {
   });
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 sm:p-6 space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Audit Log</h1>
         <p className="text-sm text-muted-foreground">
@@ -26,3 +26,4 @@ export default async function AuditLogPage() {
     </div>
   );
 }
+

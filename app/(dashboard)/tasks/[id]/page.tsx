@@ -60,7 +60,7 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
     !["Done", "Cancelled"].includes(task.status);
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <div className="p-3 sm:p-6 max-w-5xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">

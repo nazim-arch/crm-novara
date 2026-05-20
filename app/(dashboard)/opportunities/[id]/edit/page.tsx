@@ -21,7 +21,7 @@ export default async function EditOpportunityPage({ params }: { params: Params }
   if (!opp) notFound();
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <div className="p-3 sm:p-6 max-w-3xl mx-auto">
       <div className="mb-6">
         <h1 className="text-xl font-semibold">Edit Opportunity</h1>
         <p className="text-sm text-muted-foreground font-mono">{opp.opp_number}</p>

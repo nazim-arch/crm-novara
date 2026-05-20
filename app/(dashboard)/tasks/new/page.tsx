@@ -39,7 +39,7 @@ export default async function NewTaskPage({ searchParams }: { searchParams: Sear
   ]);
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <div className="p-3 sm:p-6 max-w-2xl mx-auto">
       <div className="mb-6">
         <h1 className="text-xl font-semibold">New Task</h1>
         <p className="text-sm text-muted-foreground">Create a new task</p>
@@ -56,3 +56,4 @@ export default async function NewTaskPage({ searchParams }: { searchParams: Sear
     </div>
   );
 }
+

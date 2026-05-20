@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { hasPermissionAsync } from "@/lib/rbac";
@@ -17,7 +17,7 @@ export default async function RolesPage() {
     : DEFAULT_PERMS;
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-3 sm:p-6 max-w-6xl mx-auto space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Role Permissions</h1>
         <p className="text-sm text-muted-foreground">
@@ -28,3 +28,4 @@ export default async function RolesPage() {
     </div>
   );
 }
+

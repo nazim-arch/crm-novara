@@ -224,32 +224,80 @@ function SortBtn({ col, label, sortCol, sortDir, onSort }: { col: string; label:
 
 function TaskGrid({ tasks, sortCol, sortDir, onSort }: { tasks: Task[]; sortCol: string; sortDir: string; onSort: (c: string) => void }) {
   const sh = (col: string, label: string) => <SortBtn col={col} label={label} sortCol={sortCol} sortDir={sortDir} onSort={onSort} />;
+
+  if (tasks.length === 0) {
+    return (
+      <div className="rounded-lg border bg-card">
+        <p className="text-center py-12 text-muted-foreground text-sm">No tasks in this category</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="rounded-lg border bg-card overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-muted/50">
-            <TableHead>{sh("title", "Task")}</TableHead>
-            <TableHead>{sh("status", "Status")}</TableHead>
-            <TableHead>{sh("priority", "Priority")}</TableHead>
-            <TableHead>{sh("due_date", "Due Date")}</TableHead>
-            <TableHead>{sh("assigned_to", "Assigned To")}</TableHead>
-            <TableHead>Client</TableHead>
-            <TableHead>Linked To</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {tasks.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
-                No tasks in this category
-              </TableCell>
+    <>
+      {/* Mobile card view */}
+      <div className="md:hidden space-y-2">
+        {tasks.map((task) => {
+          const isOverdue = new Date(task.due_date) < new Date() && !["Done", "Cancelled"].includes(task.status);
+          return (
+            <div key={task.id} className="rounded-xl border bg-card p-3 space-y-2 shadow-sm">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <Link href={`/tasks/${task.id}`} className="font-semibold text-sm hover:underline block truncate">
+                    {task.title}
+                  </Link>
+                  <span className="text-[11px] text-muted-foreground font-mono">{task.task_number}</span>
+                </div>
+                <PriorityBadge priority={task.priority} />
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <TaskStatusBadge status={task.status} />
+                <span className={cn("text-xs", isOverdue ? "text-destructive font-medium" : "text-muted-foreground")}>
+                  {formatDate(task.due_date)}
+                </span>
+                <span className="text-xs text-muted-foreground">{task.assigned_to.name}</span>
+              </div>
+              {(task.lead || task.opportunity || task.client) && (
+                <div className="flex flex-wrap gap-1.5 text-xs">
+                  {task.client && (
+                    <span className="font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/30 px-1.5 py-0.5 rounded">
+                      {task.client.name}
+                    </span>
+                  )}
+                  {task.lead && (
+                    <Link href={`/leads/${task.lead.id}`} className="text-primary hover:underline">
+                      {task.lead.lead_number}
+                    </Link>
+                  )}
+                  {task.opportunity && (
+                    <Link href={`/opportunities/${task.opportunity.id}`} className="text-primary hover:underline">
+                      {task.opportunity.opp_number}
+                    </Link>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Desktop table view */}
+      <div className="hidden md:block rounded-lg border bg-card overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50">
+              <TableHead>{sh("title", "Task")}</TableHead>
+              <TableHead>{sh("status", "Status")}</TableHead>
+              <TableHead>{sh("priority", "Priority")}</TableHead>
+              <TableHead>{sh("due_date", "Due Date")}</TableHead>
+              <TableHead>{sh("assigned_to", "Assigned To")}</TableHead>
+              <TableHead>Client</TableHead>
+              <TableHead>Linked To</TableHead>
             </TableRow>
-          ) : (
-            tasks.map((task) => {
-              const isOverdue =
-                new Date(task.due_date) < new Date() &&
-                !["Done", "Cancelled"].includes(task.status);
+          </TableHeader>
+          <TableBody>
+            {tasks.map((task) => {
+              const isOverdue = new Date(task.due_date) < new Date() && !["Done", "Cancelled"].includes(task.status);
               return (
                 <TableRow key={task.id} className="hover:bg-muted/30">
                   <TableCell>
@@ -258,12 +306,8 @@ function TaskGrid({ tasks, sortCol, sortDir, onSort }: { tasks: Task[]; sortCol:
                     </Link>
                     <p className="text-xs text-muted-foreground font-mono">{task.task_number}</p>
                   </TableCell>
-                  <TableCell>
-                    <TaskStatusBadge status={task.status} />
-                  </TableCell>
-                  <TableCell>
-                    <PriorityBadge priority={task.priority} />
-                  </TableCell>
+                  <TableCell><TaskStatusBadge status={task.status} /></TableCell>
+                  <TableCell><PriorityBadge priority={task.priority} /></TableCell>
                   <TableCell className={cn("text-sm", isOverdue && "text-destructive font-medium")}>
                     {formatDate(task.due_date)}
                   </TableCell>
@@ -292,10 +336,10 @@ function TaskGrid({ tasks, sortCol, sortDir, onSort }: { tasks: Task[]; sortCol:
                   </TableCell>
                 </TableRow>
               );
-            })
-          )}
-        </TableBody>
-      </Table>
-    </div>
+            })}
+          </TableBody>
+        </Table>
+      </div>
+    </>
   );
 }
