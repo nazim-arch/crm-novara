@@ -59,7 +59,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </header>
         <ErrorBoundary>
           <main className="flex-1 overflow-auto bg-muted/30">{children}</main>
-          <QuickAddModal currentUserId={user.id} role={user.role} />
+          {user.role !== "Sales" && <QuickAddModal currentUserId={user.id} role={user.role} />}
         </ErrorBoundary>
       </div>
     </div>
