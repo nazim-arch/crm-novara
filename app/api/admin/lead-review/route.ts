@@ -84,6 +84,7 @@ export async function GET(request: Request) {
               next_followup_date: true,
               followup_type: true,
               deleted_at: true,
+              alternate_requirement: true,
               assigned_to: { select: { id: true, name: true } },
             },
           },

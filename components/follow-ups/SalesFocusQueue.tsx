@@ -32,6 +32,7 @@ interface FocusLead {
   purpose: string | null; lead_source: string;
   last_contact_date: string | null; next_followup_date: string | null;
   followup_type: string | null; outcome: string | null; deleted_at: string | null;
+  alternate_requirement: string | null;
   assigned_to: { id: string; name: string };
 }
 
@@ -273,6 +274,14 @@ function FocusCard({
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* ── Notes ── */}
+        {lead?.alternate_requirement && (
+          <div className="rounded-xl bg-amber-50/60 border border-amber-200/70 p-3 space-y-1">
+            <p className="text-[10px] uppercase tracking-wider text-amber-700 font-semibold">Notes</p>
+            <p className="text-xs text-foreground leading-relaxed whitespace-pre-line">{lead.alternate_requirement}</p>
           </div>
         )}
 

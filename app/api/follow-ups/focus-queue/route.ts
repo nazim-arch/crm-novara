@@ -13,6 +13,7 @@ const LEAD_SELECT = {
   purpose: true, lead_source: true,
   last_contact_date: true, next_followup_date: true,
   followup_type: true, outcome: true, deleted_at: true,
+  alternate_requirement: true,
   assigned_to: { select: { id: true, name: true } },
 };
 

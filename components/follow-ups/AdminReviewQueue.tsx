@@ -43,6 +43,7 @@ interface ReviewLead {
   next_followup_date: string | null;
   followup_type: string | null;
   deleted_at: string | null;
+  alternate_requirement: string | null;
   assigned_to: { id: string; name: string };
 }
 
@@ -296,6 +297,14 @@ function ReviewCard({
             </p>
           )}
         </div>
+
+        {/* Notes */}
+        {lead?.alternate_requirement && (
+          <div className="rounded-lg bg-amber-50/60 border border-amber-200/70 p-3 space-y-1">
+            <p className="text-[11px] uppercase tracking-wide text-amber-700 font-medium">Notes</p>
+            <p className="text-xs text-foreground leading-relaxed whitespace-pre-line">{lead.alternate_requirement}</p>
+          </div>
+        )}
 
         {/* Action Buttons */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1 border-t">
