@@ -28,6 +28,7 @@ enum LeadTemperature {
 
 enum LeadStatus {
   New
+  Contacted
   Prospect
   SiteVisitCompleted
   Negotiation

@@ -61,7 +61,7 @@ type ModalType =
 interface ModalState { type: ModalType; item: FocusItem; }
 
 const FOLLOW_UP_TYPES = ["Call", "Email", "WhatsApp", "Visit", "Meeting", "Activity", "Internal"] as const;
-const PIPELINE_STAGES = ["New", "Prospect", "SiteVisitCompleted", "Negotiation", "Won", "Lost", "InvalidLead", "OnHold", "Recycle"] as const;
+const PIPELINE_STAGES = ["New", "Contacted", "Prospect", "SiteVisitCompleted", "Negotiation", "Won", "Lost", "InvalidLead", "OnHold", "Recycle"] as const;
 const TEMPERATURES = ["Hot", "Warm", "Cold", "FollowUpLater"] as const;
 const LOST_REASONS = ["Budget", "Location", "Configuration", "Timing", "NotSerious", "Financing", "PurchasedElsewhere", "Other"] as const;
 const OUTCOMES = ["Contacted", "Interested", "Not Interested", "Site Visit Scheduled", "Negotiation Started", "Call Back Requested", "Wrong Number", "Language Barrier", "Busy"] as const;
@@ -108,7 +108,7 @@ function TempBadge({ temp }: { temp: string }) {
 
 function StageBadge({ stage }: { stage: string }) {
   const map: Record<string, string> = {
-    New: "bg-slate-100 text-slate-700", Prospect: "bg-blue-100 text-blue-700",
+    New: "bg-slate-100 text-slate-700", Contacted: "bg-teal-100 text-teal-700", Prospect: "bg-blue-100 text-blue-700",
     SiteVisitCompleted: "bg-indigo-100 text-indigo-700", Negotiation: "bg-orange-100 text-orange-700",
     Won: "bg-emerald-100 text-emerald-700", Lost: "bg-red-100 text-red-700",
     InvalidLead: "bg-gray-100 text-gray-500", OnHold: "bg-yellow-100 text-yellow-700",

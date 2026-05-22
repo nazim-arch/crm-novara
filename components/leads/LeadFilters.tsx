@@ -87,6 +87,7 @@ export function LeadFilters({ users, currentParams }: LeadFiltersProps) {
         <SelectContent>
           <SelectItem value="all">All statuses</SelectItem>
           <SelectItem value="New">New</SelectItem>
+          <SelectItem value="Contacted">Contacted</SelectItem>
           <SelectItem value="Prospect">Prospect</SelectItem>
           <SelectItem value="SiteVisitCompleted">Site Visit Completed</SelectItem>
           <SelectItem value="Negotiation">Negotiation</SelectItem>

@@ -46,7 +46,7 @@ export const updateLeadSchema = leadBaseSchema.partial().refine(
 );
 
 export const PIPELINE_STAGES = [
-  "New", "Prospect", "SiteVisitCompleted", "Negotiation",
+  "New", "Contacted", "Prospect", "SiteVisitCompleted", "Negotiation",
   "Won", "Lost", "InvalidLead", "OnHold", "Recycle",
 ] as const;
 

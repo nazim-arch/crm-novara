@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 
 type LeadStatus =
   | "New"
+  | "Contacted"
   | "Prospect"
   | "SiteVisitCompleted"
   | "Negotiation"
@@ -16,6 +17,7 @@ type LeadTemperature = "Hot" | "Warm" | "Cold" | "FollowUpLater";
 
 const STATUS_STYLES: Record<LeadStatus, string> = {
   New: "bg-slate-100 text-slate-700",
+  Contacted: "bg-teal-100 text-teal-700",
   Prospect: "bg-indigo-100 text-indigo-700",
   SiteVisitCompleted: "bg-cyan-100 text-cyan-700",
   Negotiation: "bg-orange-100 text-orange-700",
@@ -28,6 +30,7 @@ const STATUS_STYLES: Record<LeadStatus, string> = {
 
 const STATUS_LABELS: Record<LeadStatus, string> = {
   New: "New",
+  Contacted: "Contacted",
   Prospect: "Prospect",
   SiteVisitCompleted: "Site Visit",
   Negotiation: "Negotiation",

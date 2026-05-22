@@ -27,6 +27,7 @@ import { Loader2 } from "lucide-react";
 
 const PIPELINE_STAGES = [
   { value: "New", label: "New" },
+  { value: "Contacted", label: "Contacted" },
   { value: "Prospect", label: "Prospect" },
   { value: "SiteVisitCompleted", label: "Site Visit Completed" },
   { value: "Negotiation", label: "Negotiation" },

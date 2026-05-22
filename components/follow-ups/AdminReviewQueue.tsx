@@ -97,6 +97,7 @@ const QUALITY_OPTIONS = [
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     New: "bg-slate-100 text-slate-700",
+    Contacted: "bg-teal-100 text-teal-700",
     Prospect: "bg-blue-100 text-blue-700",
     SiteVisitCompleted: "bg-indigo-100 text-indigo-700",
     Negotiation: "bg-orange-100 text-orange-700",
