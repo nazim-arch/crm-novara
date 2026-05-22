@@ -38,12 +38,14 @@ export async function GET(request: Request) {
     const leads = await prisma.lead.findMany({
       where: { AND: andConditions },
       select: {
+        id: true,
         lead_number: true, full_name: true, phone: true, email: true, whatsapp: true,
         lead_source: true, lead_type: true, status: true, activity_stage: true,
         temperature: true, property_type: true, purpose: true,
         budget_min: true, budget_max: true, location_preference: true,
         unit_type: true, timeline_to_buy: true, potential_lead_value: true,
         next_followup_date: true, lost_reason: true, created_at: true,
+        alternate_requirement: true,
         assigned_to: { select: { name: true } },
         lead_owner: { select: { name: true } },
       },
@@ -52,39 +54,83 @@ export async function GET(request: Request) {
     });
     const truncated = leads.length === EXPORT_LIMIT;
 
-    const rows = leads.map((l) => ({
-      "Lead ID": l.lead_number,
-      "Full Name": l.full_name,
-      "Phone": l.phone,
-      "Email": l.email ?? "",
-      "WhatsApp": l.whatsapp ?? "",
-      "Lead Source": l.lead_source,
-      "Lead Type": l.lead_type ?? "",
-      "Pipeline Stage": l.status,
-      "Activity Stage": l.activity_stage,
-      "Temperature": l.temperature,
-      "Property Type": l.property_type ?? "",
-      "Purpose": l.purpose ?? "",
-      "Budget Min": l.budget_min ? Number(l.budget_min) : "",
-      "Budget Max": l.budget_max ? Number(l.budget_max) : "",
-      "Location": l.location_preference ?? "",
-      "Unit Type": l.unit_type ?? "",
-      "Timeline": l.timeline_to_buy ?? "",
-      "Potential Value": l.potential_lead_value ? Number(l.potential_lead_value) : "",
-      "Assigned To": l.assigned_to.name,
-      "Owner": l.lead_owner.name,
-      "Next Follow-up": l.next_followup_date ? l.next_followup_date.toISOString().split("T")[0] : "",
-      "Lost Reason": l.lost_reason ?? "",
-      "Created At": l.created_at.toISOString().split("T")[0],
-    }));
+    // Batch-fetch all notes for exported leads
+    const leadIds = leads.map((l) => l.id);
+    const allNotes = leadIds.length > 0
+      ? await prisma.note.findMany({
+          where: { entity_type: "Lead", entity_id: { in: leadIds } },
+          select: {
+            entity_id: true, content: true, created_at: true,
+            created_by: { select: { name: true } },
+          },
+          orderBy: { created_at: "asc" },
+        })
+      : [];
+
+    // Group notes by lead id
+    const notesMap = new Map<string, typeof allNotes>();
+    for (const n of allNotes) {
+      const arr = notesMap.get(n.entity_id) ?? [];
+      arr.push(n);
+      notesMap.set(n.entity_id, arr);
+    }
+
+    const rows = leads.map((l) => {
+      const notes = notesMap.get(l.id) ?? [];
+      const notesLog = notes
+        .map((n) => {
+          const date = n.created_at.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+          return `[${date} – ${n.created_by.name}]\n${n.content}`;
+        })
+        .join("\n\n---\n\n");
+
+      return {
+        "Lead ID": l.lead_number,
+        "Full Name": l.full_name,
+        "Phone": l.phone,
+        "Email": l.email ?? "",
+        "WhatsApp": l.whatsapp ?? "",
+        "Lead Source": l.lead_source,
+        "Lead Type": l.lead_type ?? "",
+        "Pipeline Stage": l.status,
+        "Activity Stage": l.activity_stage,
+        "Temperature": l.temperature,
+        "Property Type": l.property_type ?? "",
+        "Purpose": l.purpose ?? "",
+        "Budget Min": l.budget_min ? Number(l.budget_min) : "",
+        "Budget Max": l.budget_max ? Number(l.budget_max) : "",
+        "Location": l.location_preference ?? "",
+        "Unit Type": l.unit_type ?? "",
+        "Timeline": l.timeline_to_buy ?? "",
+        "Potential Value": l.potential_lead_value ? Number(l.potential_lead_value) : "",
+        "Assigned To": l.assigned_to.name,
+        "Owner": l.lead_owner.name,
+        "Next Follow-up": l.next_followup_date ? l.next_followup_date.toISOString().split("T")[0] : "",
+        "Lost Reason": l.lost_reason ?? "",
+        "Internal Notes": l.alternate_requirement ?? "",
+        "Notes Log": notesLog,
+        "Notes Count": notes.length,
+        "Created At": l.created_at.toISOString().split("T")[0],
+      };
+    });
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Leads");
     if (rows.length > 0) {
       const keys = Object.keys(rows[0]);
-      ws.columns = keys.map((key) => ({ key, width: 18 }));
-      ws.addRow(keys);
-      ws.addRows(rows);
+      const wideColumns = new Set(["Internal Notes", "Notes Log"]);
+      ws.columns = keys.map((key) => ({ key, width: wideColumns.has(key) ? 60 : 18 }));
+      const headerRow = ws.addRow(keys);
+      headerRow.font = { bold: true };
+      headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE9ECEF" } };
+      rows.forEach((row) => {
+        const r = ws.addRow(Object.values(row));
+        // Wrap text for notes columns
+        const notesLogIdx = keys.indexOf("Notes Log") + 1;
+        const internalNotesIdx = keys.indexOf("Internal Notes") + 1;
+        if (notesLogIdx > 0) r.getCell(notesLogIdx).alignment = { wrapText: true, vertical: "top" };
+        if (internalNotesIdx > 0) r.getCell(internalNotesIdx).alignment = { wrapText: true, vertical: "top" };
+      });
     }
     const buf = Buffer.from(await wb.xlsx.writeBuffer());
 
