@@ -9,7 +9,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   BarChart3, Users, Building2, CheckSquare, CalendarClock,
   Settings, LayoutDashboard, Radar, Menu, Briefcase, Mic2, SlidersHorizontal,
-  TrendingUp, FileText, ShieldCheck, Target, ClipboardCheck, CalendarDays, History, Activity,
+  TrendingUp, FileText, ShieldCheck, Target, ClipboardCheck, CalendarDays, History, Activity, BrainCircuit,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -36,6 +36,7 @@ const NAV_CONFIG: NavSection[] = [
       { href: "/opportunities", label: "Opportunities", icon: Building2, roles: ["Admin", "Manager", "Sales", "Viewer"] },
       { href: "/follow-ups", label: "Follow-ups", icon: CalendarClock, roles: ["Admin", "Manager", "Sales", "Operations", "Viewer"] },
       { href: "/reports/daily-activity", label: "Activity Report", icon: Activity, roles: ["Admin", "Manager"] },
+      { href: "/reports/pipeline-digest", label: "Pipeline Digest", icon: BrainCircuit, roles: ["Admin", "Manager"] },
     ],
   },
   {
