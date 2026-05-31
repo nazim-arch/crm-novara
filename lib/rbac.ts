@@ -37,6 +37,19 @@ export async function hasPermissionAsync(role: string, perm: Permission): Promis
 
 // Returns additional WHERE clause for lead queries based on role
 export function leadScopeFilter(role: string, userId: string) {
+  if (role === "TeamLead") {
+    // Own leads + leads owned/assigned/created by direct reports (manager_id = userId)
+    return {
+      OR: [
+        { assigned_to_id: userId },
+        { lead_owner_id: userId },
+        { created_by_id: userId },
+        { assigned_to: { manager_id: userId } },
+        { lead_owner: { manager_id: userId } },
+        { created_by: { manager_id: userId } },
+      ],
+    };
+  }
   if (role === "Sales") {
     return {
       OR: [
@@ -51,6 +64,14 @@ export function leadScopeFilter(role: string, userId: string) {
 
 // Returns additional WHERE clause for task queries based on role
 export function taskScopeFilter(role: string, userId: string) {
+  if (role === "TeamLead") {
+    return {
+      OR: [
+        { assigned_to_id: userId },
+        { assigned_to: { manager_id: userId } },
+      ],
+    };
+  }
   if (role === "Sales" || role === "Operations") {
     return { assigned_to_id: userId };
   }
@@ -59,6 +80,6 @@ export function taskScopeFilter(role: string, userId: string) {
 
 export function defaultLandingPath(role: string): string {
   if (role === "Operations") return "/tasks";
-  if (role === "Sales") return "/dashboard/command";
+  if (role === "Sales" || role === "TeamLead") return "/dashboard/command";
   return "/dashboard/crm";
 }

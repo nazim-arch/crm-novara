@@ -28,7 +28,7 @@ export async function GET(request: Request) {
   const status = searchParams.get("status"); // "pending" | "completed" | "overdue"
 
   const role = session.user.role;
-  const isScoped = role === "Sales" || role === "Operations";
+  const isScoped = role === "Sales" || role === "Operations" || role === "TeamLead";
 
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());

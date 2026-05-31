@@ -31,9 +31,9 @@ export async function GET(request: Request) {
       }),
     };
 
-    // Sales: only opportunities linked to their own leads
-    if (session.user.role === "Sales") {
-      const leadScope = leadScopeFilter("Sales", session.user.id)!;
+    // Sales/TeamLead: only opportunities linked to their own (or team's) leads
+    if (session.user.role === "Sales" || session.user.role === "TeamLead") {
+      const leadScope = leadScopeFilter(session.user.role, session.user.id)!;
       where.leads = { some: { lead: leadScope } };
     }
 

@@ -20,6 +20,7 @@ export default async function UsersSettingsPage() {
       is_active: true,
       phone: true,
       created_at: true,
+      manager_id: true,
     },
     orderBy: { name: "asc" },
   });

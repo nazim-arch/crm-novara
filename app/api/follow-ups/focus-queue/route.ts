@@ -35,7 +35,7 @@ export async function GET(request: Request) {
 
     // Scope resolution
     let assignedFilter: { assigned_to_id?: string } = {};
-    if (role === "Sales" || role === "Operations") {
+    if (role === "Sales" || role === "Operations" || role === "TeamLead") {
       assignedFilter = { assigned_to_id: session.user.id };
     } else if (agentParam && agentParam !== "team") {
       assignedFilter = { assigned_to_id: agentParam === "mine" ? session.user.id : agentParam };

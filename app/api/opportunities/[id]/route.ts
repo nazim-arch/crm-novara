@@ -25,11 +25,14 @@ export async function GET(_request: Request, { params }: { params: Params }) {
 
     const { id } = await params;
 
-    // Sales: verify they have a lead linked to this opportunity
-    if (session.user.role === "Sales") {
-      if (!(await verifySalesOppAccess(id, session.user.id))) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-      }
+    // Sales/TeamLead: verify they have a lead (or team lead's) linked to this opportunity
+    if (session.user.role === "Sales" || session.user.role === "TeamLead") {
+      const leadScope = leadScopeFilter(session.user.role, session.user.id)!;
+      const link = await prisma.leadOpportunity.findFirst({
+        where: { opportunity_id: id, lead: { ...leadScope, deleted_at: null } },
+        select: { id: true },
+      });
+      if (!link) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const opp = await prisma.opportunity.findUnique({

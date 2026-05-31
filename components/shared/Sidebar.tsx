@@ -21,20 +21,20 @@ const NAV_CONFIG: NavSection[] = [
   {
     label: "Dashboards",
     items: [
-      { href: "/dashboard/sales", label: "Sales Dashboard", icon: Users, roles: ["Admin", "Manager", "Sales", "Viewer"] },
+      { href: "/dashboard/sales", label: "Sales Dashboard", icon: Users, roles: ["Admin", "Manager", "TeamLead", "Sales", "Viewer"] },
       { href: "/dashboard/crm", label: "CRM Overview", icon: LayoutDashboard, roles: ["Admin", "Manager", "Viewer"] },
-      { href: "/dashboard/tasks", label: "Task Overview", icon: BarChart3, roles: ["Admin", "Manager", "Sales", "Operations", "Viewer"] },
-      { href: "/dashboard/activity", label: "Activity Calendar", icon: CalendarDays, roles: ["Admin", "Manager", "Sales"] },
-      { href: "/follow-ups?tab=focus_queue", tab: "focus_queue", label: "Focus Queue", icon: Target, roles: ["Admin", "Manager", "Sales"] },
+      { href: "/dashboard/tasks", label: "Task Overview", icon: BarChart3, roles: ["Admin", "Manager", "TeamLead", "Sales", "Operations", "Viewer"] },
+      { href: "/dashboard/activity", label: "Activity Calendar", icon: CalendarDays, roles: ["Admin", "Manager", "TeamLead", "Sales"] },
+      { href: "/follow-ups?tab=focus_queue", tab: "focus_queue", label: "Focus Queue", icon: Target, roles: ["Admin", "Manager", "TeamLead", "Sales"] },
       { href: "/follow-ups?tab=review_queue", tab: "review_queue", label: "Review Queue", icon: ClipboardCheck, roles: ["Admin"] },
     ],
   },
   {
     label: "CRM",
     items: [
-      { href: "/leads", label: "Leads", icon: Users, roles: ["Admin", "Manager", "Sales", "Viewer"] },
-      { href: "/opportunities", label: "Opportunities", icon: Building2, roles: ["Admin", "Manager", "Sales", "Viewer"] },
-      { href: "/follow-ups", label: "Follow-ups", icon: CalendarClock, roles: ["Admin", "Manager", "Sales", "Operations", "Viewer"] },
+      { href: "/leads", label: "Leads", icon: Users, roles: ["Admin", "Manager", "TeamLead", "Sales", "Viewer"] },
+      { href: "/opportunities", label: "Opportunities", icon: Building2, roles: ["Admin", "Manager", "TeamLead", "Sales", "Viewer"] },
+      { href: "/follow-ups", label: "Follow-ups", icon: CalendarClock, roles: ["Admin", "Manager", "TeamLead", "Sales", "Operations", "Viewer"] },
       { href: "/reports/daily-activity", label: "Activity Report", icon: Activity, roles: ["Admin", "Manager"] },
       { href: "/reports/pipeline-digest", label: "Pipeline Digest", icon: BrainCircuit, roles: ["Admin", "Manager"] },
     ],
@@ -42,7 +42,7 @@ const NAV_CONFIG: NavSection[] = [
   {
     label: "Tasks",
     items: [
-      { href: "/tasks", label: "Tasks", icon: CheckSquare, roles: ["Admin", "Manager", "Sales", "Operations", "Viewer"] },
+      { href: "/tasks", label: "Tasks", icon: CheckSquare, roles: ["Admin", "Manager", "TeamLead", "Sales", "Operations", "Viewer"] },
     ],
   },
   {
@@ -57,7 +57,7 @@ const NAV_CONFIG: NavSection[] = [
   {
     label: "Commission",
     items: [
-      { href: "/sales-commission", label: "My Commission", icon: TrendingUp, roles: ["Sales"] },
+      { href: "/sales-commission", label: "My Commission", icon: TrendingUp, roles: ["TeamLead", "Sales"] },
       { href: "/sales-commission", label: "Commission Overview", icon: TrendingUp, roles: ["Admin"] },
       { href: "/sales-commission/targets", label: "Set Targets", icon: BarChart3, roles: ["Admin"] },
       { href: "/sales-commission/report", label: "Commission Report", icon: BarChart3, roles: ["Admin"] },

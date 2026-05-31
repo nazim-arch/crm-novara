@@ -232,7 +232,7 @@ export function FollowUpsClient({
   role,
   defaultTab,
 }: FollowUpsClientProps) {
-  const showFocusQueue = role === "Sales" || isManagerOrAdmin;
+  const showFocusQueue = role === "Sales" || role === "TeamLead" || isManagerOrAdmin;
   const [followUps, setFollowUps] = useState<FollowUp[]>(initialFollowUps);
   const [search, setSearch] = useState("");
   const [assigneeFilter, setAssigneeFilter] = useState("all");

@@ -50,13 +50,14 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
     return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 422 });
   }
 
-  const { short_name, name, phone, role, is_active } = parsed.data;
+  const { short_name, name, phone, role, is_active, manager_id } = parsed.data;
   const updateData: Record<string, unknown> = {};
   if (name !== undefined) updateData.name = name;
   if (phone !== undefined) updateData.phone = phone || null;
   if (short_name !== undefined) updateData.short_name = short_name;
   if (isAdmin && role !== undefined) updateData.role = role;
   if (isAdmin && is_active !== undefined) updateData.is_active = is_active;
+  if (isAdmin && manager_id !== undefined) updateData.manager_id = manager_id ?? null;
 
   const updated = await prisma.user.update({
     where: { id },

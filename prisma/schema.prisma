@@ -14,6 +14,7 @@ datasource db {
 enum UserRole {
   Admin
   Manager
+  TeamLead
   Sales
   Operations
   Viewer
@@ -215,6 +216,11 @@ model User {
   review_events_triggered  LeadReviewEvent[]  @relation("ReviewEventTriggeredBy")
   review_events_actioned   LeadReviewEvent[]  @relation("ReviewEventActionedBy")
 
+  manager_id   String?
+  manager      User?   @relation("TeamMembers", fields: [manager_id], references: [id], onDelete: SetNull)
+  team_members User[]  @relation("TeamMembers")
+
+  @@index([manager_id])
   @@map("users")
 }
 

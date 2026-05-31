@@ -6,7 +6,7 @@ export type Permission =
   | "podcast_studio:manage"
   | "commission:manage" | "commission:view";
 
-export const ROLES = ["Admin", "Manager", "Sales", "Operations", "Viewer"] as const;
+export const ROLES = ["Admin", "Manager", "TeamLead", "Sales", "Operations", "Viewer"] as const;
 export type Role = (typeof ROLES)[number];
 
 export const ALL_PERMISSIONS: Permission[] = [
@@ -61,6 +61,12 @@ export const DEFAULT_PERMS: Record<string, Permission[]> = {
     "user:manage", "report:view", "financial:view",
     "podcast_studio:manage",
     "commission:manage", "commission:view",
+  ],
+  TeamLead: [
+    "lead:create", "lead:read", "lead:update",
+    "opportunity:read",
+    "task:create", "task:read", "task:update",
+    "commission:view",
   ],
   Sales: [
     "lead:create", "lead:read", "lead:update",

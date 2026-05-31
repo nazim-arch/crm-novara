@@ -379,14 +379,14 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
         <Tabs defaultValue={role === "Operations" ? "task" : "lead"}>
           <TabsList className={
             role === "Operations" ? "w-full grid grid-cols-1"
-            : role === "Sales"    ? "w-full grid grid-cols-4"
+            : (role === "Sales" || role === "TeamLead") ? "w-full grid grid-cols-4"
             :                       "w-full grid grid-cols-5"
           }>
             {role !== "Operations" && <TabsTrigger value="lead" className="gap-1 text-xs"><Users className="h-3.5 w-3.5" />Lead</TabsTrigger>}
             {role === "Admin"       && <TabsTrigger value="opportunity" className="gap-1 text-xs"><Building2 className="h-3.5 w-3.5" />Opp</TabsTrigger>}
             <TabsTrigger value="task" className="gap-1 text-xs"><CheckSquare className="h-3.5 w-3.5" />Task</TabsTrigger>
             {role !== "Operations" && <TabsTrigger value="followup" className="gap-1 text-xs"><CalendarClock className="h-3.5 w-3.5" />Follow-up</TabsTrigger>}
-            {(role === "Admin" || role === "Sales") && <TabsTrigger value="expense" className="gap-1 text-xs"><Receipt className="h-3.5 w-3.5" />Expense</TabsTrigger>}
+            {(role === "Admin" || role === "Sales" || role === "TeamLead") && <TabsTrigger value="expense" className="gap-1 text-xs"><Receipt className="h-3.5 w-3.5" />Expense</TabsTrigger>}
           </TabsList>
 
           {/* ── LEAD ── */}
@@ -720,7 +720,7 @@ export function QuickAddModal({ currentUserId, role }: { currentUserId: string; 
           </TabsContent>
 
           {/* ── EXPENSE ── */}
-          {(role === "Admin" || role === "Sales") && (
+          {(role === "Admin" || role === "Sales" || role === "TeamLead") && (
             <TabsContent value="expense" className="space-y-3 mt-4">
               <div className="space-y-1.5">
                 <Label>Opportunity <span className="text-destructive">*</span></Label>

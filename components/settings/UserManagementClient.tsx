@@ -24,16 +24,19 @@ type User = {
   is_active: boolean;
   phone: string | null;
   created_at: Date;
+  manager_id: string | null;
 };
 
 const ACTIVE_ROLES = [
   { value: "Admin", label: "Admin" },
+  { value: "TeamLead", label: "Team Lead" },
   { value: "Sales", label: "Sales" },
   { value: "Operations", label: "Sage Operations" },
 ];
 
 const ALL_ROLES = [
   { value: "Admin", label: "Admin" },
+  { value: "TeamLead", label: "Team Lead" },
   { value: "Sales", label: "Sales" },
   { value: "Operations", label: "Sage Operations" },
   { value: "Manager", label: "Manager (Legacy)" },
@@ -42,6 +45,7 @@ const ALL_ROLES = [
 
 const ROLE_COLORS: Record<string, string> = {
   Admin: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
+  TeamLead: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300",
   Sales: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
   Operations: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
   Manager: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
@@ -52,7 +56,7 @@ function roleLabel(role: string) {
   return ALL_ROLES.find(r => r.value === role)?.label ?? role;
 }
 
-const EMPTY_FORM = { short_name: "", name: "", email: "", role: "Sales", phone: "" };
+const EMPTY_FORM = { short_name: "", name: "", email: "", role: "Sales", phone: "", manager_id: "" };
 
 interface UserManagementClientProps {
   users: User[];
@@ -70,7 +74,7 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
 
   // Edit
   const [editUser, setEditUser] = useState<User | null>(null);
-  const [editForm, setEditForm] = useState({ short_name: "", name: "", email: "", phone: "", role: "" });
+  const [editForm, setEditForm] = useState({ short_name: "", name: "", email: "", phone: "", role: "", manager_id: "" });
   const [editSaving, setEditSaving] = useState(false);
   const [sendingResetLink, setSendingResetLink] = useState(false);
 
@@ -118,7 +122,7 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
       const res = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, manager_id: form.manager_id || null }),
       });
       const result = await res.json();
       if (!res.ok) { toast.error(typeof result.error === "string" ? result.error : "Failed to create user"); return; }
@@ -137,7 +141,7 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
   // ── Edit ─────────────────────────────────────────────────────────────────────
   const openEdit = (user: User) => {
     setEditUser(user);
-    setEditForm({ short_name: user.short_name, name: user.name, email: user.email, phone: user.phone ?? "", role: user.role });
+    setEditForm({ short_name: user.short_name, name: user.name, email: user.email, phone: user.phone ?? "", role: user.role, manager_id: user.manager_id ?? "" });
   };
 
   const handleSaveEdit = async () => {
@@ -149,6 +153,7 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
         name: editForm.name,
         phone: editForm.phone,
         role: editForm.role,
+        manager_id: editForm.manager_id || null,
       };
       const res = await fetch(`/api/users/${editUser.id}`, {
         method: "PATCH",
@@ -325,7 +330,7 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
               </div>
               <div className="space-y-1.5">
                 <Label>User Group <span className="text-destructive">*</span></Label>
-                <Select value={editForm.role} onValueChange={(v) => v && setEditForm(f => ({ ...f, role: v }))}>
+                <Select value={editForm.role} onValueChange={(v) => v && setEditForm(f => ({ ...f, role: v, manager_id: v !== "Sales" ? "" : f.manager_id }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {ALL_ROLES.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
@@ -333,6 +338,20 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
                 </Select>
               </div>
             </div>
+            {editForm.role === "Sales" && (
+              <div className="space-y-1.5">
+                <Label>Reports To (Team Lead)</Label>
+                <Select value={editForm.manager_id || "__none__"} onValueChange={(v) => setEditForm(f => ({ ...f, manager_id: (!v || v === "__none__") ? "" : v }))}>
+                  <SelectTrigger><SelectValue placeholder="No team lead assigned" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__"><span className="text-muted-foreground">No team lead assigned</span></SelectItem>
+                    {initialUsers.filter(u => u.role === "TeamLead" && u.is_active).map((u) => (
+                      <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Full Name <span className="text-destructive">*</span></Label>
               <Input value={editForm.name} onChange={(e) => setEditForm(f => ({ ...f, name: e.target.value }))} />
@@ -404,7 +423,7 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
                 </div>
                 <div className="space-y-1.5">
                   <Label>User Group <span className="text-destructive">*</span></Label>
-                  <Select value={form.role} onValueChange={(v) => v && setForm((f) => ({ ...f, role: v }))}>
+                  <Select value={form.role} onValueChange={(v) => v && setForm((f) => ({ ...f, role: v, manager_id: v !== "Sales" ? "" : f.manager_id }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {ACTIVE_ROLES.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
@@ -412,6 +431,20 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
                   </Select>
                 </div>
               </div>
+              {form.role === "Sales" && (
+                <div className="space-y-1.5">
+                  <Label>Reports To (Team Lead)</Label>
+                  <Select value={form.manager_id || "__none__"} onValueChange={(v) => setForm((f) => ({ ...f, manager_id: (!v || v === "__none__") ? "" : v }))}>
+                    <SelectTrigger><SelectValue placeholder="No team lead assigned" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__"><span className="text-muted-foreground">No team lead assigned</span></SelectItem>
+                      {initialUsers.filter(u => u.role === "TeamLead" && u.is_active).map((u) => (
+                        <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label>Full Name <span className="text-destructive">*</span></Label>
                 <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Full legal name" />

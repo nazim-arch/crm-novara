@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     if (!(await hasPermissionAsync(session.user.role, "lead:read"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const role = session.user.role;
-    const isScoped = role === "Sales" || role === "Operations";
+    const isScoped = role === "Sales" || role === "Operations" || role === "TeamLead";
 
     const scopeFilter = isScoped
       ? { OR: [{ assigned_to_id: session.user.id }, { created_by_id: session.user.id }] }
