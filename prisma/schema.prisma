@@ -46,6 +46,9 @@ enum ActivityStage {
   Unreachable
   Prospect
   CallBack
+  FollowUp
+  SiteVisitScheduled
+  LongRNR
   NotInterested
   Junk
 }

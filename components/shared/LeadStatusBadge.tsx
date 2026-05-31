@@ -91,6 +91,9 @@ export function ActivityStageBadge({ stage }: { stage: string }) {
     Unreachable: "bg-orange-100 text-orange-700",
     Prospect: "bg-blue-100 text-blue-700",
     CallBack: "bg-violet-100 text-violet-700",
+    FollowUp: "bg-cyan-100 text-cyan-700",
+    SiteVisitScheduled: "bg-teal-100 text-teal-700",
+    LongRNR: "bg-stone-100 text-stone-700",
     NotInterested: "bg-red-100 text-red-700",
     Junk: "bg-rose-100 text-rose-800",
   };
@@ -101,6 +104,9 @@ export function ActivityStageBadge({ stage }: { stage: string }) {
     Unreachable: "Unreachable",
     Prospect: "Prospect",
     CallBack: "Call Back",
+    FollowUp: "Follow-up",
+    SiteVisitScheduled: "Site Visit Scheduled",
+    LongRNR: "Long RNR",
     NotInterested: "Not Interested",
     Junk: "Junk",
   };

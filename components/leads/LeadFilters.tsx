@@ -147,6 +147,9 @@ export function LeadFilters({ users, currentParams }: LeadFiltersProps) {
           <SelectItem value="Unreachable">Unreachable</SelectItem>
           <SelectItem value="Prospect">Prospect</SelectItem>
           <SelectItem value="CallBack">Call Back</SelectItem>
+          <SelectItem value="FollowUp">Follow-up</SelectItem>
+          <SelectItem value="SiteVisitScheduled">Site Visit Scheduled</SelectItem>
+          <SelectItem value="LongRNR">Long RNR</SelectItem>
           <SelectItem value="NotInterested">Not Interested</SelectItem>
           <SelectItem value="Junk">Junk</SelectItem>
         </SelectContent>

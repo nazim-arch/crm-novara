@@ -45,6 +45,9 @@ const ACTIVITY_STAGES = [
   { value: "Unreachable", label: "Unreachable" },
   { value: "Prospect", label: "Prospect" },
   { value: "CallBack", label: "Call Back" },
+  { value: "FollowUp", label: "Follow-up" },
+  { value: "SiteVisitScheduled", label: "Site Visit Scheduled" },
+  { value: "LongRNR", label: "Long RNR" },
   { value: "NotInterested", label: "Not Interested" },
   { value: "Junk", label: "Junk" },
 ] as const;
