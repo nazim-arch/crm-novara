@@ -342,7 +342,11 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
               <div className="space-y-1.5">
                 <Label>Reports To (Team Lead)</Label>
                 <Select value={editForm.manager_id || "__none__"} onValueChange={(v) => setEditForm(f => ({ ...f, manager_id: (!v || v === "__none__") ? "" : v }))}>
-                  <SelectTrigger><SelectValue placeholder="No team lead assigned" /></SelectTrigger>
+                  <SelectTrigger>
+                    {editForm.manager_id
+                      ? <span>{initialUsers.find(u => u.id === editForm.manager_id)?.name ?? editForm.manager_id}</span>
+                      : <span className="text-muted-foreground">No team lead assigned</span>}
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__"><span className="text-muted-foreground">No team lead assigned</span></SelectItem>
                     {initialUsers.filter(u => u.role === "TeamLead" && u.is_active).map((u) => (
@@ -435,7 +439,11 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
                 <div className="space-y-1.5">
                   <Label>Reports To (Team Lead)</Label>
                   <Select value={form.manager_id || "__none__"} onValueChange={(v) => setForm((f) => ({ ...f, manager_id: (!v || v === "__none__") ? "" : v }))}>
-                    <SelectTrigger><SelectValue placeholder="No team lead assigned" /></SelectTrigger>
+                    <SelectTrigger>
+                      {form.manager_id
+                        ? <span>{initialUsers.find(u => u.id === form.manager_id)?.name ?? form.manager_id}</span>
+                        : <span className="text-muted-foreground">No team lead assigned</span>}
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none__"><span className="text-muted-foreground">No team lead assigned</span></SelectItem>
                       {initialUsers.filter(u => u.role === "TeamLead" && u.is_active).map((u) => (
