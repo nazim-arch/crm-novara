@@ -27,7 +27,15 @@ export async function GET(request: Request) {
 
     const andConditions: Prisma.LeadWhereInput[] = [{ deleted_at: null }];
 
-    if (status) andConditions.push({ status: status as Prisma.EnumLeadStatusFilter });
+    if (status) {
+      // For linked leads: filter by LeadOpportunity.status; for unlinked: filter by Lead.status
+      andConditions.push({
+        OR: [
+          { opportunities: { some: { status: status as Prisma.EnumLeadStatusFilter } } },
+          { AND: [{ opportunities: { none: {} } }, { status: status as Prisma.EnumLeadStatusFilter }] },
+        ],
+      });
+    }
     if (temperature) andConditions.push({ temperature: temperature as Prisma.EnumLeadTemperatureFilter });
     if (assigned_to) andConditions.push({ assigned_to_id: assigned_to });
     if (search) {
@@ -47,6 +55,8 @@ export async function GET(request: Request) {
 
     const where: Prisma.LeadWhereInput = { AND: andConditions };
 
+    // Status filter: for linked leads, filter on LeadOpportunity.status; include unlinked leads with matching Lead.status
+    // We fetch leads and expand into rows (one per opportunity link, or one row if unlinked)
     const [total, leads] = await Promise.all([
       prisma.lead.count({ where }),
       prisma.lead.findMany({
@@ -55,6 +65,14 @@ export async function GET(request: Request) {
           assigned_to: { select: { id: true, name: true, avatar_url: true } },
           lead_owner: { select: { id: true, name: true } },
           _count: { select: { tasks: true } },
+          opportunities: {
+            include: {
+              opportunity: {
+                select: { id: true, opp_number: true, name: true, project: true, status: true, property_type: true, location: true },
+              },
+            },
+            orderBy: { tagged_at: "asc" },
+          },
         },
         orderBy: { updated_at: "desc" },
         skip: (page - 1) * limit,
@@ -62,8 +80,35 @@ export async function GET(request: Request) {
       }),
     ]);
 
+    // Expand each lead into one row per opportunity link; unlinked leads → one row using lead-level fields
+    type OppRef = (typeof leads)[0]["opportunities"][0]["opportunity"] | null;
+    const rows = leads.flatMap((lead) => {
+      if (lead.opportunities.length === 0) {
+        return [{
+          ...lead,
+          link_id: null as string | null,
+          link_status: lead.status,
+          link_activity_stage: lead.activity_stage,
+          link_potential_value: lead.potential_lead_value,
+          link_settlement_value: lead.settlement_value,
+          link_commission_pct: lead.deal_commission_percent,
+          opportunity: null as OppRef,
+        }];
+      }
+      return lead.opportunities.map((lo) => ({
+        ...lead,
+        link_id: lo.id as string | null,
+        link_status: lo.status,
+        link_activity_stage: lo.activity_stage,
+        link_potential_value: lo.potential_lead_value,
+        link_settlement_value: lo.settlement_value,
+        link_commission_pct: lo.deal_commission_percent,
+        opportunity: lo.opportunity as OppRef,
+      }));
+    });
+
     return NextResponse.json({
-      data: leads,
+      data: rows,
       meta: { total, page, limit, pages: Math.ceil(total / limit) },
     });
   } catch (error) {
@@ -96,6 +141,20 @@ export async function POST(request: Request) {
       location_preference, timeline_to_buy, reason_for_interest,
       next_followup_date, notes: _notes, financing_required, ...rest
     } = parsed.data;
+
+    // Hard duplicate stop — phone or email must be unique among active leads
+    const dupeWhere: { phone?: string; email?: string }[] = [];
+    if (rest.phone) dupeWhere.push({ phone: rest.phone });
+    if (email) dupeWhere.push({ email });
+    if (dupeWhere.length > 0) {
+      const existing = await prisma.lead.findFirst({
+        where: { deleted_at: null, OR: dupeWhere },
+        select: { id: true, lead_number: true, full_name: true, phone: true, email: true },
+      });
+      if (existing) {
+        return NextResponse.json({ error: "duplicate_lead", match: existing }, { status: 409 });
+      }
+    }
 
     const lead_number = await generateId("LEAD");
     const lead = await prisma.lead.create({

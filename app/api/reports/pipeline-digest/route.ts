@@ -87,7 +87,9 @@ export async function POST(request: Request) {
     // ── DB queries ────────────────────────────────────────────────────────────
 
     const [
-      pipelineGroups,
+      linkStageGroups,
+      unlinkedStageGroups,
+      temperatureGroups,
       staleLeads,
       overdueCount,
       activityByActor,
@@ -95,10 +97,28 @@ export async function POST(request: Request) {
       lostLeads,
       winsInRange,
     ] = await Promise.all([
-      // 1. Pipeline counts by status
+      // 1. Stage counts from LeadOpportunity (per-deal, the pipeline unit)
+      prisma.leadOpportunity.groupBy({
+        by: ["status"],
+        where: { lead: { deleted_at: null, ...(agentId ? { assigned_to_id: agentId } : {}) } },
+        _count: { id: true },
+      }),
+
+      // 2. Stage counts for unlinked leads
       prisma.lead.groupBy({
-        by: ["status", "temperature"],
-        where: { deleted_at: null, ...(agentId ? { assigned_to_id: agentId } : {}) },
+        by: ["status"],
+        where: { deleted_at: null, opportunities: { none: {} }, ...(agentId ? { assigned_to_id: agentId } : {}) },
+        _count: { id: true },
+      }),
+
+      // 3. Temperature counts (still per-lead — temperature is a contact attribute)
+      prisma.lead.groupBy({
+        by: ["temperature"],
+        where: {
+          deleted_at: null,
+          status: { notIn: ["Won", "Lost", "InvalidLead"] },
+          ...(agentId ? { assigned_to_id: agentId } : {}),
+        },
         _count: { id: true },
       }),
 
@@ -182,12 +202,18 @@ export async function POST(request: Request) {
 
     // ── Build stats ───────────────────────────────────────────────────────────
 
+    // Temperature counts are per-lead (contact attribute)
     const tempCounts: Record<string, number> = { Hot: 0, Warm: 0, Cold: 0, FollowUpLater: 0 };
+    for (const g of temperatureGroups) {
+      tempCounts[g.temperature] = (tempCounts[g.temperature] ?? 0) + g._count.id;
+    }
+
+    // Stage counts from LeadOpportunity links + unlinked leads
     const stageCounts: Record<string, number> = {};
-    for (const g of pipelineGroups) {
-      if (!["Won", "Lost", "InvalidLead"].includes(g.status)) {
-        tempCounts[g.temperature] = (tempCounts[g.temperature] ?? 0) + g._count.id;
-      }
+    for (const g of linkStageGroups) {
+      stageCounts[g.status] = (stageCounts[g.status] ?? 0) + g._count.id;
+    }
+    for (const g of unlinkedStageGroups) {
       stageCounts[g.status] = (stageCounts[g.status] ?? 0) + g._count.id;
     }
 

@@ -66,9 +66,11 @@ interface StageChangerProps {
   leadId: string;
   currentStage: string;
   currentActivityStage?: string;
+  /** When set, stage changes update the specific LeadOpportunity link rather than just the lead */
+  opportunityLinkId?: string;
 }
 
-export function StageChanger({ leadId, currentStage, currentActivityStage = "New" }: StageChangerProps) {
+export function StageChanger({ leadId, currentStage, currentActivityStage = "New", opportunityLinkId }: StageChangerProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [, startTransition] = useTransition();
@@ -114,7 +116,7 @@ export function StageChanger({ leadId, currentStage, currentActivityStage = "New
       const res = await fetch(`/api/leads/${leadId}/stage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, ...(opportunityLinkId ? { opportunity_link_id: opportunityLinkId } : {}) }),
       });
       const data = await res.json();
       if (!res.ok) {

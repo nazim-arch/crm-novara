@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { LeadStatusBadge, TemperatureBadge } from "@/components/shared/LeadStatusBadge";
-import { AlertTriangle, ExternalLink, GitMerge, Plus } from "lucide-react";
+import { AlertTriangle, ExternalLink } from "lucide-react";
 
 type DuplicateLead = {
   id: string;
@@ -27,7 +27,6 @@ interface DuplicateWarningModalProps {
   exactMatches: DuplicateLead[];
   nameSimilar: DuplicateLead[];
   onOpenExisting: (id: string) => void;
-  onContinue: () => void;
   onClose: () => void;
 }
 
@@ -36,61 +35,35 @@ export function DuplicateWarningModal({
   exactMatches,
   nameSimilar,
   onOpenExisting,
-  onContinue,
   onClose,
 }: DuplicateWarningModalProps) {
+  const allMatches = [...exactMatches, ...nameSimilar];
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <div className="flex items-center gap-2 text-amber-600 mb-1">
+          <div className="flex items-center gap-2 text-destructive mb-1">
             <AlertTriangle className="h-5 w-5" />
-            <DialogTitle>Possible Duplicate Detected</DialogTitle>
+            <DialogTitle>Lead Already Exists</DialogTitle>
           </div>
           <DialogDescription>
-            We found existing leads with similar information. Please review before
-            continuing.
+            A lead with this phone or email already exists. Open the existing lead to continue working with this contact.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 max-h-72 overflow-y-auto">
-          {exactMatches.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase mb-2">
-                Exact matches (phone / email)
-              </p>
-              {exactMatches.map((lead) => (
-                <LeadRow
-                  key={lead.id}
-                  lead={lead}
-                  onOpen={() => onOpenExisting(lead.id)}
-                />
-              ))}
-            </div>
-          )}
-          {nameSimilar.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase mb-2">
-                Similar names
-              </p>
-              {nameSimilar.map((lead) => (
-                <LeadRow
-                  key={lead.id}
-                  lead={lead}
-                  onOpen={() => onOpenExisting(lead.id)}
-                />
-              ))}
-            </div>
-          )}
+        <div className="space-y-2 max-h-72 overflow-y-auto">
+          {allMatches.map((lead) => (
+            <LeadRow
+              key={lead.id}
+              lead={lead}
+              onOpen={() => onOpenExisting(lead.id)}
+            />
+          ))}
         </div>
 
-        <DialogFooter className="flex-col sm:flex-row gap-2">
-          <Button variant="outline" onClick={onClose} className="sm:mr-auto">
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
             Cancel
-          </Button>
-          <Button variant="secondary" onClick={onContinue}>
-            <Plus className="h-4 w-4 mr-1" />
-            Create Anyway
           </Button>
         </DialogFooter>
       </DialogContent>

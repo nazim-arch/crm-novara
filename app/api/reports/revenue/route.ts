@@ -1,7 +1,6 @@
-﻿import { auth } from "@/lib/auth";
+import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { hasPermissionAsync } from "@/lib/rbac";
 
 export async function GET(request: Request) {
   try {
@@ -20,17 +19,50 @@ export async function GET(request: Request) {
         ? { changed_at: { gte: new Date(from + "T00:00:00"), lte: new Date(to + "T23:59:59") } }
         : undefined;
 
-    const leads = await prisma.lead.findMany({
+    // Query Won links from LeadOpportunity (the authoritative source for per-deal revenue)
+    const wonLinks = await prisma.leadOpportunity.findMany({
+      where: {
+        status: "Won",
+        lead: {
+          deleted_at: null,
+          ...(userId ? { assigned_to_id: userId } : {}),
+          ...(wonDateFilter
+            ? { stage_history: { some: { to_stage: "Won", ...wonDateFilter } } }
+            : {}),
+        },
+      },
+      select: {
+        id: true,
+        settlement_value: true,
+        deal_commission_percent: true,
+        opportunity: { select: { id: true, name: true, opp_number: true } },
+        lead: {
+          select: {
+            id: true,
+            lead_number: true,
+            full_name: true,
+            assigned_to: { select: { id: true, name: true, short_name: true } },
+            stage_history: {
+              where: { to_stage: "Won" },
+              orderBy: { changed_at: "desc" },
+              take: 1,
+              select: { changed_at: true },
+            },
+          },
+        },
+      },
+      orderBy: { tagged_at: "desc" },
+    });
+
+    // Also include Won leads with no opportunity (unlinked — use Lead-level fields)
+    const unlinkedWonLeads = await prisma.lead.findMany({
       where: {
         status: "Won",
         deleted_at: null,
+        opportunities: { none: {} },
         ...(userId ? { assigned_to_id: userId } : {}),
         ...(wonDateFilter
-          ? {
-              stage_history: {
-                some: { to_stage: "Won", ...wonDateFilter },
-              },
-            }
+          ? { stage_history: { some: { to_stage: "Won", ...wonDateFilter } } }
           : {}),
       },
       select: {
@@ -40,9 +72,6 @@ export async function GET(request: Request) {
         settlement_value: true,
         deal_commission_percent: true,
         assigned_to: { select: { id: true, name: true, short_name: true } },
-        opportunities: {
-          include: { opportunity: { select: { id: true, name: true, opp_number: true } } },
-        },
         stage_history: {
           where: { to_stage: "Won" },
           orderBy: { changed_at: "desc" },
@@ -50,30 +79,42 @@ export async function GET(request: Request) {
           select: { changed_at: true },
         },
       },
-      orderBy: { updated_at: "desc" },
     });
 
-    const rows = leads.map((lead) => {
-      const settlementValue = Number(lead.settlement_value ?? 0);
-      const commissionPct = Number(lead.deal_commission_percent ?? 0);
-      const netCommission = (settlementValue * commissionPct) / 100;
-      const wonDate = lead.stage_history[0]?.changed_at ?? null;
-      const oppNames = lead.opportunities.map((lo) => lo.opportunity.name).join(", ") || "—";
-      const oppNumbers = lead.opportunities.map((lo) => lo.opportunity.opp_number).join(", ") || "—";
-
-      return {
-        lead_number: lead.lead_number,
-        full_name: lead.full_name,
-        opp_names: oppNames,
-        opp_numbers: oppNumbers,
-        won_date: wonDate?.toISOString() ?? null,
-        settlement_value: settlementValue,
-        commission_pct: commissionPct,
-        net_commission: netCommission,
-        sales_person_id: lead.assigned_to.id,
-        sales_person_name: lead.assigned_to.name,
-      };
-    });
+    const rows = [
+      ...wonLinks.map((lo) => {
+        const settlementValue = Number(lo.settlement_value ?? 0);
+        const commissionPct = Number(lo.deal_commission_percent ?? 0);
+        return {
+          lead_number: lo.lead.lead_number,
+          full_name: lo.lead.full_name,
+          opp_names: lo.opportunity.name,
+          opp_numbers: lo.opportunity.opp_number,
+          won_date: lo.lead.stage_history[0]?.changed_at?.toISOString() ?? null,
+          settlement_value: settlementValue,
+          commission_pct: commissionPct,
+          net_commission: (settlementValue * commissionPct) / 100,
+          sales_person_id: lo.lead.assigned_to.id,
+          sales_person_name: lo.lead.assigned_to.name,
+        };
+      }),
+      ...unlinkedWonLeads.map((lead) => {
+        const settlementValue = Number(lead.settlement_value ?? 0);
+        const commissionPct = Number(lead.deal_commission_percent ?? 0);
+        return {
+          lead_number: lead.lead_number,
+          full_name: lead.full_name,
+          opp_names: "—",
+          opp_numbers: "—",
+          won_date: lead.stage_history[0]?.changed_at?.toISOString() ?? null,
+          settlement_value: settlementValue,
+          commission_pct: commissionPct,
+          net_commission: (settlementValue * commissionPct) / 100,
+          sales_person_id: lead.assigned_to.id,
+          sales_person_name: lead.assigned_to.name,
+        };
+      }),
+    ];
 
     return NextResponse.json({ data: rows });
   } catch (error) {

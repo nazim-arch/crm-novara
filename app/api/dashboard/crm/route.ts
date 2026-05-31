@@ -1,8 +1,8 @@
-﻿import { auth } from "@/lib/auth";
+import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { hasPermissionAsync } from "@/lib/rbac";
-import { startOfDay, endOfDay, subDays } from "date-fns";
+import { startOfDay, endOfDay } from "date-fns";
 
 export async function GET() {
   const session = await auth();
@@ -19,8 +19,14 @@ export async function GET() {
     hotLeads,
     todayFollowUps,
     overdueFollowUps,
-    stageDistribution,
-    pipelineValue,
+    // Stage distribution from LeadOpportunity (pipeline unit for linked leads)
+    linkStageDistribution,
+    // Stage distribution for unlinked leads
+    unlinkedStageDistribution,
+    // Pipeline value: sum potential_lead_value from non-Lost opportunity links
+    linkedPipelineValue,
+    // Pipeline value: unlinked leads that are not Lost
+    unlinkedPipelineValue,
     recentActivities,
   ] = await Promise.all([
     prisma.lead.count({ where: { deleted_at: null } }),
@@ -38,14 +44,32 @@ export async function GET() {
         status: { notIn: ["Won", "Lost", "OnHold"] },
       },
     }),
-    prisma.lead.groupBy({
+    // LeadOpportunity is the pipeline unit — count per-link stages
+    prisma.leadOpportunity.groupBy({
       by: ["status"],
-      where: { deleted_at: null },
+      where: { lead: { deleted_at: null } },
       _count: { id: true },
     }),
+    // Unlinked leads (no opportunity tagged) — use Lead.status
+    prisma.lead.groupBy({
+      by: ["status"],
+      where: { deleted_at: null, opportunities: { none: {} } },
+      _count: { id: true },
+    }),
+    prisma.leadOpportunity.aggregate({
+      where: {
+        status: { notIn: ["Lost", "InvalidLead"] },
+        lead: { deleted_at: null },
+      },
+      _sum: { potential_lead_value: true },
+    }),
     prisma.lead.aggregate({
-      where: { deleted_at: null, status: { not: "Lost" } },
-      _sum: { potential_lead_value: true, deal_value: true, commission_estimate: true },
+      where: {
+        deleted_at: null,
+        status: { notIn: ["Lost", "InvalidLead"] },
+        opportunities: { none: {} },
+      },
+      _sum: { potential_lead_value: true, deal_value: true },
     }),
     prisma.activity.findMany({
       where: { entity_type: "Lead" },
@@ -55,18 +79,29 @@ export async function GET() {
     }),
   ]);
 
+  // Merge stage distributions from links and unlinked leads
+  const stageCounts: Record<string, number> = {};
+  for (const s of linkStageDistribution) {
+    stageCounts[s.status] = (stageCounts[s.status] ?? 0) + s._count.id;
+  }
+  for (const s of unlinkedStageDistribution) {
+    stageCounts[s.status] = (stageCounts[s.status] ?? 0) + s._count.id;
+  }
+
+  const linkedValue = Number(linkedPipelineValue._sum.potential_lead_value ?? 0);
+  const unlinkedValue = Number(
+    unlinkedPipelineValue._sum.potential_lead_value ?? unlinkedPipelineValue._sum.deal_value ?? 0
+  );
+
   return NextResponse.json({
     data: {
       totalLeads,
       hotLeads,
       todayFollowUps,
       overdueFollowUps,
-      stageDistribution: stageDistribution.map((s) => ({
-        stage: s.status,
-        count: s._count.id,
-      })),
-      pipelineValue: Number(pipelineValue._sum.potential_lead_value ?? pipelineValue._sum.deal_value ?? 0),
-      commissionEstimate: Number(pipelineValue._sum.commission_estimate ?? 0),
+      stageDistribution: Object.entries(stageCounts).map(([stage, count]) => ({ stage, count })),
+      pipelineValue: linkedValue + unlinkedValue,
+      commissionEstimate: 0,
       recentActivities,
     },
   });

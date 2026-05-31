@@ -11,7 +11,7 @@ import { formatDate, formatCurrency, formatDateTime } from "@/lib/utils";
 import { StageChanger } from "@/components/leads/StageChanger";
 import { NoteForm } from "@/components/leads/NoteForm";
 import { DeleteConfirmButton } from "@/components/shared/DeleteConfirmButton";
-import { ArrowLeft, Edit, Phone, Mail, MapPin, Calendar, IndianRupee } from "lucide-react";
+import { ArrowLeft, Edit, Phone, Mail, MapPin, Calendar, Plus } from "lucide-react";
 import { hasPermissionAsync } from "@/lib/rbac";
 import { FollowUpSection } from "@/components/follow-ups/FollowUpSection";
 import { LeadContactActions } from "@/components/shared/LeadContactActions";
@@ -135,25 +135,27 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left column */}
         <div className="lg:col-span-2 space-y-4">
-          {/* Stage pipeline */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Pipeline Stage</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {canEdit ? (
-                <StageChanger
-                  leadId={lead.id}
-                  currentStage={lead.status}
-                  currentActivityStage={lead.activity_stage ?? "New"}
-                />
-              ) : (
-                <div className="flex items-center gap-3">
-                  <LeadStatusBadge status={lead.status} />
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {/* Stage pipeline — shown only for unlinked leads */}
+          {lead.opportunities.length === 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium">Pipeline Stage</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {canEdit ? (
+                  <StageChanger
+                    leadId={lead.id}
+                    currentStage={lead.status}
+                    currentActivityStage={lead.activity_stage ?? "New"}
+                  />
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <LeadStatusBadge status={lead.status} />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Contact & Details */}
           <Card>
@@ -312,29 +314,86 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
             </CardContent>
           </Card>
 
-          {/* Linked Opportunity (single) */}
-          {lead.opportunities.length > 0 && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium">Linked Opportunity</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {(() => {
-                  const { opportunity } = lead.opportunities[0];
-                  return (
+          {/* Linked Opportunities — one per opportunity, each with its own stage */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium">
+                  Linked Opportunities {lead.opportunities.length > 0 && `(${lead.opportunities.length})`}
+                </CardTitle>
+                {canEdit && (
+                  <Button variant="ghost" size="sm" render={<Link href={`/leads/${id}/edit`} />}>
+                    <Plus className="h-3.5 w-3.5 mr-1" />
+                    Add
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {lead.opportunities.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No opportunities linked yet.</p>
+              ) : (
+                lead.opportunities.map((lo) => (
+                  <div key={lo.id} className="rounded-lg border p-3 space-y-3">
                     <Link
-                      href={`/opportunities/${opportunity.id}`}
-                      className="block p-3 rounded-lg border hover:bg-muted/30 transition-colors"
+                      href={`/opportunities/${lo.opportunity.id}`}
+                      className="block hover:opacity-80 transition-opacity"
                     >
-                      <p className="font-medium text-sm">{opportunity.name}</p>
-                      <p className="text-xs text-muted-foreground font-mono">{opportunity.opp_number}</p>
-                      <p className="text-xs text-muted-foreground">{opportunity.location}</p>
+                      <p className="font-medium text-sm">{lo.opportunity.name}</p>
+                      <p className="text-xs text-muted-foreground font-mono">{lo.opportunity.opp_number}</p>
+                      <p className="text-xs text-muted-foreground">{lo.opportunity.location}</p>
                     </Link>
-                  );
-                })()}
-              </CardContent>
-            </Card>
-          )}
+
+                    {/* Per-opportunity pipeline stage */}
+                    {canEdit ? (
+                      <StageChanger
+                        leadId={lead.id}
+                        currentStage={lo.status}
+                        currentActivityStage={lo.activity_stage ?? "New"}
+                        opportunityLinkId={lo.id}
+                      />
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <LeadStatusBadge status={lo.status} />
+                      </div>
+                    )}
+
+                    {/* Won details for this opportunity link */}
+                    {lo.status === "Won" && lo.settlement_value && (
+                      <div className="bg-green-50 dark:bg-green-950/20 rounded-md p-2 text-xs space-y-1">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Settlement</span>
+                          <span className="font-medium">{formatCurrency(Number(lo.settlement_value))}</span>
+                        </div>
+                        {lo.deal_commission_percent && (
+                          <>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Commission %</span>
+                              <span className="font-medium">{Number(lo.deal_commission_percent)}%</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Earned</span>
+                              <span className="font-semibold text-green-700 dark:text-green-400">
+                                {formatCurrency((Number(lo.settlement_value) * Number(lo.deal_commission_percent)) / 100)}
+                              </span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Lost details for this opportunity link */}
+                    {lo.status === "Lost" && lo.lost_reason && (
+                      <div className="bg-destructive/10 rounded-md p-2 text-xs">
+                        <p className="font-medium text-destructive">Lost: {lo.lost_reason}</p>
+                        {lo.lost_notes && <p className="text-muted-foreground mt-0.5">{lo.lost_notes}</p>}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
 
           {/* Tasks */}
           {lead.tasks.length > 0 && (

@@ -64,7 +64,6 @@ export function LeadForm({
   const [, startTransition] = useTransition();
   const [loading, setLoading] = useState(false);
   const [showDuplicates, setShowDuplicates] = useState(false);
-  const [pendingSubmit, setPendingSubmit] = useState<CreateLeadInput | null>(null);
   const [duplicateData, setDuplicateData] = useState<{
     exact_matches: { id: string; lead_number: string; full_name: string; phone: string; email: string | null; status: string; temperature: string }[];
     name_similar: { id: string; lead_number: string; full_name: string; phone: string; email: string | null; status: string; temperature: string }[];
@@ -134,10 +133,8 @@ export function LeadForm({
         const res = await fetch(`/api/leads/check-duplicate?${params}`);
         const data = await res.json();
         if (data.has_duplicates) {
-          setDuplicateData({
-            exact_matches: data.exact_matches,
-            name_similar: data.name_similar,
-          });
+          setDuplicateData({ exact_matches: data.exact_matches, name_similar: data.name_similar });
+          setShowDuplicates(true);
         }
       } catch {
         // silent
@@ -153,25 +150,7 @@ export function LeadForm({
   }, [phone, email, fullName, isEditing, checkDuplicates]);
 
   // ── Submit ────────────────────────────────────────────────────────────────
-  const submitLead = async (data: CreateLeadInput, skipDuplicateCheck = false) => {
-    if (!skipDuplicateCheck && !isEditing) {
-      const params = new URLSearchParams();
-      if (data.phone) params.set("phone", data.phone);
-      if (data.email) params.set("email", data.email ?? "");
-      if (data.full_name) params.set("name", data.full_name);
-      const res = await fetch(`/api/leads/check-duplicate?${params}`);
-      const dupeData = await res.json();
-      if (dupeData.has_duplicates) {
-        setDuplicateData({
-          exact_matches: dupeData.exact_matches,
-          name_similar: dupeData.name_similar,
-        });
-        setPendingSubmit(data);
-        setShowDuplicates(true);
-        return;
-      }
-    }
-
+  const submitLead = async (data: CreateLeadInput) => {
     setLoading(true);
     try {
       const url = isEditing ? `/api/leads/${leadId}` : "/api/leads";
@@ -183,6 +162,11 @@ export function LeadForm({
       });
       const result = await res.json();
       if (!res.ok) {
+        if (res.status === 409 && result.error === "duplicate_lead" && result.match) {
+          setDuplicateData({ exact_matches: [result.match], name_similar: [] });
+          setShowDuplicates(true);
+          return;
+        }
         toast.error(result.error ?? "Failed to save lead");
         return;
       }
@@ -639,10 +623,6 @@ export function LeadForm({
         exactMatches={duplicateData.exact_matches}
         nameSimilar={duplicateData.name_similar}
         onOpenExisting={(id) => router.push(`/leads/${id}`)}
-        onContinue={() => {
-          setShowDuplicates(false);
-          if (pendingSubmit) submitLead(pendingSubmit, true);
-        }}
         onClose={() => setShowDuplicates(false)}
       />
     </>

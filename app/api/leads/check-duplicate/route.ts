@@ -42,34 +42,10 @@ export async function GET(request: Request) {
           })
         : [];
 
-    const exactIds = exactMatches.map((m) => m.id);
-
-    let nameSimilar: typeof exactMatches = [];
-    if (name && name.trim().length > 2) {
-      const firstWord = name.trim().split(" ")[0];
-      nameSimilar = await prisma.lead.findMany({
-        where: {
-          deleted_at: null,
-          full_name: { contains: firstWord, mode: "insensitive" },
-          ...(exactIds.length > 0 && { NOT: { id: { in: exactIds } } }),
-        },
-        select: {
-          id: true,
-          lead_number: true,
-          full_name: true,
-          phone: true,
-          email: true,
-          status: true,
-          temperature: true,
-        },
-        take: 3,
-      });
-    }
-
     return NextResponse.json({
       exact_matches: exactMatches,
-      name_similar: nameSimilar,
-      has_duplicates: exactMatches.length > 0 || nameSimilar.length > 0,
+      name_similar: [],
+      has_duplicates: exactMatches.length > 0,
     });
   } catch (error) {
     console.error("GET /api/leads/check-duplicate:", error);

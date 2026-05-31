@@ -38,6 +38,8 @@ export async function POST(request: Request, { params }: { params: Params }) {
     }
 
     const { to_stage, activity_stage, notes, lost_reason, lost_notes, settlement_value, deal_commission_percent } = parsed.data;
+    // Optional: target a specific lead-opportunity link for per-opportunity stage tracking
+    const opportunity_link_id: string | null = body.opportunity_link_id ?? null;
 
     const lead = await prisma.lead.findUnique({
       where: { id, deleted_at: null },
@@ -46,7 +48,16 @@ export async function POST(request: Request, { params }: { params: Params }) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
 
-    // Build lead update data
+    // If targeting a specific opportunity link, update it too
+    let link = opportunity_link_id
+      ? await prisma.leadOpportunity.findUnique({ where: { id: opportunity_link_id } })
+      : null;
+
+    if (opportunity_link_id && !link) {
+      return NextResponse.json({ error: "Opportunity link not found" }, { status: 404 });
+    }
+
+    // Build lead update data — Lead.status always tracks the most recent change
     const leadUpdateData: Record<string, unknown> = { updated_at: new Date() };
 
     if (to_stage) {
@@ -63,17 +74,36 @@ export async function POST(request: Request, { params }: { params: Params }) {
 
     const activityMetadata: Record<string, unknown> = { notes: notes || null };
     if (to_stage) {
-      activityMetadata.pipeline_from = lead.status;
+      activityMetadata.pipeline_from = link ? link.status : lead.status;
       activityMetadata.pipeline_to = to_stage;
       activityMetadata.lost_reason = lost_reason || null;
+      activityMetadata.opportunity_link_id = opportunity_link_id;
       if (to_stage === "Won") {
         activityMetadata.settlement_value = settlement_value;
         activityMetadata.deal_commission_percent = deal_commission_percent;
       }
     }
     if (activity_stage) {
-      activityMetadata.activity_from = lead.activity_stage;
+      activityMetadata.activity_from = link ? link.activity_stage : lead.activity_stage;
       activityMetadata.activity_to = activity_stage;
+    }
+
+    // Build per-opportunity link update if a link is targeted
+    const linkUpdateData: Record<string, unknown> = {};
+    if (link) {
+      if (to_stage) {
+        linkUpdateData.status = to_stage;
+        if (lost_reason) linkUpdateData.lost_reason = lost_reason;
+        if (lost_notes) linkUpdateData.lost_notes = lost_notes;
+        if (to_stage === "Won" && settlement_value !== undefined) linkUpdateData.settlement_value = settlement_value;
+        if (to_stage === "Won" && deal_commission_percent !== undefined) linkUpdateData.deal_commission_percent = deal_commission_percent;
+        if (to_stage !== "Won") {
+          // Clear settlement on non-Won transition
+          linkUpdateData.settlement_value = null;
+          linkUpdateData.deal_commission_percent = null;
+        }
+      }
+      if (activity_stage) linkUpdateData.activity_stage = activity_stage;
     }
 
     const [updatedLead] = await prisma.$transaction([
@@ -100,6 +130,9 @@ export async function POST(request: Request, { params }: { params: Params }) {
             }),
           ]
         : []),
+      ...(link && Object.keys(linkUpdateData).length > 0
+        ? [prisma.leadOpportunity.update({ where: { id: opportunity_link_id! }, data: linkUpdateData })]
+        : []),
     ]);
 
     // Enqueue for Admin review
@@ -116,36 +149,42 @@ export async function POST(request: Request, { params }: { params: Params }) {
     });
 
     // Recalculate closed_revenue when Won state changes
+    // Uses per-opportunity link fields (settlement_value, deal_commission_percent on LeadOpportunity)
     if (to_stage === "Won" || lead.status === "Won") {
-      const linkedOpps = await prisma.leadOpportunity.findMany({
-        where: { lead_id: id },
-        select: { opportunity_id: true },
-      });
+      // Determine which opportunity IDs to recalculate
+      const oppIdsToRecalc: string[] = [];
+      if (link) {
+        oppIdsToRecalc.push(link.opportunity_id);
+      } else {
+        const linkedOpps = await prisma.leadOpportunity.findMany({
+          where: { lead_id: id },
+          select: { opportunity_id: true },
+        });
+        oppIdsToRecalc.push(...linkedOpps.map((lo) => lo.opportunity_id));
+      }
 
-      const oppIds = linkedOpps.map((lo) => lo.opportunity_id);
-      if (oppIds.length > 0) {
-        const allLinkedLeads = await prisma.leadOpportunity.findMany({
-          where: { opportunity_id: { in: oppIds } },
+      if (oppIdsToRecalc.length > 0) {
+        // For each opportunity, sum all Won links' settlement × commission from LeadOpportunity
+        const wonLinks = await prisma.leadOpportunity.findMany({
+          where: {
+            opportunity_id: { in: oppIdsToRecalc },
+            status: "Won",
+            lead: { deleted_at: null },
+          },
           select: {
             opportunity_id: true,
-            lead: {
-              select: { status: true, settlement_value: true, deal_commission_percent: true, deleted_at: true },
-            },
+            settlement_value: true,
+            deal_commission_percent: true,
           },
         });
 
-        const revenueByOpp = new Map<string, number>(oppIds.map((oid) => [oid, 0]));
-        for (const lo of allLinkedLeads) {
-          if (
-            lo.lead.deleted_at === null &&
-            lo.lead.status === "Won" &&
-            lo.lead.settlement_value !== null &&
-            lo.lead.deal_commission_percent !== null
-          ) {
+        const revenueByOpp = new Map<string, number>(oppIdsToRecalc.map((oid) => [oid, 0]));
+        for (const lo of wonLinks) {
+          if (lo.settlement_value !== null && lo.deal_commission_percent !== null) {
             const prev = revenueByOpp.get(lo.opportunity_id) ?? 0;
             revenueByOpp.set(
               lo.opportunity_id,
-              prev + lo.lead.settlement_value.mul(lo.lead.deal_commission_percent).div(100).toNumber(),
+              prev + Number(lo.settlement_value) * Number(lo.deal_commission_percent) / 100,
             );
           }
         }

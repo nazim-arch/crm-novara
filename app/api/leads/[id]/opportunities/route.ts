@@ -49,11 +49,30 @@ export async function POST(request: Request, { params }: { params: Params }) {
   const opp = await prisma.opportunity.findUnique({ where: { id: opportunity_id, deleted_at: null } });
   if (!opp) return NextResponse.json({ error: "Opportunity not found" }, { status: 404 });
 
-  // Enforce single-opportunity rule: remove any existing links for this lead first
-  await prisma.leadOpportunity.deleteMany({ where: { lead_id: id } });
+  // Check if this lead-opportunity link already exists
+  const existing = await prisma.leadOpportunity.findUnique({
+    where: { lead_id_opportunity_id: { lead_id: id, opportunity_id } },
+  });
+  if (existing) {
+    return NextResponse.json({ error: "This opportunity is already linked to the lead" }, { status: 409 });
+  }
+
+  // Inherit potential_lead_value from the lead for the new link
+  const leadData = await prisma.lead.findUnique({
+    where: { id },
+    select: { potential_lead_value: true, status: true, activity_stage: true },
+  });
 
   const tagged = await prisma.leadOpportunity.create({
-    data: { lead_id: id, opportunity_id, tagged_by_id: session.user.id, notes },
+    data: {
+      lead_id: id,
+      opportunity_id,
+      tagged_by_id: session.user.id,
+      notes,
+      status: leadData?.status ?? "New",
+      activity_stage: leadData?.activity_stage ?? "New",
+      potential_lead_value: leadData?.potential_lead_value ?? null,
+    },
   });
 
   // Log activity

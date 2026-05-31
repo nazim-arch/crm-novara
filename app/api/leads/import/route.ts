@@ -85,6 +85,25 @@ export async function POST(request: Request) {
       }
 
       try {
+        // Hard duplicate check before insert
+        const dupeWhere: { phone?: string; email?: string }[] = [];
+        if (data.phone) dupeWhere.push({ phone: data.phone });
+        if (data.email) dupeWhere.push({ email: data.email as string });
+        if (dupeWhere.length > 0) {
+          const existing = await prisma.lead.findFirst({
+            where: { deleted_at: null, OR: dupeWhere },
+            select: { lead_number: true, full_name: true },
+          });
+          if (existing) {
+            result.failed.push({
+              row: rowNum,
+              name: displayName,
+              errors: [`Lead already exists: ${existing.full_name} (${existing.lead_number}) — same phone/email`],
+            });
+            continue;
+          }
+        }
+
         const lead_number = await generateId("LEAD");
 
         const lead = await prisma.lead.create({

@@ -422,12 +422,22 @@ model LeadOpportunity {
   smart_match_score Int?
   notes             String?
 
+  // Per-opportunity pipeline state (LeadOpportunity is the pipeline unit)
+  status                  LeadStatus    @default(New)
+  activity_stage          ActivityStage @default(New)
+  potential_lead_value    Decimal?      @db.Decimal(12, 2)
+  settlement_value        Decimal?      @db.Decimal(12, 2)
+  deal_commission_percent Decimal?      @db.Decimal(8, 4)
+  lost_reason             String?
+  lost_notes              String?
+
   lead        Lead        @relation(fields: [lead_id],        references: [id], onDelete: Cascade)
   opportunity Opportunity @relation(fields: [opportunity_id], references: [id])
   tagged_by   User        @relation(fields: [tagged_by_id],   references: [id])
 
   @@unique([lead_id, opportunity_id])
   @@index([opportunity_id])
+  @@index([status])
   @@map("lead_opportunities")
 }
 

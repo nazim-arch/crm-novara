@@ -108,28 +108,50 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
   const sortCol = sp.sort ?? "updated_at";
   const sortDir = sp.dir === "asc" ? "asc" : "desc";
 
-  const where: Prisma.LeadWhereInput = {
-    deleted_at: null,
-    ...(sp.status && sp.status !== "all" && { status: sp.status as Prisma.EnumLeadStatusFilter }),
-    ...(sp.temperature && sp.temperature !== "all" && { temperature: sp.temperature as Prisma.EnumLeadTemperatureFilter }),
-    ...(sp.assigned_to && sp.assigned_to !== "all" && { assigned_to_id: sp.assigned_to }),
-    ...(sp.search && {
+  // Role scope — must be resolved before building where
+  const scope = leadScopeFilter(session.user.role, session.user.id);
+
+  // Use AND array so multiple OR-based filters don't overwrite each other
+  const andConditions: Prisma.LeadWhereInput[] = [];
+
+  if (sp.status && sp.status !== "all") {
+    andConditions.push({
+      OR: [
+        { opportunities: { some: { status: sp.status as Prisma.EnumLeadStatusFilter } } },
+        { AND: [{ opportunities: { none: {} } }, { status: sp.status as Prisma.EnumLeadStatusFilter }] },
+      ],
+    });
+  }
+
+  if (sp.search) {
+    andConditions.push({
       OR: [
         { full_name: { contains: sp.search.slice(0, 100), mode: "insensitive" } },
         { phone: { contains: sp.search.slice(0, 100) } },
         { lead_number: { contains: sp.search.slice(0, 100), mode: "insensitive" } },
       ],
-    }),
-    ...(sp.source && { lead_source: sp.source }),
-    ...(sp.activity_stage && sp.activity_stage !== "all" && { activity_stage: sp.activity_stage as Prisma.EnumActivityStageFilter }),
-    ...(sp.opportunity_id && { opportunities: { some: { opportunity_id: sp.opportunity_id } } }),
-  };
-
-  // Role-based scope — single source of truth via leadScopeFilter
-  const scope = leadScopeFilter(session.user.role, session.user.id);
-  if (scope) {
-    where.AND = [scope];
+    });
   }
+
+  if (sp.activity_stage && sp.activity_stage !== "all") {
+    andConditions.push({
+      OR: [
+        { opportunities: { some: { activity_stage: sp.activity_stage as Prisma.EnumActivityStageFilter } } },
+        { AND: [{ opportunities: { none: {} } }, { activity_stage: sp.activity_stage as Prisma.EnumActivityStageFilter }] },
+      ],
+    });
+  }
+
+  if (scope) andConditions.push(scope);
+
+  const where: Prisma.LeadWhereInput = {
+    deleted_at: null,
+    ...(sp.temperature && sp.temperature !== "all" && { temperature: sp.temperature as Prisma.EnumLeadTemperatureFilter }),
+    ...(sp.assigned_to && sp.assigned_to !== "all" && { assigned_to_id: sp.assigned_to }),
+    ...(sp.source && { lead_source: sp.source }),
+    ...(sp.opportunity_id && { opportunities: { some: { opportunity_id: sp.opportunity_id } } }),
+    ...(andConditions.length > 0 && { AND: andConditions }),
+  };
 
   const periodRange = resolvePeriodRange(sp.period, sp.from, sp.to, today);
 
@@ -177,6 +199,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
         full_name: true,
         phone: true,
         status: true,
+        activity_stage: true,
         temperature: true,
         property_type: true,
         next_followup_date: true,
@@ -185,6 +208,15 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
         budget_max: true,
         location_preference: true,
         assigned_to: { select: { id: true, name: true } },
+        opportunities: {
+          select: {
+            id: true,
+            status: true,
+            activity_stage: true,
+            potential_lead_value: true,
+            opportunity: { select: { id: true, opp_number: true, name: true } },
+          },
+        },
       },
       orderBy,
       skip: (page - 1) * limit,
@@ -196,6 +228,28 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
       orderBy: { name: "asc" },
     }),
   ]);
+
+  // Expand into one row per opportunity link; unlinked leads produce one row using lead-level data
+  const rows = leads.flatMap((lead) => {
+    if (lead.opportunities.length === 0) {
+      return [{
+        ...lead,
+        row_key: lead.id,
+        link_id: null as string | null,
+        link_status: lead.status as string,
+        link_potential_value: lead.potential_lead_value,
+        opportunity: null as { id: string; opp_number: string; name: string } | null,
+      }];
+    }
+    return lead.opportunities.map((lo) => ({
+      ...lead,
+      row_key: lo.id,
+      link_id: lo.id as string | null,
+      link_status: lo.status as string,
+      link_potential_value: lo.potential_lead_value,
+      opportunity: lo.opportunity as { id: string; opp_number: string; name: string } | null,
+    }));
+  });
 
   const totalPages = Math.ceil(total / limit);
   const sh = (col: string, label: string, className?: string) => (
@@ -233,7 +287,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
       <div className="flex items-start justify-between gap-2">
         <div>
           <h1 className="text-lg sm:text-xl font-semibold">Leads</h1>
-          <p className="text-xs sm:text-sm text-muted-foreground">{total} total leads</p>
+          <p className="text-xs sm:text-sm text-muted-foreground">{total} leads</p>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
           {canExport && <ExportButton href="/api/leads/export" filename="leads.xlsx" />}
@@ -277,59 +331,64 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
 
       {/* Mobile card view */}
       <div className="md:hidden space-y-2">
-        {leads.length === 0 ? (
+        {rows.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground text-sm">No leads found</div>
         ) : (
-          leads.map((lead) => (
-            <div key={lead.id} className="rounded-xl border bg-card p-3 space-y-2.5 shadow-sm">
+          rows.map((row) => (
+            <div key={row.row_key} className="rounded-xl border bg-card p-3 space-y-2.5 shadow-sm">
               {/* Row 1: name + badges */}
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <Link href={`/leads/${lead.id}`} className="font-semibold text-sm hover:underline leading-tight block truncate">
-                    {lead.full_name}
+                  <Link href={`/leads/${row.id}`} className="font-semibold text-sm hover:underline leading-tight block truncate">
+                    {row.full_name}
                   </Link>
-                  <span className="text-[11px] text-muted-foreground font-mono">{lead.lead_number}</span>
+                  <span className="text-[11px] text-muted-foreground font-mono">{row.lead_number}</span>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <TemperatureBadge temperature={lead.temperature} />
+                  <TemperatureBadge temperature={row.temperature} />
                 </div>
               </div>
-              {/* Row 2: status + property */}
+              {/* Row 2: status + opportunity + property */}
               <div className="flex items-center gap-2 flex-wrap">
-                <LeadStatusBadge status={lead.status} />
-                {lead.property_type && (
+                <LeadStatusBadge status={row.link_status} />
+                {row.opportunity && (
+                  <Link href={`/opportunities/${row.opportunity.id}`} className="text-[11px] text-primary bg-primary/10 px-1.5 py-0.5 rounded hover:bg-primary/20 truncate max-w-[140px]">
+                    {row.opportunity.name}
+                  </Link>
+                )}
+                {row.property_type && (
                   <span className="text-[11px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                    {lead.property_type}
+                    {row.property_type}
                   </span>
                 )}
-                {lead.assigned_to && (
-                  <span className="text-[11px] text-muted-foreground">{lead.assigned_to.name}</span>
+                {row.assigned_to && (
+                  <span className="text-[11px] text-muted-foreground">{row.assigned_to.name}</span>
                 )}
               </div>
               {/* Row 3: follow-up date */}
-              {lead.next_followup_date && (
+              {row.next_followup_date && (
                 <div className="text-xs text-muted-foreground">
                   Follow-up:{" "}
-                  <span className={new Date(lead.next_followup_date) < new Date() ? "text-destructive font-medium" : "font-medium"}>
-                    {formatDate(lead.next_followup_date)}
+                  <span className={new Date(row.next_followup_date) < new Date() ? "text-destructive font-medium" : "font-medium"}>
+                    {formatDate(row.next_followup_date)}
                   </span>
                 </div>
               )}
               {/* Row 4: actions */}
               <div className="flex items-center gap-2 pt-0.5">
                 <LeadContactActions
-                  leadId={lead.id}
-                  phone={lead.phone}
-                  leadName={lead.full_name}
+                  leadId={row.id}
+                  phone={row.phone}
+                  leadName={row.full_name}
                   agentName={session?.user?.name ?? "Agent"}
-                  propertyType={lead.property_type}
-                  budgetMin={lead.budget_min ? Number(lead.budget_min) : null}
-                  budgetMax={lead.budget_max ? Number(lead.budget_max) : null}
-                  location={lead.location_preference}
+                  propertyType={row.property_type}
+                  budgetMin={row.budget_min ? Number(row.budget_min) : null}
+                  budgetMax={row.budget_max ? Number(row.budget_max) : null}
+                  location={row.location_preference}
                   variant="compact"
                 />
                 <Link
-                  href={`/leads/${lead.id}`}
+                  href={`/leads/${row.id}`}
                   className="ml-auto text-xs text-primary hover:underline font-medium"
                 >
                   View →
@@ -347,6 +406,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
             <TableRow className="bg-muted/50">
               <TableHead className="w-32">Lead ID</TableHead>
               <TableHead>{sh("full_name", "Name")}</TableHead>
+              <TableHead>Opportunity</TableHead>
               <TableHead>Phone</TableHead>
               <TableHead>{sh("status", "Status")}</TableHead>
               <TableHead>{sh("temperature", "Temp")}</TableHead>
@@ -358,50 +418,59 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
             </TableRow>
           </TableHeader>
           <TableBody>
-            {leads.length === 0 ? (
+            {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={11} className="text-center py-12 text-muted-foreground">
                   No leads found
                 </TableCell>
               </TableRow>
             ) : (
-              leads.map((lead) => (
-                <TableRow key={lead.id} className="hover:bg-muted/30 cursor-pointer">
+              rows.map((row) => (
+                <TableRow key={row.row_key} className="hover:bg-muted/30 cursor-pointer">
                   <TableCell>
-                    <Link href={`/leads/${lead.id}`} className="font-mono text-xs text-primary hover:underline">
-                      {lead.lead_number}
+                    <Link href={`/leads/${row.id}`} className="font-mono text-xs text-primary hover:underline">
+                      {row.lead_number}
                     </Link>
                   </TableCell>
                   <TableCell>
-                    <Link href={`/leads/${lead.id}`} className="font-medium hover:underline">
-                      {lead.full_name}
+                    <Link href={`/leads/${row.id}`} className="font-medium hover:underline">
+                      {row.full_name}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{lead.phone}</TableCell>
-                  <TableCell><LeadStatusBadge status={lead.status} /></TableCell>
-                  <TableCell><TemperatureBadge temperature={lead.temperature} /></TableCell>
-                  <TableCell className="text-sm">{lead.assigned_to.name}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{lead.property_type ?? "—"}</TableCell>
+                  <TableCell className="text-sm">
+                    {row.opportunity ? (
+                      <Link href={`/opportunities/${row.opportunity.id}`} className="text-primary hover:underline text-xs">
+                        {row.opportunity.name}
+                      </Link>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{row.phone}</TableCell>
+                  <TableCell><LeadStatusBadge status={row.link_status} /></TableCell>
+                  <TableCell><TemperatureBadge temperature={row.temperature} /></TableCell>
+                  <TableCell className="text-sm">{row.assigned_to.name}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{row.property_type ?? "—"}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {lead.next_followup_date ? (
-                      <span className={new Date(lead.next_followup_date) < new Date() ? "text-destructive font-medium" : ""}>
-                        {formatDate(lead.next_followup_date)}
+                    {row.next_followup_date ? (
+                      <span className={new Date(row.next_followup_date) < new Date() ? "text-destructive font-medium" : ""}>
+                        {formatDate(row.next_followup_date)}
                       </span>
                     ) : "—"}
                   </TableCell>
                   <TableCell className="text-right text-sm">
-                    {lead.potential_lead_value ? formatCurrency(Number(lead.potential_lead_value)) : "—"}
+                    {row.link_potential_value ? formatCurrency(Number(row.link_potential_value)) : "—"}
                   </TableCell>
                   <TableCell>
                     <LeadContactActions
-                      leadId={lead.id}
-                      phone={lead.phone}
-                      leadName={lead.full_name}
+                      leadId={row.id}
+                      phone={row.phone}
+                      leadName={row.full_name}
                       agentName={session?.user?.name ?? "Agent"}
-                      propertyType={lead.property_type}
-                      budgetMin={lead.budget_min ? Number(lead.budget_min) : null}
-                      budgetMax={lead.budget_max ? Number(lead.budget_max) : null}
-                      location={lead.location_preference}
+                      propertyType={row.property_type}
+                      budgetMin={row.budget_min ? Number(row.budget_min) : null}
+                      budgetMax={row.budget_max ? Number(row.budget_max) : null}
+                      location={row.location_preference}
                       variant="compact"
                     />
                   </TableCell>
@@ -415,7 +484,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-xs sm:text-sm text-muted-foreground">
-          <span>Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}</span>
+          <span>Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total} leads</span>
           <div className="flex gap-2">
             {page > 1 && (
               <Button variant="outline" size="sm" render={<Link href={`/leads?${new URLSearchParams({ ...Object.fromEntries(Object.entries(sp).filter(([, v]) => v !== undefined) as [string, string][]), page: String(page - 1) })}`} />}>
