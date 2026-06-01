@@ -25,7 +25,7 @@ import { startOfDay, endOfDay, addDays, differenceInCalendarDays } from "date-fn
 import {
   Phone, Mail, MessageCircle, Home, Users, Zap, Flame,
   AlertTriangle, Clock, Search, Trash2, Loader2, Check, Plus,
-  Building2, User, Calendar, CheckCircle2, ArrowUpDown, ArrowUp, ArrowDown,
+  Building2, User, Calendar, ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -291,7 +291,6 @@ export function FollowUpsClient({
 
   const buckets = useMemo(() => {
     const pending = filtered.filter((fu) => !fu.completed_at);
-    const completed = filtered.filter((fu) => !!fu.completed_at);
 
     const overdue = pending.filter((fu) => new Date(fu.scheduled_at) < today);
     const todayItems = pending.filter((fu) => {
@@ -306,7 +305,7 @@ export function FollowUpsClient({
       const d = new Date(fu.scheduled_at);
       return d > todayEnd && d <= endOfDay(addDays(today, 7));
     });
-    return { overdue, today: todayItems, next3, next7, pending, completed };
+    return { overdue, today: todayItems, next3, next7, pending };
   }, [filtered, today, todayEnd]);
 
   async function handleMarkComplete(fu: FollowUp, andAddNext = false) {
@@ -464,11 +463,6 @@ export function FollowUpsClient({
             <span className="sm:hidden">All</span>
             <span className="text-[10px] opacity-70 ml-0.5">({buckets.pending.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="completed" className="gap-1 text-xs sm:text-sm">
-            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-            <span>Done</span>
-            <span className="text-[10px] opacity-70 ml-0.5">({buckets.completed.length})</span>
-          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overdue">
@@ -485,9 +479,6 @@ export function FollowUpsClient({
         </TabsContent>
         <TabsContent value="pending">
           <FollowUpList items={buckets.pending} emptyText="No pending follow-ups" {...sharedProps} />
-        </TabsContent>
-        <TabsContent value="completed">
-          <FollowUpList items={buckets.completed} emptyText="No completed follow-ups" isCompleted {...sharedProps} />
         </TabsContent>
       </Tabs>
 

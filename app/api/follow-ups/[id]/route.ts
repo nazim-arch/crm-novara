@@ -53,7 +53,7 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
     },
   });
 
-  // When marking as complete on a lead-linked follow-up, sync lead's next_followup_date
+  // When marking as complete on a lead-linked follow-up, sync lead's next_followup_date + last_contact_date
   if (data.completed_at && followUp.lead_id) {
     const nextFu = await prisma.followUp.findFirst({
       where: { lead_id: followUp.lead_id, completed_at: null },
@@ -65,6 +65,7 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
         next_followup_date: nextFu?.scheduled_at ?? null,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         followup_type: (nextFu?.type ?? null) as any,
+        last_contact_date: data.completed_at,
       },
     });
   }

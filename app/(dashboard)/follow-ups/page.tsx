@@ -39,18 +39,11 @@ export default async function FollowUpsPage({
     created_by: { select: { id: true, name: true } },
   };
 
-  // Fetch pending and done separately so the done limit never buries pending records
-  const [pendingFollowUps, doneFollowUps, users] = await Promise.all([
+  const [pendingFollowUps, users] = await Promise.all([
     prisma.followUp.findMany({
       where: { ...scopeFilter, completed_at: null },
       include: fuInclude,
       orderBy: { scheduled_at: "asc" },
-    }),
-    prisma.followUp.findMany({
-      where: { ...scopeFilter, completed_at: { not: null } },
-      include: fuInclude,
-      orderBy: { completed_at: "desc" },
-      take: 500,
     }),
     isManagerOrAdmin
       ? prisma.user.findMany({
@@ -61,7 +54,7 @@ export default async function FollowUpsPage({
       : Promise.resolve([]),
   ]);
 
-  const followUps = [...pendingFollowUps, ...doneFollowUps];
+  const followUps = pendingFollowUps;
 
   return (
     <FollowUpsClient

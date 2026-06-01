@@ -28,6 +28,7 @@ const SORT_MAP: Record<string, Prisma.LeadOrderByWithRelationInput> = {
   status:               { status: "asc" },
   temperature:          { temperature: "asc" },
   next_followup_date:   { next_followup_date: "asc" },
+  last_contact_date:    { last_contact_date: "asc" },
   potential_lead_value: { potential_lead_value: "asc" },
   assigned_to:          { assigned_to: { name: "asc" } },
   created_at:           { created_at: "asc" },
@@ -207,6 +208,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
         temperature: true,
         property_type: true,
         next_followup_date: true,
+        last_contact_date: true,
         potential_lead_value: true,
         budget_min: true,
         budget_max: true,
@@ -429,6 +431,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
               <TableHead>{sh("assigned_to", "Assigned To")}</TableHead>
               <TableHead>Property Type</TableHead>
               <TableHead>{sh("next_followup_date", "Follow-up")}</TableHead>
+              <TableHead>{sh("last_contact_date", "Last Contact")}</TableHead>
               <TableHead className="text-right">{sh("potential_lead_value", "Pipeline Value", "ml-auto")}</TableHead>
               <TableHead className="w-24">Contact</TableHead>
             </TableRow>
@@ -436,7 +439,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={11} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={12} className="text-center py-12 text-muted-foreground">
                   No leads found
                 </TableCell>
               </TableRow>
@@ -484,6 +487,15 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
                       </div>
                     ) : (
                       <span className="text-amber-500 text-xs font-medium">No FU</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {row.last_contact_date ? (
+                      <span className={new Date(row.last_contact_date) < new Date(Date.now() - 7 * 86400000) ? "text-amber-500" : ""}>
+                        {formatDate(row.last_contact_date)}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground/50">Never</span>
                     )}
                   </TableCell>
                   <TableCell className="text-right text-sm">
