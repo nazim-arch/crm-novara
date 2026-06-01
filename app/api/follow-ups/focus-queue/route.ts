@@ -15,6 +15,7 @@ const LEAD_SELECT = {
   followup_type: true, outcome: true, deleted_at: true,
   alternate_requirement: true,
   assigned_to: { select: { id: true, name: true } },
+  _count: { select: { followups: true } },
 };
 
 const FU_INCLUDE = {

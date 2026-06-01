@@ -41,7 +41,7 @@ export type FollowUp = {
   outcome: string | null;
   lead_id: string | null;
   opportunity_id: string | null;
-  lead: { id: string; lead_number: string; full_name: string; status: string; temperature: string } | null;
+  lead: { id: string; lead_number: string; full_name: string; status: string; temperature: string; _count?: { followups: number } } | null;
   opportunity: { id: string; opp_number: string; name: string } | null;
   assigned_to: { id: string; name: string } | null;
   created_by: { id: string; name: string };
@@ -86,10 +86,15 @@ function FuTypeIcon({ type }: { type: string }) {
 function EntityLabel({ fu }: { fu: FollowUp }) {
   if (fu.lead) {
     return (
-      <Link href={`/leads/${fu.lead.id}`} className="font-medium text-sm hover:underline leading-tight line-clamp-1">
-        {fu.lead.full_name}
-        <span className="text-[11px] text-muted-foreground font-mono ml-1">{fu.lead.lead_number}</span>
-      </Link>
+      <div>
+        <Link href={`/leads/${fu.lead.id}`} className="font-medium text-sm hover:underline leading-tight line-clamp-1">
+          {fu.lead.full_name}
+          <span className="text-[11px] text-muted-foreground font-mono ml-1">{fu.lead.lead_number}</span>
+        </Link>
+        {fu.lead._count && fu.lead._count.followups > 1 && (
+          <span className="text-[10px] text-muted-foreground">{fu.lead._count.followups} total FUs</span>
+        )}
+      </div>
     );
   }
   if (fu.opportunity) {
@@ -572,8 +577,8 @@ function FollowUpList({
                 </div>
               </div>
 
-              {/* Row 2: type + date */}
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              {/* Row 2: type + date + total FU count */}
+              <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
                 <span className="flex items-center gap-1">
                   <FuTypeIcon type={fu.type} />
                   {fu.type}
@@ -582,6 +587,14 @@ function FollowUpList({
                 <Calendar className="h-3 w-3 shrink-0" />
                 <span>{isCompleted ? formatDateTime(fu.completed_at!) : formatDate(scheduled)}</span>
                 {relative && <span className={relative.cls}>{relative.label}</span>}
+                {fu.lead?._count && fu.lead._count.followups > 0 && (
+                  <>
+                    <span className="text-muted-foreground/40">·</span>
+                    <span className="bg-muted px-1.5 py-0.5 rounded text-[10px] text-muted-foreground">
+                      {fu.lead._count.followups} total FUs
+                    </span>
+                  </>
+                )}
               </div>
 
               {/* Row 3: assignee + notes */}

@@ -129,6 +129,8 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
     hotLeadsBySource,
     // Won in period via stage history
     wonInPeriod,
+    // Live: active leads with no next follow-up scheduled
+    noFollowUpCount,
   ] = await Promise.all([
     // ── Period: received ──────────────────────────────────────────────────
     prisma.lead.count({ where: leadWhere(periodFilter) }),
@@ -276,6 +278,11 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
           : { deleted_at: null },
       },
     }),
+
+    // ── Live: active leads with no next follow-up scheduled ───────────────
+    prisma.lead.count({
+      where: leadWhere({ ...activeFilter, next_followup_date: null }),
+    }),
   ]);
 
   // ── Secondary: resolve names ────────────────────────────────────────────
@@ -392,6 +399,7 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
           todayFollowUps: todayFollowUpsCount,
           overdueFollowUps: overdueFollowUpsCount,
           noActivityLeads,
+          noFollowUpCount,
         }}
         todayLeads={todayLeadsList.map((l) => ({
           id: l.id, full_name: l.full_name, lead_number: l.lead_number, phone: l.phone,

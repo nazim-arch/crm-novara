@@ -34,6 +34,7 @@ interface FocusLead {
   followup_type: string | null; outcome: string | null; deleted_at: string | null;
   alternate_requirement: string | null;
   assigned_to: { id: string; name: string };
+  _count?: { followups: number };
 }
 
 interface FocusItem {
@@ -190,6 +191,7 @@ function FocusCard({
             <p className="text-[11px] text-muted-foreground">
               {item.callback_at ? "Callback" : "Scheduled"}: {new Date(item.callback_at ?? item.scheduled_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
               {item.attempt_count > 0 && ` · ${item.attempt_count} attempt${item.attempt_count > 1 ? "s" : ""}`}
+              {item.lead?._count && item.lead._count.followups > 0 && ` · ${item.lead._count.followups} total FUs`}
             </p>
           </div>
         </div>

@@ -180,21 +180,22 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
                     <span>{lead.location_preference}</span>
                   </div>
                 )}
-                {lead.next_followup_date && (
-                  <div className="flex items-center gap-2">
-                    <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <span
-                      className={
-                        new Date(lead.next_followup_date) < new Date()
-                          ? "text-destructive font-medium"
-                          : ""
-                      }
-                    >
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+                  {lead.next_followup_date ? (
+                    <span className={new Date(lead.next_followup_date) < new Date() ? "text-destructive font-medium" : ""}>
                       Follow-up: {formatDate(lead.next_followup_date)}
                       {lead.followup_type && ` (${lead.followup_type})`}
                     </span>
-                  </div>
-                )}
+                  ) : (
+                    <span className="text-amber-500 font-medium">No follow-up scheduled</span>
+                  )}
+                  {lead._count.followups > 0 && (
+                    <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                      {lead._count.followups} total
+                    </span>
+                  )}
+                </div>
               </div>
 
               <Separator className="my-4" />

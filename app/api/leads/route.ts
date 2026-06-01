@@ -64,7 +64,7 @@ export async function GET(request: Request) {
         include: {
           assigned_to: { select: { id: true, name: true, avatar_url: true } },
           lead_owner: { select: { id: true, name: true } },
-          _count: { select: { tasks: true } },
+          _count: { select: { tasks: true, followups: true } },
           opportunities: {
             include: {
               opportunity: {
@@ -93,6 +93,7 @@ export async function GET(request: Request) {
           link_settlement_value: lead.settlement_value,
           link_commission_pct: lead.deal_commission_percent,
           opportunity: null as OppRef,
+          followup_count: lead._count.followups,
         }];
       }
       return lead.opportunities.map((lo) => ({
@@ -104,6 +105,7 @@ export async function GET(request: Request) {
         link_settlement_value: lo.settlement_value,
         link_commission_pct: lo.deal_commission_percent,
         opportunity: lo.opportunity as OppRef,
+        followup_count: lead._count.followups,
       }));
     });
 

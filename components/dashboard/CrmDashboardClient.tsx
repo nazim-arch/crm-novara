@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   Users, Flame, Activity, Trophy, CalendarClock, AlertTriangle,
   TrendingUp, DollarSign, Wallet, PiggyBank, Target,
-  CheckSquare, Clock, CheckCircle2, XCircle, Briefcase,
+  CheckSquare, Clock, CheckCircle2, XCircle, Briefcase, BellOff,
 } from "lucide-react";
 import { ClientBarChart } from "@/components/dashboard/ClientBarChart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +27,7 @@ interface Kpis {
   wonLeadsInRange: number;
   todayFollowUps: number;
   overdueFollowUps: number;
+  noFollowUpCount: number;
   pipelineValue: number;
   totalSalesValue: number;
   possibleRevenue: number;
@@ -266,6 +267,10 @@ export function CrmDashboardClient({
           <KpiCard label="Overdue Follow-ups" value={kpis.overdueFollowUps} icon={AlertTriangle}
             iconClass={kpis.overdueFollowUps > 0 ? "text-destructive" : "text-muted-foreground"}
             valueClass={kpis.overdueFollowUps > 0 ? "text-destructive" : ""} href="/follow-ups" />
+          <KpiCard label="No FU Scheduled" value={kpis.noFollowUpCount} icon={BellOff}
+            iconClass={kpis.noFollowUpCount > 0 ? "text-amber-500" : "text-muted-foreground"}
+            valueClass={kpis.noFollowUpCount > 0 ? "text-amber-600" : ""}
+            href="/leads?filter=no_followup" />
         </div>
       </section>
 

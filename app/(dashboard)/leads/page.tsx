@@ -43,6 +43,7 @@ const FILTER_LABELS: Record<string, string> = {
   overdue_followup: "Overdue Follow-ups",
   to_action_today:  "To Action Today",
   actioned:         "Actioned Leads",
+  no_followup:      "No Follow-up Scheduled",
 };
 
 function resolvePeriodRange(
@@ -182,6 +183,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
       { stage_history: { some: { from_stage: { not: null } } } },
       { followups: { some: {} } },
     ];
+  } else if (sp.filter === "no_followup") {
+    where.next_followup_date = null;
+    where.status = { notIn: ["Won", "Lost", "InvalidLead", "Recycle"] };
   }
 
   const baseOrder = SORT_MAP[sortCol] ?? { updated_at: "asc" };
@@ -208,6 +212,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
         budget_max: true,
         location_preference: true,
         assigned_to: { select: { id: true, name: true } },
+        _count: { select: { followups: true } },
         opportunities: {
           select: {
             id: true,
@@ -239,6 +244,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
         link_status: lead.status as string,
         link_potential_value: lead.potential_lead_value,
         opportunity: null as { id: string; opp_number: string; name: string } | null,
+        followup_count: lead._count.followups,
       }];
     }
     return lead.opportunities.map((lo) => ({
@@ -248,6 +254,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
       link_status: lo.status as string,
       link_potential_value: lo.potential_lead_value,
       opportunity: lo.opportunity as { id: string; opp_number: string; name: string } | null,
+      followup_count: lead._count.followups,
     }));
   });
 
@@ -365,15 +372,24 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
                   <span className="text-[11px] text-muted-foreground">{row.assigned_to.name}</span>
                 )}
               </div>
-              {/* Row 3: follow-up date */}
-              {row.next_followup_date && (
-                <div className="text-xs text-muted-foreground">
-                  Follow-up:{" "}
-                  <span className={new Date(row.next_followup_date) < new Date() ? "text-destructive font-medium" : "font-medium"}>
-                    {formatDate(row.next_followup_date)}
-                  </span>
-                </div>
-              )}
+              {/* Row 3: follow-up date + count */}
+              <div className="text-xs text-muted-foreground">
+                {row.next_followup_date ? (
+                  <>
+                    Follow-up:{" "}
+                    <span className={new Date(row.next_followup_date) < new Date() ? "text-destructive font-medium" : "font-medium"}>
+                      {formatDate(row.next_followup_date)}
+                    </span>
+                    {row.followup_count > 0 && (
+                      <span className="ml-1 text-muted-foreground">({row.followup_count} total)</span>
+                    )}
+                  </>
+                ) : row.followup_count > 0 ? (
+                  <span>{row.followup_count} follow-up{row.followup_count !== 1 ? "s" : ""} · no next date</span>
+                ) : (
+                  <span className="text-amber-500 font-medium">No follow-up</span>
+                )}
+              </div>
               {/* Row 4: actions */}
               <div className="flex items-center gap-2 pt-0.5">
                 <LeadContactActions
@@ -451,12 +467,24 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
                   <TableCell><TemperatureBadge temperature={row.temperature} /></TableCell>
                   <TableCell className="text-sm">{row.assigned_to.name}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{row.property_type ?? "—"}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
+                  <TableCell className="text-sm">
                     {row.next_followup_date ? (
-                      <span className={new Date(row.next_followup_date) < new Date() ? "text-destructive font-medium" : ""}>
-                        {formatDate(row.next_followup_date)}
-                      </span>
-                    ) : "—"}
+                      <div>
+                        <span className={new Date(row.next_followup_date) < new Date() ? "text-destructive font-medium" : ""}>
+                          {formatDate(row.next_followup_date)}
+                        </span>
+                        {row.followup_count > 0 && (
+                          <span className="block text-[11px] text-muted-foreground">({row.followup_count} total)</span>
+                        )}
+                      </div>
+                    ) : row.followup_count > 0 ? (
+                      <div>
+                        <span className="text-muted-foreground">—</span>
+                        <span className="block text-[11px] text-muted-foreground">{row.followup_count} total</span>
+                      </div>
+                    ) : (
+                      <span className="text-amber-500 text-xs font-medium">No FU</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-right text-sm">
                     {row.link_potential_value ? formatCurrency(Number(row.link_potential_value)) : "—"}

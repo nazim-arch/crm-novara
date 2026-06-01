@@ -7,7 +7,7 @@ import {
   Users, Flame, CalendarClock, AlertTriangle,
   CheckCircle2, XCircle, Clock, Eye,
   Snowflake, Lightbulb, UserCheck, BarChart3, Zap, Thermometer,
-  TrendingUp, Trophy,
+  TrendingUp, Trophy, BellOff,
 } from "lucide-react";
 import { LeadContactActions } from "@/components/shared/LeadContactActions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,6 +37,7 @@ export interface LiveKpis {
   todayFollowUps: number;
   overdueFollowUps: number;
   noActivityLeads: number;
+  noFollowUpCount: number;
 }
 
 export interface ActionQueueLead {
@@ -422,6 +423,15 @@ export function SalesDashboardClient({
           />
           <KpiCard label="No Activity" value={liveKpis.noActivityLeads} icon={XCircle}
             iconClass="text-muted-foreground" href="/leads?filter=no_activity" />
+          <KpiCard
+            label="No FU Scheduled"
+            value={liveKpis.noFollowUpCount}
+            sub="Active, no next date set"
+            icon={BellOff}
+            iconClass={liveKpis.noFollowUpCount > 0 ? "text-amber-500" : "text-muted-foreground"}
+            valueClass={liveKpis.noFollowUpCount > 0 ? "text-amber-600" : ""}
+            href="/leads?filter=no_followup"
+          />
         </div>
       </section>
 

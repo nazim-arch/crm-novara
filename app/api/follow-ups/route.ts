@@ -61,7 +61,7 @@ export async function GET(request: Request) {
   const followUps = await prisma.followUp.findMany({
     where,
     include: {
-      lead: { select: { id: true, lead_number: true, full_name: true, status: true, temperature: true } },
+      lead: { select: { id: true, lead_number: true, full_name: true, status: true, temperature: true, _count: { select: { followups: true } } } },
       opportunity: { select: { id: true, opp_number: true, name: true } },
       task: { select: { id: true, task_number: true, title: true } },
       assigned_to: { select: { id: true, name: true } },

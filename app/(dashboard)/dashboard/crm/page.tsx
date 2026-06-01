@@ -79,6 +79,7 @@ async function CrmDashboardContent({
     pipelineAgg, todayLeadsList, overdueLeadsList, staleHotLeads,
     revenueAgg, expenseAgg, topOpportunities, expensesByOpp, oppByBreakdownRaw,
     recentActivities, taskByStatus, overdueTasksCount, taskByClient,
+    noFollowUpCount,
   ] = await Promise.all([
     prisma.lead.count({ where: leadWhere() }),
     prisma.lead.count({ where: leadWhere({ temperature: "Hot", status: { notIn: ["Won", "Lost", "Recycle"] } }) }),
@@ -139,6 +140,7 @@ async function CrmDashboardContent({
     prisma.task.groupBy({ by: ["status"], where: { deleted_at: null, ...(role === "Sales" || role === "Operations" ? { assigned_to_id: userId } : {}) }, _count: { id: true } }),
     prisma.task.count({ where: { deleted_at: null, status: { notIn: ["Done", "Cancelled"] }, due_date: { lt: todayStart }, ...(role === "Sales" || role === "Operations" ? { assigned_to_id: userId } : {}) } }),
     prisma.task.groupBy({ by: ["client_id"], where: { deleted_at: null, client_id: { not: null }, ...(role === "Sales" || role === "Operations" ? { assigned_to_id: userId } : {}) }, _count: { id: true } }),
+    prisma.lead.count({ where: leadWhere({ status: { notIn: ["Won", "Lost", "InvalidLead", "Recycle"] }, next_followup_date: null }) }),
   ]);
 
   const clientIds = (taskByClient as Array<{ client_id: string | null }>).map((c) => c.client_id).filter(Boolean) as string[];
@@ -178,6 +180,7 @@ async function CrmDashboardContent({
         newLeadsInRange, wonLeadsInRange,
         todayFollowUps: todayFollowUpsCount,
         overdueFollowUps: overdueFollowUpsCount,
+        noFollowUpCount,
         pipelineValue, totalSalesValue, possibleRevenue, closedRevenue, totalExpense, netProfit,
       }}
       todayLeads={todayLeadsList.map((l) => ({
