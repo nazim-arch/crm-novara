@@ -16,7 +16,7 @@ import {
   Phone, MessageCircle, Mail, CheckCircle, XCircle, RotateCcw, Calendar,
   ChevronLeft, ChevronRight, ExternalLink, Loader2, User, MapPin, Home,
   TrendingUp, Tag, Clock, AlertTriangle, Flame, Target, Zap,
-  CheckCircle2, PhoneOff, Coffee, BadgeCheck, List,
+  CheckCircle2, PhoneOff, Coffee, BadgeCheck, List, CalendarPlus,
 } from "lucide-react";
 import { getFollowUpCardTheme, getDueLabel } from "./focus-queue-theme";
 
@@ -49,128 +49,220 @@ interface FocusItem {
   created_by: { id: string; name: string };
 }
 
-interface Stats { overdue: number; due_today: number; callback_today: number; completed_today: number; hot_active: number; }
-interface QueueData { queue: FocusItem[]; callback_pending: FocusItem[]; completed_today: FocusItem[]; stats: Stats; }
-
-type ModalType =
-  | "contacted" | "no_response" | "callback_today"
-  | "schedule_next" | "update_stage" | "mark_lost"
-  | "mark_won" | "site_visit_done" | "update_notes"
-  | "log_attempt"
-  | null;
-
-interface ModalState { type: ModalType; item: FocusItem; }
-
-const FOLLOW_UP_TYPES = ["Call", "Email", "WhatsApp", "Visit", "Meeting", "Activity", "Internal"] as const;
-const PIPELINE_STAGES = ["New", "Contacted", "Prospect", "SiteVisitCompleted", "Negotiation", "Won", "Lost", "InvalidLead", "OnHold", "Recycle"] as const;
-const TEMPERATURES = ["Hot", "Warm", "Cold", "FollowUpLater"] as const;
-const LOST_REASONS = ["Budget", "Location", "Configuration", "Timing", "NotSerious", "Financing", "PurchasedElsewhere", "Other"] as const;
-const OUTCOMES = ["Contacted", "Interested", "Not Interested", "Site Visit Scheduled", "Negotiation Started", "Call Back Requested", "Wrong Number", "Language Barrier", "Busy"] as const;
-const CALLBACK_QUICK = [
-  { label: "+30 min", mins: 30 }, { label: "+1 hour", mins: 60 },
-  { label: "+2 hours", mins: 120 }, { label: "End of day", mins: -1 },
-] as const;
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function inrFmt(n: number) {
-  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+interface QueueData {
+  queue: FocusItem[];
+  callback_pending: FocusItem[];
+  completed_today: FocusItem[];
+  stats: { overdue: number; due_today: number; callback_today: number; completed_today: number; hot_active: number };
 }
 
-function StatCard({ label, value, cls, onClick, isActive, className }: {
-  label: string; value: number; cls?: string;
-  onClick?: () => void; isActive?: boolean; className?: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`text-left rounded-lg border bg-card transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-        onClick ? "cursor-pointer hover:shadow-md" : "cursor-default"
-      } ${isActive ? "ring-2 ring-primary border-primary" : onClick ? "hover:border-muted-foreground/40" : ""} ${className ?? ""}`}
-    >
-      <div className="py-2 px-3">
-        <p className={`text-xl font-bold ${cls ?? ""}`}>{value}</p>
-        <p className="text-[11px] text-muted-foreground leading-tight">{label}</p>
-      </div>
-    </button>
-  );
+type ModalType =
+  | "contacted" | "no_response" | "callback_today" | "schedule_next"
+  | "update_stage" | "mark_lost" | "mark_won" | "site_visit_done"
+  | "update_notes" | "log_attempt";
+
+interface ModalState { type: ModalType; item: FocusItem }
+
+const FOLLOW_UP_TYPES = ["Call", "Email", "WhatsApp", "Visit", "Meeting", "Activity", "Internal"] as const;
+const PIPELINE_STAGES = ["New", "Prospect", "SiteVisitCompleted", "Negotiation", "Won", "Lost", "InvalidLead", "OnHold", "Recycle"] as const;
+const OUTCOMES = ["Interested", "Not Interested", "Call Back", "Thinking", "Sent Details", "Site Visit Scheduled", "Site Visit Done", "Negotiating", "Deal Done", "Other"];
+const TEMPERATURES = ["Hot", "Warm", "Cold", "FollowUpLater"];
+const LOST_REASONS = ["Budget Mismatch", "Location Mismatch", "No Response", "Went with Competitor", "Not Looking Anymore", "Property Not Available", "Other"];
+const CALLBACK_QUICK = [
+  { label: "30m", mins: 30 }, { label: "1h", mins: 60 }, { label: "2h", mins: 120 },
+  { label: "4h", mins: 240 }, { label: "EOD", mins: -1 },
+];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function inrFmt(v: number) {
+  if (v >= 10_000_000) return `₹${(v / 10_000_000).toFixed(1)}Cr`;
+  if (v >= 100_000) return `₹${(v / 100_000).toFixed(1)}L`;
+  return `₹${v.toLocaleString("en-IN")}`;
 }
 
 function TempBadge({ temp }: { temp: string }) {
-  const map: Record<string, string> = {
-    Hot: "bg-red-100 text-red-700",
-    Warm: "bg-amber-100 text-amber-700",
-    Cold: "bg-blue-100 text-blue-700",
-    FollowUpLater: "bg-purple-100 text-purple-700",
-  };
-  const labels: Record<string, string> = { FollowUpLater: "Follow Up Later" };
-  return <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${map[temp] ?? "bg-muted text-muted-foreground"}`}>{labels[temp] ?? temp}</span>;
+  const cls = temp === "Hot" ? "bg-red-100 text-red-700" : temp === "Warm" ? "bg-amber-100 text-amber-700" : temp === "Cold" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700";
+  return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${cls}`}>{temp}</span>;
 }
 
 function StageBadge({ stage }: { stage: string }) {
-  const map: Record<string, string> = {
-    New: "bg-slate-100 text-slate-700", Contacted: "bg-teal-100 text-teal-700", Prospect: "bg-blue-100 text-blue-700",
-    SiteVisitCompleted: "bg-indigo-100 text-indigo-700", Negotiation: "bg-orange-100 text-orange-700",
-    Won: "bg-emerald-100 text-emerald-700", Lost: "bg-red-100 text-red-700",
-    InvalidLead: "bg-gray-100 text-gray-500", OnHold: "bg-yellow-100 text-yellow-700",
-    Recycle: "bg-purple-100 text-purple-700",
-  };
-  return <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${map[stage] ?? "bg-muted text-muted-foreground"}`}>{stage}</span>;
+  return <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{stage}</span>;
+}
+
+function StatCard({ label, value, cls, className, onClick }: { label: string; value: number; cls?: string; className?: string; onClick?: () => void }) {
+  return (
+    <Card className={`cursor-pointer hover:shadow-sm transition-shadow ${className ?? ""}`} onClick={onClick}>
+      <CardContent className="p-3 text-center">
+        <p className={`text-2xl font-bold ${cls ?? ""}`}>{value}</p>
+        <p className="text-[11px] text-muted-foreground mt-0.5">{label}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Schedule Next Dialog ───────────────────────────────────────────────────────
+
+function ScheduleNextDialog({
+  item,
+  onScheduled,
+  onSkip,
+}: {
+  item: FocusItem;
+  onScheduled: () => void;
+  onSkip: () => void;
+}) {
+  const [date, setDate] = useState("");
+  const [type, setType] = useState("Call");
+  const [submitting, setSubmitting] = useState(false);
+
+  function quickDate(daysFromNow: number): string {
+    const d = new Date();
+    d.setDate(d.getDate() + daysFromNow);
+    return d.toISOString().slice(0, 10);
+  }
+
+  async function schedule() {
+    if (!date || !item.lead_id) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/follow-ups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lead_id: item.lead_id,
+          type,
+          scheduled_at: date + "T09:00:00",
+          assigned_to_id: item.assigned_to?.id,
+        }),
+      });
+      if (!res.ok) { toast.error("Failed to schedule follow-up"); return; }
+      // Also patch the lead's next_followup_date
+      await fetch(`/api/leads/${item.lead_id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ next_followup_date: date + "T09:00:00", followup_type: type }),
+      });
+      toast.success("Next follow-up scheduled");
+      onScheduled();
+    } catch {
+      toast.error("Something went wrong");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onSkip(); }}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CalendarPlus className="h-4 w-4 text-primary" />
+            Schedule Next Follow-up?
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 pt-1">
+          <p className="text-sm text-muted-foreground">
+            Action logged for <span className="font-medium text-foreground">{item.lead?.full_name}</span>. When is the next follow-up?
+          </p>
+
+          {/* Quick picks */}
+          <div className="flex gap-1.5 flex-wrap">
+            {[{ label: "Tomorrow", days: 1 }, { label: "+3 Days", days: 3 }, { label: "+1 Week", days: 7 }].map((q) => (
+              <button
+                key={q.label}
+                type="button"
+                onClick={() => setDate(quickDate(q.days))}
+                className={`px-2.5 py-1 rounded border text-xs transition-colors ${date === quickDate(q.days) ? "border-primary bg-primary/10 text-primary font-medium" : "border-border text-muted-foreground hover:border-muted-foreground"}`}
+              >
+                {q.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Date</Label>
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-8 text-xs" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Type</Label>
+              <Select value={type} onValueChange={(v) => v && setType(v)}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {FOLLOW_UP_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={onSkip} disabled={submitting}>
+              Skip for Now
+            </Button>
+            <Button size="sm" className="flex-1 text-xs" onClick={schedule} disabled={!date || submitting}>
+              {submitting && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+              Schedule
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 // ── Focus Card ────────────────────────────────────────────────────────────────
 
 function FocusCard({
-  item, onAction, onLogAttempt, idx, total,
+  item, idx, total,
+  onAction, onLogAttempt,
 }: {
-  item: FocusItem;
+  item: FocusItem; idx: number; total: number;
   onAction: (type: ModalType) => void;
-  onLogAttempt: (channel: "Call" | "WhatsApp" | "Email") => void;
-  idx: number;
-  total: number;
+  onLogAttempt: (channel: "Call" | "WhatsApp" | "Email") => Promise<void>;
 }) {
   const lead = item.lead;
-  const isOverdue = !item.callback_at && new Date(item.scheduled_at) < new Date();
-  const daysOverdue = isOverdue
-    ? Math.max(0, differenceInCalendarDays(new Date(), new Date(item.scheduled_at)))
-    : 0;
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const isOverdue = new Date(item.scheduled_at) < todayStart;
+  const daysOverdue = differenceInCalendarDays(todayStart, new Date(item.scheduled_at));
   const theme = getFollowUpCardTheme(
     lead?.temperature, isOverdue, daysOverdue,
     item.no_response_count, lead?.potential_lead_value ?? null,
-    !!item.callback_at,
+    false, // callback_today badge removed from main queue cards
   );
   const due = getDueLabel(item.scheduled_at, item.callback_at);
-
-  const whatsappNum = lead?.whatsapp ?? lead?.phone ?? "";
-  const waLink = `https://wa.me/${whatsappNum.replace(/\D/g, "")}`;
+  const waLink = `https://wa.me/${(lead?.whatsapp ?? lead?.phone ?? "").replace(/\D/g, "")}`;
 
   return (
-    <div className={`rounded-2xl border-2 ${theme.border} ${theme.card} overflow-hidden shadow-md`}>
-      {/* Temperature strip */}
-      <div className={`h-1.5 ${theme.strip}`} />
+    <div className={`rounded-2xl border-2 ${theme.card} ${theme.border} overflow-hidden shadow-sm`}>
+      {/* Color strip */}
+      <div className={`h-1.5 w-full ${theme.strip}`} />
 
-      <div className="p-4 sm:p-5 space-y-4">
+      <div className="p-4 space-y-3">
         {/* ── Header ── */}
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center flex-wrap gap-1.5 mb-1">
-              <span className={`text-[10px] font-bold tracking-widest px-2 py-0.5 rounded-sm ${theme.badgeBg} ${theme.badgeText}`}>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${theme.badgeText} ${theme.badgeBg} px-1.5 py-0.5 rounded`}>
                 {theme.priorityLabel}
               </span>
-              {due.isUrgent && <span className="flex items-center gap-0.5 text-[10px] font-bold text-destructive"><AlertTriangle className="h-3 w-3" />URGENT</span>}
+              <span className="text-[10px] text-muted-foreground">{idx + 1}/{total}</span>
             </div>
-            <h2 className="text-xl font-bold leading-tight">
-              {lead?.full_name ?? "Unknown Lead"}
-            </h2>
-            <p className="text-xs text-muted-foreground font-mono">{lead?.lead_number}</p>
-            <p className="text-xs text-muted-foreground italic mt-0.5">{theme.headline}</p>
+            <Link href={`/leads/${lead?.id}`} target="_blank" className="hover:underline">
+              <h3 className={`text-lg font-bold mt-1 ${theme.headline ? "" : "text-foreground"}`}>{lead?.full_name ?? "—"}</h3>
+            </Link>
+            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+              <span className="text-[11px] font-mono text-muted-foreground">{lead?.lead_number}</span>
+              {lead?._count && lead._count.followups > 0 && (
+                <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                  {lead._count.followups} total FUs
+                </span>
+              )}
+            </div>
           </div>
-          <div className="text-right shrink-0">
-            <p className="text-[10px] text-muted-foreground">{idx + 1}/{total}</p>
-            <div className="flex flex-col items-end gap-1 mt-1">
-              {lead && <TempBadge temp={lead.temperature} />}
-              {lead && <StageBadge stage={lead.status} />}
-            </div>
+          <div className="flex flex-col items-end gap-1 mt-1">
+            {lead && <TempBadge temp={lead.temperature} />}
+            {lead && <StageBadge stage={lead.status} />}
           </div>
         </div>
 
@@ -183,7 +275,7 @@ function FocusCard({
           </div>
         )}
 
-        {/* ── Due Time Section ── */}
+        {/* ── Due Time ── */}
         <div className={`rounded-xl border px-3 py-2.5 flex items-center gap-3 ${due.isUrgent ? "bg-destructive/5 border-destructive/20" : "bg-background/70 border-border/50"}`}>
           <Clock className={`h-4 w-4 shrink-0 ${due.isUrgent ? "text-destructive" : "text-muted-foreground"}`} />
           <div>
@@ -200,7 +292,7 @@ function FocusCard({
         <div className="flex gap-2">
           <a
             href={`tel:${lead?.phone ?? ""}`}
-            onClick={() => onLogAttempt("Call")}
+            onClick={() => void onLogAttempt("Call")}
             className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold text-sm transition-colors"
           >
             <Phone className="h-4 w-4 shrink-0" />
@@ -211,7 +303,7 @@ function FocusCard({
               href={waLink}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={() => onLogAttempt("WhatsApp")}
+              onClick={() => void onLogAttempt("WhatsApp")}
               className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-sm transition-colors"
             >
               <MessageCircle className="h-4 w-4 shrink-0" />
@@ -221,7 +313,7 @@ function FocusCard({
           {lead?.email && (
             <a
               href={`mailto:${lead.email}`}
-              onClick={() => onLogAttempt("Email")}
+              onClick={() => void onLogAttempt("Email")}
               className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-background hover:bg-muted text-sm transition-colors"
             >
               <Mail className="h-4 w-4" />
@@ -385,7 +477,6 @@ function CompletedRow({ item }: { item: FocusItem }) {
 
 function CallbackRow({ item }: { item: FocusItem }) {
   const lead = item.lead;
-  const due = getDueLabel(item.scheduled_at, item.callback_at);
   const isPast = item.callback_at && new Date(item.callback_at) <= new Date();
   return (
     <div className={`flex items-start gap-3 py-2.5 border-b last:border-0 ${isPast ? "bg-violet-50/40 dark:bg-violet-950/10 -mx-3 px-3 rounded" : ""}`}>
@@ -396,16 +487,20 @@ function CallbackRow({ item }: { item: FocusItem }) {
           {lead && <TempBadge temp={lead.temperature} />}
           {isPast && <span className="text-[10px] font-bold text-violet-700 bg-violet-100 px-1.5 py-0.5 rounded">DUE NOW</span>}
         </div>
-        <p className={`text-xs mt-0.5 ${due.cls}`}>{due.label}</p>
+        {item.callback_at && (
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Callback at {new Date(item.callback_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+          </p>
+        )}
         {item.notes && <p className="text-xs text-muted-foreground italic line-clamp-1">"{item.notes}"</p>}
       </div>
     </div>
   );
 }
 
-// ── Modal ─────────────────────────────────────────────────────────────────────
+// ── Modal title ───────────────────────────────────────────────────────────────
 
-function getModalTitle(type: ModalType): string {
+function getModalTitle(type: ModalType | null): string {
   switch (type) {
     case "contacted": return "Mark as Contacted";
     case "no_response": return "No Response";
@@ -428,6 +523,14 @@ function quickCallbackTime(mins: number): string {
   return new Date(Date.now() + mins * 60_000).toISOString().slice(0, 16);
 }
 
+// Actions that need the "Schedule Next?" popup after completion
+function needsSchedulePrompt(type: ModalType, form: Record<string, string>): boolean {
+  if (type === "contacted") return !form.next_date;
+  if (type === "update_stage") return true;
+  if (type === "site_visit_done") return !form.next_date;
+  return false;
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export function SalesFocusQueue({
@@ -443,12 +546,12 @@ export function SalesFocusQueue({
   const [loading, setLoading] = useState(true);
   const [cardIdx, setCardIdx] = useState(0);
   const [activeTab, setActiveTab] = useState("focus");
-  const [queueFilter, setQueueFilter] = useState<"all" | "overdue" | "due_today">("all");
   const [agentFilter, setAgentFilter] = useState<string>(isManagerOrAdmin ? "mine" : currentUserId);
   const [modal, setModal] = useState<ModalState | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
   const [subAction, setSubAction] = useState<"callback_today" | "schedule_next" | "mark_unreachable">("callback_today");
+  const [schedulePromptItem, setSchedulePromptItem] = useState<FocusItem | null>(null);
 
   const modalRef = useRef(modal);
   modalRef.current = modal;
@@ -456,9 +559,7 @@ export function SalesFocusQueue({
   const fetchData = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
-    if (isManagerOrAdmin) {
-      params.set("agent", agentFilter);
-    }
+    if (isManagerOrAdmin) params.set("agent", agentFilter);
     const res = await fetch(`/api/follow-ups/focus-queue?${params}`);
     if (res.ok) {
       const json: QueueData = await res.json();
@@ -473,17 +574,18 @@ export function SalesFocusQueue({
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (modalRef.current) return;
+      if (modalRef.current || schedulePromptItem) return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === "ArrowRight" || e.key === "n") setCardIdx((i) => Math.min(i + 1, (data?.queue.length ?? 1) - 1));
+      const q = data?.queue ?? [];
+      if (e.key === "ArrowRight" || e.key === "n") setCardIdx((i) => Math.min(i + 1, q.length - 1));
       if (e.key === "ArrowLeft" || e.key === "p") setCardIdx((i) => Math.max(i - 1, 0));
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [data?.queue.length]);
+  }, [data?.queue, schedulePromptItem]);
 
   function openModal(type: ModalType) {
-    const item = filteredQueue[cardIdx];
+    const item = (data?.queue ?? [])[cardIdx];
     if (!item) return;
     setForm({});
     setSubAction("callback_today");
@@ -491,21 +593,18 @@ export function SalesFocusQueue({
   }
 
   async function logAttempt(channel: "Call" | "WhatsApp" | "Email") {
-    const item = filteredQueue[cardIdx];
+    const item = (data?.queue ?? [])[cardIdx];
     if (!item) return;
     await fetch(`/api/follow-ups/${item.id}/action`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "log_attempt", channel }),
     });
-    // Update attempt_count in place
     setData((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
-        queue: prev.queue.map((q) =>
-          q.id === item.id ? { ...q, attempt_count: q.attempt_count + 1 } : q
-        ),
+        queue: prev.queue.map((q) => q.id === item.id ? { ...q, attempt_count: q.attempt_count + 1 } : q),
       };
     });
     toast.info(`${channel} attempt logged`);
@@ -591,7 +690,7 @@ export function SalesFocusQueue({
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        toast.error(err.error ?? "Action failed");
+        toast.error((err as { error?: string }).error ?? "Action failed");
         return;
       }
       const result = await res.json();
@@ -600,21 +699,20 @@ export function SalesFocusQueue({
       setModal(null);
 
       if (resultAction === "callback_today") {
-        // Move card to callback list
+        // Move to callback_pending tab; remove from main queue
         setData((prev) => {
           if (!prev) return prev;
           const updated = prev.queue.map((q) => q.id === item.id ? { ...q, callback_at: result.data.callback_at } : q);
-          const stillInQueue = updated.filter((q) => q.id !== item.id || !q.callback_at || new Date(q.callback_at) > new Date());
           const callbackItem = updated.find((q) => q.id === item.id);
           return {
             ...prev,
-            queue: stillInQueue,
+            queue: prev.queue.filter((q) => q.id !== item.id),
             callback_pending: callbackItem
               ? [...prev.callback_pending, callbackItem].sort((a, b) => new Date(a.callback_at!).getTime() - new Date(b.callback_at!).getTime())
               : prev.callback_pending,
           };
         });
-        setCardIdx((i) => Math.max(0, Math.min(i, filteredQueue.length - 2)));
+        setCardIdx((i) => Math.max(0, Math.min(i, (data?.queue.length ?? 1) - 2)));
         toast.success("Parked for callback today");
       } else if (resultAction === "notes_updated") {
         setData((prev) => {
@@ -623,7 +721,7 @@ export function SalesFocusQueue({
         });
         toast.success("Notes updated");
       } else {
-        // Remove from queue (completed / stage updated / etc.)
+        // Remove from queue (completed, stage updated, etc.)
         setData((prev) => {
           if (!prev) return prev;
           const removedItem = prev.queue.find((q) => q.id === item.id);
@@ -638,8 +736,13 @@ export function SalesFocusQueue({
             stats: { ...prev.stats, completed_today: prev.stats.completed_today + (result.data.completed_at ? 1 : 0) },
           };
         });
-        setCardIdx((i) => Math.max(0, Math.min(i, filteredQueue.length - 2)));
+        setCardIdx((i) => Math.max(0, Math.min(i, (data?.queue.length ?? 1) - 2)));
         toast.success("Done");
+
+        // Show "Schedule Next?" prompt when appropriate
+        if (needsSchedulePrompt(type, form)) {
+          setSchedulePromptItem(item);
+        }
       }
     } catch {
       toast.error("Something went wrong");
@@ -651,21 +754,21 @@ export function SalesFocusQueue({
   const f = (key: string, val: string) => setForm((p) => ({ ...p, [key]: val }));
   const stats = data?.stats;
   const queue = data?.queue ?? [];
-
-  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-  const todayEnd   = new Date(); todayEnd.setHours(23, 59, 59, 999);
-  const filteredQueue = queueFilter === "overdue"
-    ? queue.filter((item) => !item.callback_at && new Date(item.scheduled_at) < todayStart)
-    : queueFilter === "due_today"
-    ? queue.filter((item) => { const d = new Date(item.scheduled_at); return d >= todayStart && d <= todayEnd; })
-    : queue;
-
-  const currentItem = filteredQueue[cardIdx];
+  const currentItem = queue[cardIdx];
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-4 mt-2">
+      {/* Schedule Next dialog — shown after completing actions */}
+      {schedulePromptItem && (
+        <ScheduleNextDialog
+          item={schedulePromptItem}
+          onScheduled={() => { setSchedulePromptItem(null); void fetchData(); }}
+          onSkip={() => setSchedulePromptItem(null)}
+        />
+      )}
+
       {/* Agent Selector — Admin/Manager only */}
       {isManagerOrAdmin && (
         <div className="flex items-center gap-2">
@@ -684,7 +787,7 @@ export function SalesFocusQueue({
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
-            {role === "Admin" || role === "Manager" ? `Viewing: ${agentFilter === "team" ? "all agents" : agentFilter === "mine" ? "your follow-ups" : users.find((u) => u.id === agentFilter)?.name}` : ""}
+            {isManagerOrAdmin ? `Viewing: ${agentFilter === "team" ? "all agents" : agentFilter === "mine" ? "your follow-ups" : users.find((u) => u.id === agentFilter)?.name}` : ""}
           </p>
         </div>
       )}
@@ -693,18 +796,16 @@ export function SalesFocusQueue({
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
           <StatCard label="Overdue" value={stats.overdue} cls="text-destructive"
-            isActive={activeTab === "focus" && queueFilter === "overdue"}
-            onClick={() => { setActiveTab("focus"); setQueueFilter("overdue"); setCardIdx(0); }} />
+            onClick={() => { setActiveTab("focus"); setCardIdx(0); }} />
           <StatCard label="Due Today" value={stats.due_today} cls="text-orange-600"
-            isActive={activeTab === "focus" && queueFilter === "due_today"}
-            onClick={() => { setActiveTab("focus"); setQueueFilter("due_today"); setCardIdx(0); }} />
+            onClick={() => { setActiveTab("focus"); setCardIdx(0); }} />
           <StatCard label="Callback Today" value={stats.callback_today} cls="text-violet-600"
-            isActive={activeTab === "callback"} onClick={() => setActiveTab("callback")} />
+            onClick={() => setActiveTab("callback")} />
           <StatCard label="Completed Today" value={stats.completed_today} cls="text-emerald-600"
-            isActive={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
+            onClick={() => setActiveTab("completed")} />
           <StatCard label="Hot Active" value={stats.hot_active} cls="text-red-600"
             className="col-span-2 sm:col-span-1"
-            isActive={activeTab === "all"} onClick={() => setActiveTab("all")} />
+            onClick={() => setActiveTab("all")} />
         </div>
       )}
 
@@ -713,7 +814,7 @@ export function SalesFocusQueue({
         <TabsList className="flex flex-wrap h-auto gap-1">
           <TabsTrigger value="focus" className="gap-1 text-xs sm:text-sm">
             <Zap className="h-3.5 w-3.5" />Focus Queue
-            {queue.length > 0 && <span className="ml-0.5 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold px-1.5 leading-5">{filteredQueue.length < queue.length ? `${filteredQueue.length}/${queue.length}` : queue.length}</span>}
+            {queue.length > 0 && <span className="ml-0.5 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold px-1.5 leading-5">{queue.length}</span>}
           </TabsTrigger>
           <TabsTrigger value="callback" className="gap-1 text-xs sm:text-sm">
             <RotateCcw className="h-3.5 w-3.5" />Callback Today
@@ -734,7 +835,7 @@ export function SalesFocusQueue({
             <div className="flex items-center justify-center py-16">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-          ) : filteredQueue.length === 0 ? (
+          ) : queue.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <CheckCircle className="h-12 w-12 text-emerald-400 mb-3" />
               <p className="text-lg font-semibold">You are caught up.</p>
@@ -751,19 +852,13 @@ export function SalesFocusQueue({
                   <Button variant="outline" size="icon" className="h-7 w-7" disabled={cardIdx === 0} onClick={() => setCardIdx((i) => Math.max(0, i - 1))}>
                     <ChevronLeft className="h-3.5 w-3.5" />
                   </Button>
-                  <span className="text-xs text-muted-foreground">{cardIdx + 1} of {filteredQueue.length}</span>
-                  <Button variant="outline" size="icon" className="h-7 w-7" disabled={cardIdx >= filteredQueue.length - 1} onClick={() => setCardIdx((i) => Math.min(filteredQueue.length - 1, i + 1))}>
+                  <span className="text-xs text-muted-foreground">{cardIdx + 1} of {queue.length}</span>
+                  <Button variant="outline" size="icon" className="h-7 w-7" disabled={cardIdx >= queue.length - 1} onClick={() => setCardIdx((i) => Math.min(queue.length - 1, i + 1))}>
                     <ChevronRight className="h-3.5 w-3.5" />
                   </Button>
                   <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={fetchData}>
                     <RotateCcw className="h-3 w-3 mr-1" />Refresh
                   </Button>
-                  {queueFilter !== "all" && (
-                    <button onClick={() => { setQueueFilter("all"); setCardIdx(0); }}
-                      className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground hover:bg-muted/70 transition-colors">
-                      {queueFilter === "overdue" ? "Overdue only ×" : "Due today only ×"}
-                    </button>
-                  )}
                 </div>
                 <p className="text-[10px] text-muted-foreground hidden sm:block">← → navigate</p>
               </div>
@@ -771,22 +866,23 @@ export function SalesFocusQueue({
               {/* Card */}
               {currentItem && (
                 <div className="max-w-xl mx-auto">
-                  <FocusCard item={currentItem} idx={cardIdx} total={filteredQueue.length} onAction={openModal} onLogAttempt={logAttempt} />
+                  <FocusCard item={currentItem} idx={cardIdx} total={queue.length} onAction={openModal} onLogAttempt={logAttempt} />
                 </div>
               )}
 
               {/* Queue preview list */}
-              {filteredQueue.length > 1 && (
+              {queue.length > 1 && (
                 <div className="max-w-xl mx-auto mt-3 rounded-lg border divide-y max-h-48 overflow-y-auto text-xs">
-                  {filteredQueue.map((item, i) => {
-                    const isOverdue = !item.callback_at && new Date(item.scheduled_at) < todayStart;
+                  {queue.map((item, i) => {
+                    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+                    const isOverdue = new Date(item.scheduled_at) < todayStart;
                     return (
                       <button key={item.id} onClick={() => setCardIdx(i)}
                         className={`w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/40 transition-colors ${i === cardIdx ? "bg-muted/50 font-medium" : ""}`}>
                         <div className={`w-2 h-2 rounded-full shrink-0 ${item.lead?.temperature === "Hot" ? "bg-red-500" : item.lead?.temperature === "Warm" ? "bg-amber-400" : "bg-blue-400"}`} />
                         <span className="truncate flex-1">{item.lead?.full_name ?? "—"}</span>
                         {isOverdue && <span className="text-destructive text-[10px] shrink-0">OVERDUE</span>}
-                        {item.callback_at && <span className="text-violet-600 text-[10px] shrink-0">CALLBACK</span>}
+                        {item.callback_at && new Date(item.callback_at) <= new Date() && <span className="text-violet-600 text-[10px] shrink-0">CALLBACK</span>}
                         <span className="text-muted-foreground shrink-0">{item.type}</span>
                       </button>
                     );
@@ -803,7 +899,7 @@ export function SalesFocusQueue({
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Coffee className="h-10 w-10 text-muted-foreground/40 mb-3" />
               <p className="font-medium">No callbacks parked for today.</p>
-              <p className="text-sm text-muted-foreground mt-1">Leads marked for callback again today will appear here.</p>
+              <p className="text-sm text-muted-foreground mt-1">Leads marked for callback will appear here.</p>
             </div>
           ) : (
             <div className="rounded-lg border bg-card p-3 divide-y">
@@ -834,7 +930,8 @@ export function SalesFocusQueue({
               <p className="text-center py-8 text-muted-foreground text-sm">No active follow-ups</p>
             ) : (
               [...(data?.queue ?? []), ...(data?.callback_pending ?? [])].map((item) => {
-                const isOverdue = !item.callback_at && new Date(item.scheduled_at) < new Date();
+                const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+                const isOverdue = !item.callback_at && new Date(item.scheduled_at) < todayStart;
                 return (
                   <div key={item.id} className={`flex items-center gap-3 px-3 py-2.5 ${isOverdue ? "bg-red-50/40 dark:bg-red-950/10" : ""}`}>
                     <div className={`w-2 h-2 rounded-full shrink-0 ${item.lead?.temperature === "Hot" ? "bg-red-500" : item.lead?.temperature === "Warm" ? "bg-amber-400" : "bg-blue-400"}`} />
@@ -908,7 +1005,7 @@ export function SalesFocusQueue({
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Schedule Next Follow-up (optional)</Label>
+                    <Label className="text-xs">Schedule Next Follow-up (optional — or skip to prompt after save)</Label>
                     <div className="grid grid-cols-3 gap-2">
                       <Input type="date" value={form.next_date ?? ""} onChange={(e) => f("next_date", e.target.value)} className="h-8 text-xs col-span-1" />
                       <Input type="time" value={form.next_time ?? ""} onChange={(e) => f("next_time", e.target.value)} className="h-8 text-xs col-span-1" />
@@ -1094,7 +1191,7 @@ export function SalesFocusQueue({
                     <Textarea value={form.notes ?? ""} onChange={(e) => f("notes", e.target.value)} placeholder="Client reaction, what was seen, next steps…" className="text-xs resize-none h-16" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Schedule Follow-up (optional)</Label>
+                    <Label className="text-xs">Schedule Follow-up (optional — or skip to prompt after save)</Label>
                     <div className="grid grid-cols-2 gap-2">
                       <Input type="date" value={form.next_date ?? ""} onChange={(e) => f("next_date", e.target.value)} className="h-8 text-xs" />
                       <Select value={form.next_type ?? ""} onValueChange={(v) => v && f("next_type", v)}>

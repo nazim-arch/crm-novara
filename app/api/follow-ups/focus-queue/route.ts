@@ -47,38 +47,41 @@ export async function GET(request: Request) {
     const todayStart = startOfDay(now);
     const todayEnd = endOfDay(now);
 
-    const baseWhere = { completed_at: null, ...assignedFilter };
+    // Base filter for pending follow-ups on non-deleted leads
+    // Main queue filter: pending, due today or overdue, NOT currently parked for a future callback
+    const queueWhere = {
+      completed_at: null,
+      lead: { deleted_at: null },
+      scheduled_at: { lte: todayEnd },
+      // Exclude items the agent deliberately parked for a specific callback time (still future)
+      OR: [
+        { callback_at: null },
+        { callback_at: { lte: now } }, // callback time passed → re-enter main queue
+      ],
+      ...assignedFilter,
+    };
 
-    const [overdue, callbackDue, todayItems, callbackPending, completedToday] = await Promise.all([
-      // 1. Overdue (scheduled before today, no callback, pending)
+    const [queue, callbackPending, completedToday] = await Promise.all([
+      // Main queue: overdue + today, sorted oldest first
       prisma.followUp.findMany({
-        where: { ...baseWhere, callback_at: null, scheduled_at: { lt: todayStart } },
+        where: queueWhere,
         include: FU_INCLUDE,
         orderBy: { scheduled_at: "asc" },
-        take: 100,
+        take: 200,
       }),
-      // 2. Callbacks whose time has arrived (callback_at <= now)
+      // Callback tab: items the agent has parked for a specific future time today
       prisma.followUp.findMany({
-        where: { ...baseWhere, callback_at: { not: null, lte: now } },
-        include: FU_INCLUDE,
-        orderBy: { callback_at: "asc" },
-        take: 100,
-      }),
-      // 3. Due today (no callback_at set)
-      prisma.followUp.findMany({
-        where: { ...baseWhere, callback_at: null, scheduled_at: { gte: todayStart, lte: todayEnd } },
-        include: FU_INCLUDE,
-        orderBy: { scheduled_at: "asc" },
-        take: 100,
-      }),
-      // 4. Callbacks still future (parked, not yet due)
-      prisma.followUp.findMany({
-        where: { ...baseWhere, callback_at: { gt: now } },
+        where: {
+          completed_at: null,
+          lead: { deleted_at: null },
+          callback_at: { gt: now },
+          ...assignedFilter,
+        },
         include: FU_INCLUDE,
         orderBy: { callback_at: "asc" },
         take: 200,
       }),
-      // 5. Completed today
+      // Completed today
       prisma.followUp.findMany({
         where: { ...assignedFilter, completed_at: { gte: todayStart, lte: todayEnd } },
         include: FU_INCLUDE,
@@ -87,16 +90,18 @@ export async function GET(request: Request) {
       }),
     ]);
 
-    // Stats
-    const [hotActive, allOverdueCount, dueTodayCount] = await Promise.all([
+    // Stats (using same exclusions as main queue)
+    const [allOverdueCount, dueTodayCount, hotActiveCount] = await Promise.all([
       prisma.followUp.count({
-        where: { ...baseWhere, lead: { temperature: "Hot" } },
+        where: { ...queueWhere, scheduled_at: { lt: todayStart } },
       }),
-      prisma.followUp.count({ where: { ...baseWhere, callback_at: null, scheduled_at: { lt: todayStart } } }),
-      prisma.followUp.count({ where: { ...baseWhere, callback_at: null, scheduled_at: { gte: todayStart, lte: todayEnd } } }),
+      prisma.followUp.count({
+        where: { ...queueWhere, scheduled_at: { gte: todayStart, lte: todayEnd } },
+      }),
+      prisma.followUp.count({
+        where: { ...queueWhere, lead: { temperature: "Hot", deleted_at: null } },
+      }),
     ]);
-
-    const queue = [...overdue, ...callbackDue, ...todayItems];
 
     const serialize = (fu: typeof queue[0]) => ({
       ...fu,
@@ -123,9 +128,9 @@ export async function GET(request: Request) {
       stats: {
         overdue: allOverdueCount,
         due_today: dueTodayCount,
-        callback_today: callbackDue.length + callbackPending.length,
+        callback_today: callbackPending.length,
         completed_today: completedToday.length,
-        hot_active: hotActive,
+        hot_active: hotActiveCount,
       },
     });
   } catch (err) {

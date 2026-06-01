@@ -321,7 +321,9 @@ export function FollowUpsClient({
         prev.map((f) => f.id === fu.id ? { ...f, completed_at: new Date() } : f)
       );
       toast.success("Marked complete");
-      if (andAddNext) setAddNextFor(fu);
+      // Auto-prompt to schedule next when FU was due today or overdue
+      const isDueOrOverdue = new Date(fu.scheduled_at) <= endOfDay(today);
+      if (andAddNext || isDueOrOverdue) setAddNextFor(fu);
     } catch {
       toast.error("Something went wrong");
     } finally {

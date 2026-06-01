@@ -108,6 +108,9 @@ export async function POST(request: Request, { params }: { params: Params }) {
     const userId = session.user.id;
     const leadId = fu.lead_id;
 
+    // Review events only for field agents (not admin/manager reviewing their own actions)
+    const isAgentRole = ["Sales", "TeamLead", "Operations"].includes(session.user.role);
+
     // ── log_attempt ───────────────────────────────────────────────────────────
     if (data.action === "log_attempt") {
       const updated = await prisma.followUp.update({
@@ -190,10 +193,13 @@ export async function POST(request: Request, { params }: { params: Params }) {
           });
         }
 
-        createLeadReviewEvent({
-          lead_id: leadId, triggered_by_id: userId, trigger_type: "FieldUpdated",
-          trigger_context: { outcome: data.outcome, stage_to: data.to_stage ?? null, temp_to: data.temperature ?? null },
-        });
+        // Review event only when stage was changed
+        if (isAgentRole && data.to_stage && data.to_stage !== fu.lead?.status) {
+          createLeadReviewEvent({
+            lead_id: leadId, triggered_by_id: userId, trigger_type: "StageChange",
+            trigger_context: { outcome: data.outcome, stage_to: data.to_stage, temp_to: data.temperature ?? null },
+          });
+        }
       }
       return NextResponse.json({ data: fuUpdate, action: "contacted" });
     }
@@ -254,19 +260,37 @@ export async function POST(request: Request, { params }: { params: Params }) {
         return NextResponse.json({ data: fuUpdate, action: "completed" });
       }
 
-      // mark_unreachable
+      // mark_unreachable — complete FU, sync next_followup_date, trigger review
       const fuUpdate = await prisma.followUp.update({
         where: { id },
         data: { completed_at: now, outcome: "Not Reachable", notes: data.notes, attempt_count: { increment: 1 }, no_response_count: { increment: 1 } },
       });
       if (leadId) {
-        await prisma.lead.update({ where: { id: leadId }, data: { activity_stage: "Unreachable" } });
+        const nextFu = await prisma.followUp.findFirst({
+          where: { lead_id: leadId, completed_at: null },
+          orderBy: { scheduled_at: "asc" },
+        });
+        await prisma.lead.update({
+          where: { id: leadId },
+          data: {
+            activity_stage: "Unreachable",
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            next_followup_date: nextFu?.scheduled_at ?? null,
+            followup_type: (nextFu?.type ?? null) as any,
+          },
+        });
         await prisma.activity.create({
           data: {
             entity_type: "Lead", entity_id: leadId, action: "marked_unreachable",
             actor_id: userId, metadata: { notes: data.notes },
           },
         });
+        if (isAgentRole) {
+          createLeadReviewEvent({
+            lead_id: leadId, triggered_by_id: userId, trigger_type: "StageChange",
+            trigger_context: { activity_stage: "Unreachable", notes: data.notes },
+          });
+        }
       }
       return NextResponse.json({ data: fuUpdate, action: "completed" });
     }
@@ -318,10 +342,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           data: { next_followup_date: nextDate, followup_type: data.next_type as any },
         });
-        createLeadReviewEvent({
-          lead_id: leadId, triggered_by_id: userId, trigger_type: "FollowUpAdded",
-          trigger_context: { followup_type: data.next_type, scheduled_at: nextDate.toISOString() },
-        });
+        // No review event — scheduling is logistics, not a stage/note change
       }
       return NextResponse.json({ data: fuUpdate, action: "completed" });
     }
@@ -335,10 +356,12 @@ export async function POST(request: Request, { params }: { params: Params }) {
         await prisma.note.create({
           data: { entity_type: "Lead", entity_id: leadId, content: data.notes, created_by_id: userId },
         });
-        createLeadReviewEvent({
-          lead_id: leadId, triggered_by_id: userId, trigger_type: "NoteAdded",
-          trigger_context: { note_preview: data.notes.slice(0, 120) },
-        });
+        if (isAgentRole) {
+          createLeadReviewEvent({
+            lead_id: leadId, triggered_by_id: userId, trigger_type: "NoteAdded",
+            trigger_context: { note_preview: data.notes.slice(0, 120) },
+          });
+        }
       }
       return NextResponse.json({ data: updated, action: "notes_updated" });
     }
@@ -368,10 +391,12 @@ export async function POST(request: Request, { params }: { params: Params }) {
         leadNumber: fu.lead.lead_number, fromStage, toStage: data.to_stage,
         changedByName: session.user.name ?? session.user.email ?? "Agent", notes: data.notes,
       });
-      createLeadReviewEvent({
-        lead_id: leadId!, triggered_by_id: userId, trigger_type: "StageChange",
-        trigger_context: { from_status: fromStage, to_stage: data.to_stage, notes: data.notes },
-      });
+      if (isAgentRole) {
+        createLeadReviewEvent({
+          lead_id: leadId!, triggered_by_id: userId, trigger_type: "StageChange",
+          trigger_context: { from_status: fromStage, to_stage: data.to_stage, notes: data.notes },
+        });
+      }
       return NextResponse.json({ data: fuUpdate, action: "stage_updated" });
     }
 
@@ -402,10 +427,12 @@ export async function POST(request: Request, { params }: { params: Params }) {
         leadNumber: fu.lead.lead_number, lostReason: data.lost_reason as never,
         markedByName: session.user.name ?? session.user.email ?? "Agent",
       });
-      createLeadReviewEvent({
-        lead_id: leadId!, triggered_by_id: userId, trigger_type: "StageChange",
-        trigger_context: { from_status: fromStage, to_stage: "Lost", lost_reason: data.lost_reason },
-      });
+      if (isAgentRole) {
+        createLeadReviewEvent({
+          lead_id: leadId!, triggered_by_id: userId, trigger_type: "StageChange",
+          trigger_context: { from_status: fromStage, to_stage: "Lost", lost_reason: data.lost_reason },
+        });
+      }
       return NextResponse.json({ data: fuUpdate, action: "completed" });
     }
 
@@ -453,10 +480,12 @@ export async function POST(request: Request, { params }: { params: Params }) {
       const fuUpdate = await prisma.followUp.update({
         where: { id }, data: { completed_at: now, outcome: "Won", notes: data.notes },
       });
-      createLeadReviewEvent({
-        lead_id: leadId!, triggered_by_id: userId, trigger_type: "StageChange",
-        trigger_context: { from_status: fromStage, to_stage: "Won", settlement_value: data.settlement_value ?? null },
-      });
+      if (isAgentRole) {
+        createLeadReviewEvent({
+          lead_id: leadId!, triggered_by_id: userId, trigger_type: "StageChange",
+          trigger_context: { from_status: fromStage, to_stage: "Won", settlement_value: data.settlement_value ?? null },
+        });
+      }
       return NextResponse.json({ data: fuUpdate, action: "completed" });
     }
 
@@ -465,7 +494,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
       if (!fu.lead) return NextResponse.json({ error: "No linked lead" }, { status: 400 });
       const fromStage = fu.lead.status;
       await prisma.$transaction([
-        prisma.lead.update({ where: { id: leadId! }, data: { status: "SiteVisitCompleted", updated_at: now } }),
+        prisma.lead.update({ where: { id: leadId! }, data: { status: "SiteVisitCompleted", updated_at: now, last_contact_date: now } }),
         prisma.leadStageHistory.create({
           data: { lead_id: leadId!, from_stage: fromStage, to_stage: "SiteVisitCompleted", changed_by_id: userId, notes: data.notes },
         }),
@@ -496,10 +525,12 @@ export async function POST(request: Request, { params }: { params: Params }) {
         });
       }
 
-      createLeadReviewEvent({
-        lead_id: leadId!, triggered_by_id: userId, trigger_type: "StageChange",
-        trigger_context: { from_status: fromStage, to_stage: "SiteVisitCompleted" },
-      });
+      if (isAgentRole) {
+        createLeadReviewEvent({
+          lead_id: leadId!, triggered_by_id: userId, trigger_type: "StageChange",
+          trigger_context: { from_status: fromStage, to_stage: "SiteVisitCompleted" },
+        });
+      }
       return NextResponse.json({ data: fuUpdate, action: "completed" });
     }
 
