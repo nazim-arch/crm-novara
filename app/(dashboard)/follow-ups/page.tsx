@@ -10,7 +10,7 @@ export default async function FollowUpsPage({
   const { tab } = await searchParams;
   const session = await auth();
   const role = session?.user.role ?? "";
-  const isScoped = role === "Sales" || role === "Operations";
+  const isScoped = role === "Sales" || role === "Operations" || role === "TeamLead";
   const isManagerOrAdmin = role === "Admin" || role === "Manager";
   const isAdmin = role === "Admin";
 
@@ -23,24 +23,33 @@ export default async function FollowUpsPage({
       }
     : {};
 
-  const [followUps, users] = await Promise.all([
-    prisma.followUp.findMany({
-      where: scopeFilter,
-      include: {
-        lead: {
-          select: {
-            id: true,
-            lead_number: true,
-            full_name: true,
-            status: true,
-            temperature: true,
-          },
-        },
-        opportunity: { select: { id: true, opp_number: true, name: true } },
-        assigned_to: { select: { id: true, name: true } },
-        created_by: { select: { id: true, name: true } },
+  const fuInclude = {
+    lead: {
+      select: {
+        id: true,
+        lead_number: true,
+        full_name: true,
+        status: true,
+        temperature: true,
+        _count: { select: { followups: true } },
       },
+    },
+    opportunity: { select: { id: true, opp_number: true, name: true } },
+    assigned_to: { select: { id: true, name: true } },
+    created_by: { select: { id: true, name: true } },
+  };
+
+  // Fetch pending and done separately so the done limit never buries pending records
+  const [pendingFollowUps, doneFollowUps, users] = await Promise.all([
+    prisma.followUp.findMany({
+      where: { ...scopeFilter, completed_at: null },
+      include: fuInclude,
       orderBy: { scheduled_at: "asc" },
+    }),
+    prisma.followUp.findMany({
+      where: { ...scopeFilter, completed_at: { not: null } },
+      include: fuInclude,
+      orderBy: { completed_at: "desc" },
       take: 500,
     }),
     isManagerOrAdmin
@@ -51,6 +60,8 @@ export default async function FollowUpsPage({
         })
       : Promise.resolve([]),
   ]);
+
+  const followUps = [...pendingFollowUps, ...doneFollowUps];
 
   return (
     <FollowUpsClient
