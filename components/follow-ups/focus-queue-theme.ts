@@ -1,6 +1,7 @@
 export type FocusQueueTheme = {
   name: string;
   card: string;
+  headerGradient: string;
   border: string;
   strip: string;
   badgeBg: string;
@@ -44,7 +45,8 @@ function getBaseTheme(temp: string | null | undefined): Omit<FocusQueueTheme, "u
     case "Hot":
       return {
         name: "hot",
-        card: "bg-gradient-to-b from-red-50 to-orange-50/60 dark:from-red-950/30 dark:to-orange-950/20",
+        card: "bg-card",
+        headerGradient: "bg-gradient-to-br from-red-100 via-orange-50 to-red-50 dark:from-red-900/50 dark:via-orange-900/30 dark:to-red-900/20",
         border: "border-red-300 dark:border-red-700",
         strip: "bg-gradient-to-r from-red-500 via-orange-400 to-red-500",
         badgeBg: "bg-red-100 dark:bg-red-900/40",
@@ -55,7 +57,8 @@ function getBaseTheme(temp: string | null | undefined): Omit<FocusQueueTheme, "u
     case "Warm":
       return {
         name: "warm",
-        card: "bg-gradient-to-b from-amber-50 to-yellow-50/40 dark:from-amber-950/25 dark:to-yellow-950/15",
+        card: "bg-card",
+        headerGradient: "bg-gradient-to-br from-amber-100 via-yellow-50 to-amber-50 dark:from-amber-900/50 dark:via-yellow-900/30 dark:to-amber-900/20",
         border: "border-amber-300 dark:border-amber-700",
         strip: "bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-400",
         badgeBg: "bg-amber-100 dark:bg-amber-900/40",
@@ -66,7 +69,8 @@ function getBaseTheme(temp: string | null | undefined): Omit<FocusQueueTheme, "u
     case "Cold":
       return {
         name: "cold",
-        card: "bg-gradient-to-b from-slate-50 to-blue-50/30 dark:from-slate-900/30 dark:to-blue-950/15",
+        card: "bg-card",
+        headerGradient: "bg-gradient-to-br from-slate-100 via-blue-50 to-slate-50 dark:from-slate-900/50 dark:via-blue-900/20 dark:to-slate-900/20",
         border: "border-slate-300 dark:border-slate-600",
         strip: "bg-gradient-to-r from-slate-400 via-blue-400 to-slate-400",
         badgeBg: "bg-slate-100 dark:bg-slate-800/60",
@@ -77,7 +81,8 @@ function getBaseTheme(temp: string | null | undefined): Omit<FocusQueueTheme, "u
     case "FollowUpLater":
       return {
         name: "later",
-        card: "bg-gradient-to-b from-purple-50 to-indigo-50/30 dark:from-purple-950/25 dark:to-indigo-950/15",
+        card: "bg-card",
+        headerGradient: "bg-gradient-to-br from-purple-100 via-indigo-50 to-purple-50 dark:from-purple-900/50 dark:via-indigo-900/20 dark:to-purple-900/20",
         border: "border-purple-200 dark:border-purple-700",
         strip: "bg-gradient-to-r from-purple-400 via-indigo-400 to-purple-400",
         badgeBg: "bg-purple-100 dark:bg-purple-900/40",
@@ -89,6 +94,7 @@ function getBaseTheme(temp: string | null | undefined): Omit<FocusQueueTheme, "u
       return {
         name: "neutral",
         card: "bg-card",
+        headerGradient: "bg-muted/50",
         border: "border-border",
         strip: "bg-muted",
         badgeBg: "bg-muted",

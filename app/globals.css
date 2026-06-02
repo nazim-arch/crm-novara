@@ -128,3 +128,23 @@
     @apply font-sans;
   }
 }
+
+@layer utilities {
+  .scrollbar-hide {
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes slide-in-from-right {
+  from { transform: translateX(56px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+@keyframes slide-in-from-left {
+  from { transform: translateX(-56px); opacity: 0; }
+  to   { transform: translateX(0);     opacity: 1; }
+}
+.animate-slide-from-right { animation: slide-in-from-right 0.22s ease; }
+.animate-slide-from-left  { animation: slide-in-from-left  0.22s ease; }

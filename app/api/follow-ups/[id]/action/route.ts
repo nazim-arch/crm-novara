@@ -407,7 +407,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
       await prisma.$transaction([
         prisma.lead.update({
           where: { id: leadId! },
-          data: { status: "Lost", lost_reason: data.lost_reason as never, lost_notes: data.lost_notes ?? data.notes, updated_at: now },
+          data: { status: "Lost", lost_reason: data.lost_reason as never, lost_notes: data.lost_notes ?? data.notes, updated_at: now, next_followup_date: null, followup_type: null },
         }),
         prisma.leadStageHistory.create({
           data: { lead_id: leadId!, from_stage: fromStage, to_stage: "Lost", changed_by_id: userId, notes: data.notes },
@@ -441,7 +441,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
       if (!fu.lead) return NextResponse.json({ error: "No linked lead" }, { status: 400 });
       const fromStage = fu.lead.status;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const leadWonData: Record<string, any> = { status: "Won", updated_at: now };
+      const leadWonData: Record<string, any> = { status: "Won", updated_at: now, next_followup_date: null, followup_type: null };
       if (data.settlement_value !== undefined) leadWonData.settlement_value = data.settlement_value;
       if (data.deal_commission_percent !== undefined) leadWonData.deal_commission_percent = data.deal_commission_percent;
 
@@ -522,6 +522,17 @@ export async function POST(request: Request, { params }: { params: Params }) {
           where: { id: leadId },
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           data: { next_followup_date: nextDate, followup_type: data.next_followup_type as any },
+        });
+      } else if (leadId) {
+        // No next date provided — recalculate from remaining pending FUs
+        const nextFu = await prisma.followUp.findFirst({
+          where: { lead_id: leadId, completed_at: null },
+          orderBy: { scheduled_at: "asc" },
+        });
+        await prisma.lead.update({
+          where: { id: leadId },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          data: { next_followup_date: nextFu?.scheduled_at ?? null, followup_type: (nextFu?.type ?? null) as any },
         });
       }
 

@@ -131,6 +131,21 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
           },
         });
       }
+    } else if (cleanData.next_followup_date === null) {
+      // When next_followup_date is explicitly cleared, recalculate from pending FUs
+      // (prevents stale null when FUs still exist)
+      const nextFu = await prisma.followUp.findFirst({
+        where: { lead_id: id, completed_at: null },
+        orderBy: { scheduled_at: "asc" },
+        select: { scheduled_at: true, type: true },
+      });
+      if (nextFu) {
+        await prisma.lead.update({
+          where: { id },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          data: { next_followup_date: nextFu.scheduled_at, followup_type: nextFu.type as any },
+        });
+      }
     }
 
     // Email new assignee if reassigned

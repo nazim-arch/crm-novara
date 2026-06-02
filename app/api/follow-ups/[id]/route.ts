@@ -68,6 +68,20 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
         last_contact_date: data.completed_at,
       },
     });
+  } else if (data.scheduled_at && !followUp.completed_at && followUp.lead_id) {
+    // When rescheduling a pending FU, recalculate lead's next_followup_date from all pending FUs
+    const nextFu = await prisma.followUp.findFirst({
+      where: { lead_id: followUp.lead_id, completed_at: null },
+      orderBy: { scheduled_at: "asc" },
+    });
+    await prisma.lead.update({
+      where: { id: followUp.lead_id },
+      data: {
+        next_followup_date: nextFu?.scheduled_at ?? null,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        followup_type: (nextFu?.type ?? null) as any,
+      },
+    });
   }
 
   return NextResponse.json({ data: followUp });

@@ -116,3 +116,15 @@ export function getTriggerDescription(triggerType: string, ctx: Record<string, u
   const d = getTriggerDetails(triggerType, ctx);
   return d.headline + (d.sub ? ` · ${d.sub}` : "");
 }
+
+// Color chip classes for trigger type label
+export function getTriggerChipClass(triggerType: string): string {
+  switch (triggerType) {
+    case "StageChange":        return "bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300";
+    case "NoteAdded":          return "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300";
+    case "TemperatureChanged": return "bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-300";
+    case "AssigneeChanged":    return "bg-purple-50 text-purple-700 dark:bg-purple-950/30 dark:text-purple-300";
+    case "FollowUpAdded":      return "bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-300";
+    default:                   return "bg-muted text-muted-foreground";
+  }
+}
