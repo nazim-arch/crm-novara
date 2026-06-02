@@ -1,4 +1,4 @@
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://crm.dealstackhq.com';
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://crm.novara.in';
 
 function base(title: string, body: string, ctaLabel?: string, ctaHref?: string): string {
   const cta = ctaLabel && ctaHref
