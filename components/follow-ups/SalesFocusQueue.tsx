@@ -23,6 +23,13 @@ import { getFollowUpCardTheme, getDueLabel } from "./focus-queue-theme";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+interface LeadNote {
+  id: string;
+  content: string;
+  created_at: string;
+  created_by: { name: string };
+}
+
 interface FocusLead {
   id: string; lead_number: string; full_name: string;
   phone: string; email: string | null; whatsapp: string | null;
@@ -36,6 +43,7 @@ interface FocusLead {
   alternate_requirement: string | null;
   assigned_to: { id: string; name: string };
   _count?: { followups: number };
+  notes?: LeadNote[];
 }
 
 interface FocusItem {
@@ -436,11 +444,32 @@ function FocusCard({
           </div>
         )}
 
-        {/* ── Notes ── */}
+        {/* ── Requirement Notes ── */}
         {lead?.alternate_requirement && (
           <div className="rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/70 dark:border-amber-800/50 p-3 space-y-1">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-700 dark:text-amber-300">Notes</p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-700 dark:text-amber-300">Requirement Notes</p>
             <p className="text-xs text-foreground leading-relaxed whitespace-pre-line line-clamp-4">{lead.alternate_requirement}</p>
+          </div>
+        )}
+
+        {/* ── Notes History ── */}
+        {lead?.notes && lead.notes.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Notes History ({lead.notes.length})
+            </p>
+            <div className="space-y-2 max-h-48 overflow-y-auto scrollbar-hide">
+              {lead.notes.map((note) => (
+                <div key={note.id} className="rounded-lg bg-muted/40 border border-border/60 p-2.5">
+                  <p className="text-xs text-foreground leading-relaxed whitespace-pre-line">{note.content}</p>
+                  <p className="text-[10px] text-muted-foreground mt-1.5">
+                    <span className="font-medium">{note.created_by.name}</span>
+                    {" · "}
+                    {new Date(note.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

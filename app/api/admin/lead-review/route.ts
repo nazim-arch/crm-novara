@@ -86,6 +86,7 @@ export async function GET(request: Request) {
               deleted_at: true,
               alternate_requirement: true,
               assigned_to: { select: { id: true, name: true } },
+              _count: { select: { followups: { where: { completed_at: null } } } },
             },
           },
           opportunity: { select: { id: true, opp_number: true, name: true } },
@@ -98,6 +99,25 @@ export async function GET(request: Request) {
       }),
     ]);
 
+    // Fetch notes for all leads in the result set
+    const leadIds = events.map((e) => e.lead?.id).filter(Boolean) as string[];
+    const notesRaw = leadIds.length
+      ? await prisma.note.findMany({
+          where: { entity_type: "Lead", entity_id: { in: leadIds } },
+          select: {
+            id: true, entity_id: true, content: true, created_at: true,
+            created_by: { select: { name: true } },
+          },
+          orderBy: { created_at: "desc" },
+        })
+      : [];
+    const notesByLead = new Map<string, typeof notesRaw>();
+    for (const n of notesRaw) {
+      const arr = notesByLead.get(n.entity_id) ?? [];
+      arr.push(n);
+      notesByLead.set(n.entity_id, arr);
+    }
+
     const serialized = events.map((e) => ({
       ...e,
       lead: e.lead
@@ -108,6 +128,11 @@ export async function GET(request: Request) {
             budget_max: e.lead.budget_max ? Number(e.lead.budget_max) : null,
             next_followup_date: e.lead.next_followup_date?.toISOString() ?? null,
             deleted_at: e.lead.deleted_at?.toISOString() ?? null,
+            notes: (notesByLead.get(e.lead.id) ?? []).map((n) => ({
+              id: n.id, content: n.content,
+              created_at: n.created_at.toISOString(),
+              created_by: n.created_by,
+            })),
           }
         : null,
       park_until: e.park_until?.toISOString() ?? null,

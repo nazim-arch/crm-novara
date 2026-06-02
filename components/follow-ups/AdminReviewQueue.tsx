@@ -26,6 +26,13 @@ import { getLeadReviewTheme, getTriggerLabel, getTriggerDetails, getTriggerChipC
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+interface LeadNote {
+  id: string;
+  content: string;
+  created_at: string;
+  created_by: { name: string };
+}
+
 interface ReviewLead {
   id: string;
   lead_number: string;
@@ -46,6 +53,8 @@ interface ReviewLead {
   deleted_at: string | null;
   alternate_requirement: string | null;
   assigned_to: { id: string; name: string };
+  _count?: { followups: number };
+  notes?: LeadNote[];
 }
 
 interface ReviewEvent {
@@ -366,12 +375,45 @@ function ReviewCardBody({ event }: { event: ReviewEvent }) {
           )}
         </div>
 
-        {/* Notes */}
+        {/* Requirement Notes */}
         {lead?.alternate_requirement && (
           <div className="rounded-lg bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/70 dark:border-amber-800/50 p-3 space-y-1">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-700 dark:text-amber-400">Notes</p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-700 dark:text-amber-400">Requirement Notes</p>
             <p className="text-xs text-foreground leading-relaxed whitespace-pre-line">{lead.alternate_requirement}</p>
           </div>
+        )}
+
+        {/* Notes History */}
+        {lead?.notes && lead.notes.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Notes History ({lead.notes.length})
+              {lead._count && lead._count.followups > 0 && (
+                <span className="ml-2 text-primary normal-case tracking-normal font-semibold">
+                  · {lead._count.followups} pending FU{lead._count.followups !== 1 ? "s" : ""}
+                </span>
+              )}
+            </p>
+            <div className="space-y-2 max-h-48 overflow-y-auto scrollbar-hide">
+              {lead.notes.map((note) => (
+                <div key={note.id} className="rounded-lg bg-muted/40 border border-border/60 p-2.5">
+                  <p className="text-xs text-foreground leading-relaxed whitespace-pre-line">{note.content}</p>
+                  <p className="text-[10px] text-muted-foreground mt-1.5">
+                    <span className="font-medium">{note.created_by.name}</span>
+                    {" · "}
+                    {new Date(note.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* FU count (when no notes history to show it next to) */}
+        {(!lead?.notes || lead.notes.length === 0) && lead?._count && lead._count.followups > 0 && (
+          <p className="text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground">{lead._count.followups}</span> pending follow-up{lead._count.followups !== 1 ? "s" : ""}
+          </p>
         )}
       </div>
     </div>

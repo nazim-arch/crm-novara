@@ -103,6 +103,31 @@ export async function GET(request: Request) {
       }),
     ]);
 
+    // Fetch notes for all leads in all three buckets
+    const allLeadIds = [
+      ...new Set(
+        [...queue, ...callbackPending, ...completedToday]
+          .map((fu) => fu.lead?.id)
+          .filter(Boolean) as string[],
+      ),
+    ];
+    const notesRaw = allLeadIds.length
+      ? await prisma.note.findMany({
+          where: { entity_type: "Lead", entity_id: { in: allLeadIds } },
+          select: {
+            id: true, entity_id: true, content: true, created_at: true,
+            created_by: { select: { name: true } },
+          },
+          orderBy: { created_at: "desc" },
+        })
+      : [];
+    const notesByLead = new Map<string, typeof notesRaw>();
+    for (const n of notesRaw) {
+      const arr = notesByLead.get(n.entity_id) ?? [];
+      arr.push(n);
+      notesByLead.set(n.entity_id, arr);
+    }
+
     const serialize = (fu: typeof queue[0]) => ({
       ...fu,
       scheduled_at: fu.scheduled_at.toISOString(),
@@ -118,6 +143,11 @@ export async function GET(request: Request) {
         last_contact_date: fu.lead.last_contact_date?.toISOString() ?? null,
         next_followup_date: fu.lead.next_followup_date?.toISOString() ?? null,
         deleted_at: fu.lead.deleted_at?.toISOString() ?? null,
+        notes: (notesByLead.get(fu.lead.id) ?? []).map((n) => ({
+          id: n.id, content: n.content,
+          created_at: n.created_at.toISOString(),
+          created_by: n.created_by,
+        })),
       } : null,
     });
 
