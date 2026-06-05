@@ -22,8 +22,8 @@ import { Input } from "@/components/ui/input";
 import { TaskStatusBadge, PriorityBadge } from "@/components/shared/LeadStatusBadge";
 import { formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, Clock, Search, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
-import { startOfDay, endOfDay, addDays } from "date-fns";
+import { AlertTriangle, Clock, Search, ArrowUpDown, ArrowUp, ArrowDown, Timer } from "lucide-react";
+import { startOfDay, endOfDay, addDays, differenceInCalendarDays } from "date-fns";
 
 type Task = {
   id: string;
@@ -32,6 +32,9 @@ type Task = {
   status: string;
   priority: string;
   due_date: Date;
+  start_date: Date | null;
+  completion_date: Date | null;
+  created_at: Date;
   revenue_tagged: boolean;
   revenue_amount: { toString(): string } | null;
   assigned_to: { id: string; name: string };
@@ -53,6 +56,38 @@ interface TaskTableProps {
 const ACTIVE_STATUSES = ["Todo", "InProgress"];
 
 const PRIORITY_ORDER: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+
+function getDaysElapsed(task: Task): { days: number; done: boolean } | null {
+  if (task.status === "Cancelled") return null;
+  const start = task.start_date ?? task.created_at;
+  if (task.status === "Done" && task.completion_date) {
+    return { days: differenceInCalendarDays(new Date(task.completion_date), new Date(start)), done: true };
+  }
+  return { days: differenceInCalendarDays(new Date(), new Date(start)), done: false };
+}
+
+function DaysElapsedBadge({ task }: { task: Task }) {
+  const result = getDaysElapsed(task);
+  if (!result) return <span className="text-muted-foreground text-xs">—</span>;
+  const { days, done } = result;
+  if (done) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+        <Timer className="h-3 w-3 shrink-0" />
+        {days}d
+      </span>
+    );
+  }
+  return (
+    <span className={cn(
+      "inline-flex items-center gap-1 text-xs font-semibold tabular-nums",
+      days > 14 ? "text-destructive" : days > 7 ? "text-orange-600 dark:text-orange-400" : "text-muted-foreground"
+    )}>
+      <Timer className="h-3 w-3 shrink-0" />
+      {days}d
+    </span>
+  );
+}
 
 export function TaskTable({ tasks, users, clients }: TaskTableProps) {
   const [search, setSearch] = useState("");
@@ -255,6 +290,7 @@ function TaskGrid({ tasks, sortCol, sortDir, onSort }: { tasks: Task[]; sortCol:
                 <span className={cn("text-xs", isOverdue ? "text-destructive font-medium" : "text-muted-foreground")}>
                   {formatDate(task.due_date)}
                 </span>
+                <DaysElapsedBadge task={task} />
                 <span className="text-xs text-muted-foreground">{task.assigned_to.name}</span>
               </div>
               {(task.lead || task.opportunity || task.client) && (
@@ -291,6 +327,7 @@ function TaskGrid({ tasks, sortCol, sortDir, onSort }: { tasks: Task[]; sortCol:
               <TableHead>{sh("priority", "Priority")}</TableHead>
               <TableHead>{sh("due_date", "Due Date")}</TableHead>
               <TableHead>{sh("assigned_to", "Assigned To")}</TableHead>
+              <TableHead className="text-center">Days</TableHead>
               <TableHead>Client</TableHead>
               <TableHead>Linked To</TableHead>
             </TableRow>
@@ -312,6 +349,9 @@ function TaskGrid({ tasks, sortCol, sortDir, onSort }: { tasks: Task[]; sortCol:
                     {formatDate(task.due_date)}
                   </TableCell>
                   <TableCell className="text-sm">{task.assigned_to.name}</TableCell>
+                  <TableCell className="text-center">
+                    <DaysElapsedBadge task={task} />
+                  </TableCell>
                   <TableCell className="text-sm">
                     {task.client ? (
                       <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/30 px-1.5 py-0.5 rounded">
