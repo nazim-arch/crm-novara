@@ -55,7 +55,8 @@ export const PIPELINE_STAGES = [
 // a pipeline stage and would create noise at the list level.
 export const ACTIVITY_STAGES = [
   "New", "NoResponse", "Busy", "Unreachable",
-  "Prospect", "CallBack", "NotInterested", "Junk",
+  "Prospect", "CallBack", "FollowUp", "SiteVisitScheduled", "LongRNR",
+  "NotInterested", "Junk",
 ] as const;
 
 export const changeStageSchema = z
