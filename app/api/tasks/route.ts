@@ -126,7 +126,7 @@ export async function POST(request: Request) {
       },
     });
 
-    revalidateTag("crm-dashboard");
+    revalidateTag("crm-dashboard", "max");
     return NextResponse.json({ data: task }, { status: 201 });
   } catch (error) {
     console.error("POST /api/tasks:", error);

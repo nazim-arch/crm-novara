@@ -110,7 +110,7 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
       include: { configurations: true },
     });
 
-    revalidateTag("crm-dashboard");
+    revalidateTag("crm-dashboard", "max");
     return NextResponse.json({ data: opp });
   } catch (error) {
     console.error("PATCH /api/opportunities/[id]:", error);
@@ -157,7 +157,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
       });
     }
 
-    revalidateTag("crm-dashboard");
+    revalidateTag("crm-dashboard", "max");
     return NextResponse.json({ data: tag }, { status: 201 });
   } catch (error) {
     console.error("POST /api/opportunities/[id]:", error);
@@ -189,7 +189,7 @@ export async function DELETE(_request: Request, { params }: { params: Params }) 
       data: { deleted_at: now },
     });
 
-    revalidateTag("crm-dashboard");
+    revalidateTag("crm-dashboard", "max");
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("DELETE /api/opportunities/[id]:", error);

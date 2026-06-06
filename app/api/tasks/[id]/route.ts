@@ -109,7 +109,7 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
       });
     }
 
-    revalidateTag("crm-dashboard");
+    revalidateTag("crm-dashboard", "max");
     return NextResponse.json({ data: task });
   } catch (error) {
     console.error("PATCH /api/tasks/[id]:", error);
@@ -125,7 +125,7 @@ export async function DELETE(_request: Request, { params }: { params: Params }) 
 
     const { id } = await params;
     await prisma.task.update({ where: { id, deleted_at: null }, data: { deleted_at: new Date() } });
-    revalidateTag("crm-dashboard");
+    revalidateTag("crm-dashboard", "max");
     return NextResponse.json({ data: { success: true } });
   } catch (error) {
     console.error("DELETE /api/tasks/[id]:", error);

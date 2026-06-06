@@ -161,7 +161,7 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
       });
     }
 
-    revalidateTag("crm-dashboard");
+    revalidateTag("crm-dashboard", "max");
     return NextResponse.json({ data: lead });
   } catch (error) {
     console.error("PATCH /api/leads/[id]:", error);
@@ -307,7 +307,7 @@ export async function DELETE(_request: Request, { params }: { params: Params }) 
       }
     }
 
-    revalidateTag("crm-dashboard");
+    revalidateTag("crm-dashboard", "max");
     return NextResponse.json({ data: { success: true } });
   } catch (error) {
     console.error("DELETE /api/leads/[id]:", error);

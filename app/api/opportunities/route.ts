@@ -119,7 +119,7 @@ export async function POST(request: Request) {
       possibleRevenue: Number(opportunity.possible_revenue ?? 0),
     });
 
-    revalidateTag("crm-dashboard");
+    revalidateTag("crm-dashboard", "max");
     return NextResponse.json({ data: opportunity }, { status: 201 });
   } catch (error) {
     console.error("POST /api/opportunities:", error);

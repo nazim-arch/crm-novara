@@ -233,7 +233,7 @@ export async function POST(request: Request) {
       assignedToName: assignee?.name ?? "Unknown",
     });
 
-    revalidateTag("crm-dashboard");
+    revalidateTag("crm-dashboard", "max");
     return NextResponse.json({ data: lead }, { status: 201 });
   } catch (error) {
     console.error("POST /api/leads:", error);

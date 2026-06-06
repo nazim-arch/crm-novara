@@ -288,7 +288,7 @@ export async function POST(request: Request) {
       }
     }
 
-    revalidateTag("crm-dashboard");
+    revalidateTag("crm-dashboard", "max");
     return NextResponse.json(result, { status: 200 });
   } catch (error) {
     console.error("POST /api/leads/bulk-update:", error);

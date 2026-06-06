@@ -138,7 +138,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
           data: { last_contact_date: now },
         });
       }
-      revalidateTag("crm-dashboard");
+      revalidateTag("crm-dashboard", "max");
       return NextResponse.json({ data: updated });
     }
 
@@ -209,7 +209,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
           });
         }
       }
-      revalidateTag("crm-dashboard");
+      revalidateTag("crm-dashboard", "max");
       return NextResponse.json({ data: fuUpdate, action: "contacted" });
     }
 
@@ -235,7 +235,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
             },
           });
         }
-        revalidateTag("crm-dashboard");
+        revalidateTag("crm-dashboard", "max");
         return NextResponse.json({ data: updated, action: "callback_today" });
       }
 
@@ -267,7 +267,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
             },
           });
         }
-        revalidateTag("crm-dashboard");
+        revalidateTag("crm-dashboard", "max");
         return NextResponse.json({ data: fuUpdate, action: "completed" });
       }
 
@@ -374,7 +374,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
           });
         }
       }
-      revalidateTag("crm-dashboard");
+      revalidateTag("crm-dashboard", "max");
       return NextResponse.json({ data: updated, action: "notes_updated" });
     }
 
@@ -409,7 +409,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
           trigger_context: { from_status: fromStage, to_stage: data.to_stage, notes: data.notes },
         });
       }
-      revalidateTag("crm-dashboard");
+      revalidateTag("crm-dashboard", "max");
       return NextResponse.json({ data: fuUpdate, action: "stage_updated" });
     }
 
