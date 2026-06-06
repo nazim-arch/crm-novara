@@ -172,22 +172,31 @@ export async function DELETE(_request: Request, { params }: { params: Params }) 
     if (!(await hasPermissionAsync(session.user.role, "opportunity:delete"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await params;
-    const now = new Date();
 
-    // Cascade: soft-delete linked tasks
-    await prisma.task.updateMany({
-      where: { opportunity_id: id, deleted_at: null },
-      data: { deleted_at: now },
-    });
-
-    // Cascade: hard-delete linked follow-ups and expenses (no soft-delete on these)
-    await prisma.followUp.deleteMany({ where: { opportunity_id: id } });
-    await prisma.opportunityExpense.deleteMany({ where: { opportunity_id: id } });
-
-    await prisma.opportunity.update({
-      where: { id, deleted_at: null },
-      data: { deleted_at: now },
-    });
+    if (session.user.role === "Admin") {
+      // Hard delete: permanently remove opportunity and all related records
+      await prisma.$transaction([
+        prisma.task.deleteMany({ where: { opportunity_id: id } }),
+        prisma.followUp.deleteMany({ where: { opportunity_id: id } }),
+        prisma.opportunityExpense.deleteMany({ where: { opportunity_id: id } }),
+        prisma.opportunityConfiguration.deleteMany({ where: { opportunity_id: id } }),
+        prisma.leadOpportunity.deleteMany({ where: { opportunity_id: id } }),
+        prisma.opportunity.delete({ where: { id } }),
+      ]);
+    } else {
+      // Soft delete: mark opportunity and tasks as deleted, hard-delete FUs and expenses
+      const now = new Date();
+      await prisma.task.updateMany({
+        where: { opportunity_id: id, deleted_at: null },
+        data: { deleted_at: now },
+      });
+      await prisma.followUp.deleteMany({ where: { opportunity_id: id } });
+      await prisma.opportunityExpense.deleteMany({ where: { opportunity_id: id } });
+      await prisma.opportunity.update({
+        where: { id, deleted_at: null },
+        data: { deleted_at: now },
+      });
+    }
 
     revalidateTag("crm-dashboard", "max");
     return NextResponse.json({ success: true });

@@ -124,7 +124,13 @@ export async function DELETE(_request: Request, { params }: { params: Params }) 
     if (!(await hasPermissionAsync(session.user.role, "task:delete"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await params;
-    await prisma.task.update({ where: { id, deleted_at: null }, data: { deleted_at: new Date() } });
+
+    if (session.user.role === "Admin") {
+      await prisma.task.delete({ where: { id } });
+    } else {
+      await prisma.task.update({ where: { id, deleted_at: null }, data: { deleted_at: new Date() } });
+    }
+
     revalidateTag("crm-dashboard", "max");
     return NextResponse.json({ data: { success: true } });
   } catch (error) {
