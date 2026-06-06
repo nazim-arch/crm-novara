@@ -23,6 +23,7 @@ import { TaskStatusBadge, PriorityBadge } from "@/components/shared/LeadStatusBa
 import { formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, Clock, Search, ArrowUpDown, ArrowUp, ArrowDown, Timer } from "lucide-react";
+import { ColumnFilterHeader } from "@/components/shared/ColumnFilterHeader";
 import { startOfDay, endOfDay, addDays, differenceInCalendarDays } from "date-fns";
 
 type Task = {
@@ -89,9 +90,17 @@ function DaysElapsedBadge({ task }: { task: Task }) {
   );
 }
 
+const PRIORITY_OPTIONS = [
+  { label: "Critical", value: "Critical" },
+  { label: "High", value: "High" },
+  { label: "Medium", value: "Medium" },
+  { label: "Low", value: "Low" },
+];
+
 export function TaskTable({ tasks, users, clients }: TaskTableProps) {
   const [search, setSearch] = useState("");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
   const [clientFilter, setClientFilter] = useState("all");
   const [sortCol, setSortCol] = useState("due_date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -108,6 +117,7 @@ export function TaskTable({ tasks, users, clients }: TaskTableProps) {
   const filtered = useMemo(() => {
     const list = tasks.filter((t) => {
       if (assigneeFilter !== "all" && t.assigned_to.id !== assigneeFilter) return false;
+      if (priorityFilter !== "all" && t.priority !== priorityFilter) return false;
       if (clientFilter !== "all") {
         if (clientFilter === "none") { if (t.client !== null) return false; }
         else if (t.client?.id !== clientFilter) return false;
@@ -127,7 +137,7 @@ export function TaskTable({ tasks, users, clients }: TaskTableProps) {
       else if (sortCol === "assigned_to") cmp = a.assigned_to.name.localeCompare(b.assigned_to.name);
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [tasks, search, assigneeFilter, clientFilter, sortCol, sortDir]);
+  }, [tasks, search, assigneeFilter, priorityFilter, clientFilter, sortCol, sortDir]);
 
   const buckets = useMemo(() => {
     const overdue = filtered.filter(
@@ -239,7 +249,17 @@ export function TaskTable({ tasks, users, clients }: TaskTableProps) {
 
         {(["overdue", "today", "next3", "next7", "allActive", "done"] as const).map((key) => (
           <TabsContent key={key} value={key} className="mt-4">
-            <TaskGrid tasks={buckets[key]} sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
+            <TaskGrid
+              tasks={buckets[key]}
+              sortCol={sortCol}
+              sortDir={sortDir}
+              onSort={toggleSort}
+              priorityFilter={priorityFilter}
+              onPriorityFilter={(v) => setPriorityFilter(v ?? "all")}
+              assigneeFilter={assigneeFilter}
+              onAssigneeFilter={(v) => setAssigneeFilter(v ?? "all")}
+              users={users}
+            />
           </TabsContent>
         ))}
       </Tabs>
@@ -257,7 +277,22 @@ function SortBtn({ col, label, sortCol, sortDir, onSort }: { col: string; label:
   );
 }
 
-function TaskGrid({ tasks, sortCol, sortDir, onSort }: { tasks: Task[]; sortCol: string; sortDir: string; onSort: (c: string) => void }) {
+function TaskGrid({
+  tasks, sortCol, sortDir, onSort,
+  priorityFilter, onPriorityFilter,
+  assigneeFilter, onAssigneeFilter,
+  users,
+}: {
+  tasks: Task[];
+  sortCol: string;
+  sortDir: string;
+  onSort: (c: string) => void;
+  priorityFilter: string;
+  onPriorityFilter: (v: string | null) => void;
+  assigneeFilter: string;
+  onAssigneeFilter: (v: string | null) => void;
+  users: User[];
+}) {
   const sh = (col: string, label: string) => <SortBtn col={col} label={label} sortCol={sortCol} sortDir={sortDir} onSort={onSort} />;
 
   if (tasks.length === 0) {
@@ -324,9 +359,31 @@ function TaskGrid({ tasks, sortCol, sortDir, onSort }: { tasks: Task[]; sortCol:
             <TableRow className="bg-muted/50">
               <TableHead>{sh("title", "Task")}</TableHead>
               <TableHead>{sh("status", "Status")}</TableHead>
-              <TableHead>{sh("priority", "Priority")}</TableHead>
+              <TableHead>
+                <ColumnFilterHeader
+                  column="priority"
+                  label="Priority"
+                  currentSort={sortCol}
+                  currentDir={sortDir}
+                  filterOptions={PRIORITY_OPTIONS}
+                  currentFilter={priorityFilter}
+                  onFilter={onPriorityFilter}
+                  onSort={onSort}
+                />
+              </TableHead>
               <TableHead>{sh("due_date", "Due Date")}</TableHead>
-              <TableHead>{sh("assigned_to", "Assigned To")}</TableHead>
+              <TableHead>
+                <ColumnFilterHeader
+                  column="assigned_to"
+                  label="Assigned To"
+                  currentSort={sortCol}
+                  currentDir={sortDir}
+                  filterOptions={users.map((u) => ({ label: u.name, value: u.id }))}
+                  currentFilter={assigneeFilter}
+                  onFilter={onAssigneeFilter}
+                  onSort={onSort}
+                />
+              </TableHead>
               <TableHead className="text-center">Days</TableHead>
               <TableHead>Client</TableHead>
               <TableHead>Linked To</TableHead>

@@ -14,10 +14,33 @@ import { Plus, Building2 } from "lucide-react";
 import { hasPermissionAsync } from "@/lib/rbac";
 import { ExportButton } from "@/components/shared/ExportButton";
 import { SortableHeader } from "@/components/shared/SortableHeader";
+import { ColumnFilterHeader } from "@/components/shared/ColumnFilterHeader";
 import { OppFilters } from "@/components/opportunities/OppFilters";
-import type { Prisma } from "@/lib/generated/prisma/client";
+import type { Prisma, PropertyType } from "@/lib/generated/prisma/client";
 
-type SearchParams = Promise<{ status?: string; search?: string; page?: string; sort?: string; dir?: string }>;
+const OPP_STATUS_OPTIONS = [
+  { label: "Active", value: "Active" },
+  { label: "Inactive", value: "Inactive" },
+  { label: "Sold", value: "Sold" },
+];
+
+const OPP_PROPERTY_TYPE_OPTIONS = [
+  { label: "Residential", value: "Residential" },
+  { label: "Commercial", value: "Commercial" },
+  { label: "Plot", value: "Plot" },
+  { label: "Villa", value: "Villa" },
+  { label: "Apartment", value: "Apartment" },
+  { label: "Office", value: "Office" },
+  { label: "Land", value: "Land" },
+];
+
+const OPP_BY_OPTIONS = [
+  { label: "Developer", value: "Developer" },
+  { label: "Seller", value: "Seller" },
+  { label: "Buyer", value: "Buyer" },
+];
+
+type SearchParams = Promise<{ status?: string; search?: string; page?: string; sort?: string; dir?: string; property_type?: string; opportunity_by?: string }>;
 
 function formatCurrency(n: number) {
   if (n >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(2)} Cr`;
@@ -48,6 +71,8 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
   const where = {
     deleted_at: null as null,
     ...(sp.status && sp.status !== "all" && { status: sp.status as "Active" | "Inactive" | "Sold" }),
+    ...(sp.property_type && sp.property_type !== "all" && { property_type: sp.property_type as PropertyType }),
+    ...(sp.opportunity_by && sp.opportunity_by !== "all" && { opportunity_by: sp.opportunity_by as "Developer" | "Seller" | "Buyer" }),
     ...(sp.search && {
       OR: [
         { name: { contains: sp.search, mode: "insensitive" as const } },
@@ -152,12 +177,39 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
               <TableHead>ID</TableHead>
               <TableHead>{sh("name", "Name / Project")}</TableHead>
               <TableHead>{sh("location", "Location")}</TableHead>
-              <TableHead>{sh("property_type", "Type")}</TableHead>
-              <TableHead>Opp By</TableHead>
+              <TableHead>
+                <ColumnFilterHeader
+                  column="property_type"
+                  label="Type"
+                  currentSort={sortCol}
+                  currentDir={sortDir}
+                  filterParam="property_type"
+                  filterOptions={OPP_PROPERTY_TYPE_OPTIONS}
+                  currentFilter={sp.property_type}
+                />
+              </TableHead>
+              <TableHead>
+                <ColumnFilterHeader
+                  label="Opp By"
+                  filterParam="opportunity_by"
+                  filterOptions={OPP_BY_OPTIONS}
+                  currentFilter={sp.opportunity_by}
+                />
+              </TableHead>
               {canViewFinancials && <TableHead>{sh("commission_percent", "Commission")}</TableHead>}
               {canViewFinancials && <TableHead>{sh("possible_revenue", "Possible Revenue")}</TableHead>}
               <TableHead>Leads</TableHead>
-              <TableHead>{sh("status", "Status")}</TableHead>
+              <TableHead>
+                <ColumnFilterHeader
+                  column="status"
+                  label="Status"
+                  currentSort={sortCol}
+                  currentDir={sortDir}
+                  filterParam="status"
+                  filterOptions={OPP_STATUS_OPTIONS}
+                  currentFilter={sp.status}
+                />
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

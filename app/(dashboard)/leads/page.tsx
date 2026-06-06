@@ -13,13 +13,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Plus, X, CheckCircle2, AlertCircle } from "lucide-react";
-import type { Prisma } from "@/lib/generated/prisma/client";
+import type { Prisma, PropertyType } from "@/lib/generated/prisma/client";
 import { LeadFilters } from "@/components/leads/LeadFilters";
 import { LeadImportModal } from "@/components/leads/LeadImportModal";
 import { LeadUpdateModal } from "@/components/leads/LeadUpdateModal";
 import { ExportButton } from "@/components/shared/ExportButton";
 import { LeadContactActions } from "@/components/shared/LeadContactActions";
 import { SortableHeader } from "@/components/shared/SortableHeader";
+import { ColumnFilterHeader } from "@/components/shared/ColumnFilterHeader";
 import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
 import { startOfDay, endOfDay, subDays, startOfWeek, startOfMonth, startOfYear } from "date-fns";
 
@@ -75,6 +76,41 @@ function resolvePeriodRange(
   }
 }
 
+const LEAD_STATUS_OPTIONS = [
+  { label: "New", value: "New" },
+  { label: "Contacted", value: "Contacted" },
+  { label: "Prospect", value: "Prospect" },
+  { label: "Site Visit Done", value: "SiteVisitCompleted" },
+  { label: "Negotiation", value: "Negotiation" },
+  { label: "Won", value: "Won" },
+  { label: "Lost", value: "Lost" },
+  { label: "Invalid", value: "InvalidLead" },
+  { label: "On Hold", value: "OnHold" },
+  { label: "Recycle", value: "Recycle" },
+];
+
+const TEMPERATURE_OPTIONS = [
+  { label: "Hot", value: "Hot" },
+  { label: "Warm", value: "Warm" },
+  { label: "Cold", value: "Cold" },
+  { label: "Follow Up Later", value: "FollowUpLater" },
+];
+
+const PROPERTY_TYPE_OPTIONS = [
+  { label: "Residential", value: "Residential" },
+  { label: "Commercial", value: "Commercial" },
+  { label: "Plot", value: "Plot" },
+  { label: "Villa", value: "Villa" },
+  { label: "Apartment", value: "Apartment" },
+  { label: "Office", value: "Office" },
+  { label: "Land", value: "Land" },
+];
+
+const PROFILE_OPTIONS = [
+  { label: "Complete", value: "complete" },
+  { label: "Incomplete", value: "incomplete" },
+];
+
 type SearchParams = Promise<{
   status?: string;
   temperature?: string;
@@ -91,6 +127,8 @@ type SearchParams = Promise<{
   from?: string;
   to?: string;
   activity_stage?: string;
+  property_type?: string;
+  profile?: string;
 }>;
 
 export default async function LeadsPage({ searchParams }: { searchParams: SearchParams }) {
@@ -145,6 +183,30 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
   }
 
   if (scope) andConditions.push(scope);
+
+  if (sp.property_type && sp.property_type !== "all") {
+    andConditions.push({ property_type: sp.property_type as PropertyType });
+  }
+
+  if (sp.profile === "complete") {
+    andConditions.push({
+      full_name: { not: "" },
+      phone: { not: "" },
+      lead_source: { not: "" },
+      potential_lead_value: { not: null },
+      opportunities: { some: {} },
+    });
+  } else if (sp.profile === "incomplete") {
+    andConditions.push({
+      OR: [
+        { full_name: "" },
+        { phone: "" },
+        { lead_source: "" },
+        { potential_lead_value: null },
+        { opportunities: { none: {} } },
+      ],
+    });
+  }
 
   const where: Prisma.LeadWhereInput = {
     deleted_at: null,
@@ -447,13 +509,57 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
             <TableRow className="bg-muted/50">
               <TableHead className="w-32">Lead ID</TableHead>
               <TableHead>{sh("full_name", "Name")}</TableHead>
-              <TableHead className="w-24">Profile</TableHead>
+              <TableHead className="w-28">
+                <ColumnFilterHeader
+                  label="Profile"
+                  filterParam="profile"
+                  filterOptions={PROFILE_OPTIONS}
+                  currentFilter={sp.profile}
+                />
+              </TableHead>
               <TableHead>Opportunity</TableHead>
               <TableHead>Phone</TableHead>
-              <TableHead>{sh("status", "Status")}</TableHead>
-              <TableHead>{sh("temperature", "Temp")}</TableHead>
-              <TableHead>{sh("assigned_to", "Assigned To")}</TableHead>
-              <TableHead>Property Type</TableHead>
+              <TableHead>
+                <ColumnFilterHeader
+                  column="status"
+                  label="Status"
+                  currentSort={sortCol}
+                  currentDir={sortDir}
+                  filterParam="status"
+                  filterOptions={LEAD_STATUS_OPTIONS}
+                  currentFilter={sp.status}
+                />
+              </TableHead>
+              <TableHead>
+                <ColumnFilterHeader
+                  column="temperature"
+                  label="Temp"
+                  currentSort={sortCol}
+                  currentDir={sortDir}
+                  filterParam="temperature"
+                  filterOptions={TEMPERATURE_OPTIONS}
+                  currentFilter={sp.temperature}
+                />
+              </TableHead>
+              <TableHead>
+                <ColumnFilterHeader
+                  column="assigned_to"
+                  label="Assigned To"
+                  currentSort={sortCol}
+                  currentDir={sortDir}
+                  filterParam="assigned_to"
+                  filterOptions={users.map((u) => ({ label: u.name, value: u.id }))}
+                  currentFilter={sp.assigned_to}
+                />
+              </TableHead>
+              <TableHead>
+                <ColumnFilterHeader
+                  label="Property Type"
+                  filterParam="property_type"
+                  filterOptions={PROPERTY_TYPE_OPTIONS}
+                  currentFilter={sp.property_type}
+                />
+              </TableHead>
               <TableHead>{sh("next_followup_date", "Follow-up")}</TableHead>
               <TableHead>{sh("last_contact_date", "Last Contact")}</TableHead>
               <TableHead className="text-right">{sh("potential_lead_value", "Pipeline Value", "ml-auto")}</TableHead>
