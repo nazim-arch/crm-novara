@@ -69,7 +69,7 @@ async function fetchLead(leadgenId: string): Promise<{
     campaign_id:  raw.campaign_id,
     form_id:      raw.form_id,
     full_name:    fieldVal(fd, "full_name"),
-    phone:        fieldVal(fd, "phone_number"),
+    phone:        fieldVal(fd, "phone") ?? fieldVal(fd, "phone_number"),
     email:        fieldVal(fd, "email"),
     city:         fieldVal(fd, "city"),
     raw:          raw as Record<string, unknown>,
