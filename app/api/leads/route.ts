@@ -84,9 +84,19 @@ export async function GET(request: Request) {
     // Expand each lead into one row per opportunity link; unlinked leads → one row using lead-level fields
     type OppRef = (typeof leads)[0]["opportunities"][0]["opportunity"] | null;
     const rows = leads.flatMap((lead) => {
+      const is_complete = !!(
+        lead.full_name &&
+        lead.phone &&
+        lead.lead_source &&
+        lead.temperature &&
+        lead.potential_lead_value != null &&
+        lead.opportunities.length > 0
+      );
+
       if (lead.opportunities.length === 0) {
         return [{
           ...lead,
+          is_complete,
           link_id: null as string | null,
           link_status: lead.status,
           link_activity_stage: lead.activity_stage,
@@ -99,6 +109,7 @@ export async function GET(request: Request) {
       }
       return lead.opportunities.map((lo) => ({
         ...lead,
+        is_complete,
         link_id: lo.id as string | null,
         link_status: lo.status,
         link_activity_stage: lo.activity_stage,

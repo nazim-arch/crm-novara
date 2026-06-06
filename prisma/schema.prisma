@@ -358,7 +358,7 @@ model Opportunity {
   closed_revenue    Decimal? @db.Decimal(14, 2)
 
   // Meta Lead Ads integration — set by admin to auto-link incoming leads
-  meta_form_id  String?
+  meta_form_ids String[]  // one opportunity can have multiple Meta Lead Ad forms
 
   deleted_at    DateTime?
   created_by_id String
@@ -378,7 +378,6 @@ model Opportunity {
   @@index([property_type])
   @@index([deleted_at])
   @@index([created_at])
-  @@index([meta_form_id])
   @@map("opportunities")
 }
 
@@ -1074,6 +1073,14 @@ model MetaLead {
   @@index([crm_lead_id])
   @@index([form_id])
   @@map("meta_leads")
+}
+
+// Singleton row (id=1) tracks the last user assigned via round-robin for Meta leads
+model MetaAssignmentState {
+  id                    Int      @id @default(1)
+  last_assigned_user_id String?
+  updated_at            DateTime @updatedAt
+  @@map("meta_assignment_state")
 }
 
 // ─── SOURCE CHANNELS ───

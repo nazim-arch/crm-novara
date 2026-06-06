@@ -109,6 +109,19 @@ export function OpportunityForm({
   const propertyType = watch("property_type");
   const commissionPercent = watch("commission_percent");
   const configurations = watch("configurations");
+  const metaFormIds = watch("meta_form_ids") ?? [];
+
+  function addMetaFormId() {
+    setValue("meta_form_ids", [...metaFormIds, ""]);
+  }
+  function removeMetaFormId(index: number) {
+    setValue("meta_form_ids", metaFormIds.filter((_, i) => i !== index));
+  }
+  function updateMetaFormId(index: number, value: string) {
+    const updated = [...metaFormIds];
+    updated[index] = value;
+    setValue("meta_form_ids", updated);
+  }
   const isLand = propertyType === "Land";
 
   const totalSalesValue = (configurations ?? []).reduce((sum, row) => {
@@ -298,15 +311,42 @@ export function OpportunityForm({
             </Select>
           </div>
 
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="meta_form_id">Meta Form ID</Label>
-            <Input
-              id="meta_form_id"
-              {...register("meta_form_id")}
-              placeholder="Paste Lead Ad form ID from Meta Ads Manager"
-            />
+          <div className="space-y-2 sm:col-span-2">
+            <Label>Meta Form IDs</Label>
+            {metaFormIds.length > 0 && (
+              <div className="space-y-2">
+                {metaFormIds.map((formId, index) => (
+                  <div key={index} className="flex gap-2">
+                    <Input
+                      value={formId}
+                      onChange={(e) => updateMetaFormId(index, e.target.value)}
+                      placeholder="e.g. 3452669468230021"
+                      className="font-mono text-sm"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeMetaFormId(index)}
+                      className="shrink-0 text-muted-foreground hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addMetaFormId}
+              className="gap-1"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add Meta Form ID
+            </Button>
             <p className="text-xs text-muted-foreground">
-              Links incoming Meta Lead Ads submissions to this opportunity automatically.
+              Paste a Lead Ad form ID from Meta Ads Manager. Add one per campaign/form — all will auto-link incoming leads to this opportunity.
             </p>
           </div>
         </CardContent>

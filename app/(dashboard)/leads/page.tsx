@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, X } from "lucide-react";
+import { Plus, X, CheckCircle2, AlertCircle } from "lucide-react";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { LeadFilters } from "@/components/leads/LeadFilters";
 import { LeadImportModal } from "@/components/leads/LeadImportModal";
@@ -210,6 +210,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
         next_followup_date: true,
         last_contact_date: true,
         potential_lead_value: true,
+        lead_source: true,
         budget_min: true,
         budget_max: true,
         location_preference: true,
@@ -238,9 +239,19 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
 
   // Expand into one row per opportunity link; unlinked leads produce one row using lead-level data
   const rows = leads.flatMap((lead) => {
+    const is_complete = !!(
+      lead.full_name &&
+      lead.phone &&
+      lead.lead_source &&
+      lead.temperature &&
+      lead.potential_lead_value != null &&
+      lead.opportunities.length > 0
+    );
+
     if (lead.opportunities.length === 0) {
       return [{
         ...lead,
+        is_complete,
         row_key: lead.id,
         link_id: null as string | null,
         link_status: lead.status as string,
@@ -251,6 +262,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     }
     return lead.opportunities.map((lo) => ({
       ...lead,
+      is_complete,
       row_key: lo.id,
       link_id: lo.id as string | null,
       link_status: lo.status as string,
@@ -351,7 +363,18 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
                   <Link href={`/leads/${row.id}`} className="font-semibold text-sm hover:underline leading-tight block truncate">
                     {row.full_name}
                   </Link>
-                  <span className="text-[11px] text-muted-foreground font-mono">{row.lead_number}</span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[11px] text-muted-foreground font-mono">{row.lead_number}</span>
+                    {row.is_complete ? (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-emerald-600">
+                        <CheckCircle2 className="h-3 w-3" /> Complete
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-amber-500">
+                        <AlertCircle className="h-3 w-3" /> Incomplete
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <TemperatureBadge temperature={row.temperature} />
@@ -424,6 +447,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
             <TableRow className="bg-muted/50">
               <TableHead className="w-32">Lead ID</TableHead>
               <TableHead>{sh("full_name", "Name")}</TableHead>
+              <TableHead className="w-24">Profile</TableHead>
               <TableHead>Opportunity</TableHead>
               <TableHead>Phone</TableHead>
               <TableHead>{sh("status", "Status")}</TableHead>
@@ -439,7 +463,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={12} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={13} className="text-center py-12 text-muted-foreground">
                   No leads found
                 </TableCell>
               </TableRow>
@@ -455,6 +479,17 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
                     <Link href={`/leads/${row.id}`} className="font-medium hover:underline">
                       {row.full_name}
                     </Link>
+                  </TableCell>
+                  <TableCell>
+                    {row.is_complete ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Complete
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-500">
+                        <AlertCircle className="h-3.5 w-3.5" /> Incomplete
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="text-sm">
                     {row.opportunity ? (

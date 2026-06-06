@@ -31,7 +31,7 @@ const opportunityBaseSchema = z.object({
     .max(100, "Cannot exceed 100%"),
   status: z.enum(["Active", "Inactive", "Sold"]).default("Active"),
   notes: z.string().optional().or(z.literal("")),
-  meta_form_id: z.string().optional().or(z.literal("")),
+  meta_form_ids: z.array(z.string().min(1)).default([]),
   configurations: z.array(configurationRowSchema).min(1, "At least one configuration row is required"),
 });
 

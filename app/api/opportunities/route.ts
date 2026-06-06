@@ -72,7 +72,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten() }, { status: 400 });
     }
 
-    const { configurations, notes, developer, opportunity_by, meta_form_id, ...rest } = parsed.data;
+    const { configurations, notes, developer, opportunity_by, meta_form_ids, ...rest } = parsed.data;
     const isLand = rest.property_type === "Land";
 
     const configRows = configurations.map((row) => {
@@ -91,7 +91,7 @@ export async function POST(request: Request) {
         opp_number, ...rest,
         developer: developer || null, notes: notes || null,
         opportunity_by: opportunity_by ?? "Developer",
-        meta_form_id: meta_form_id || null,
+        meta_form_ids: meta_form_ids ?? [],
         total_sales_value, possible_revenue,
         created_by_id: session.user.id,
         configurations: {

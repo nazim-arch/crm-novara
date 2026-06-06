@@ -87,6 +87,34 @@ async function getDefaultAdminId(): Promise<string | null> {
   return cachedAdminId;
 }
 
+// Round-robin: Sales (A→Z) then TeamLead (A→Z), state persisted in meta_assignment_state
+async function pickNextAssignee(): Promise<string | null> {
+  const [salesUsers, teamLeadUsers] = await Promise.all([
+    prisma.user.findMany({ where: { role: "Sales", is_active: true }, select: { id: true }, orderBy: { name: "asc" } }),
+    prisma.user.findMany({ where: { role: "TeamLead", is_active: true }, select: { id: true }, orderBy: { name: "asc" } }),
+  ]);
+
+  const pool = [...salesUsers, ...teamLeadUsers];
+  if (pool.length === 0) return getDefaultAdminId();
+
+  const state = await prisma.metaAssignmentState.upsert({
+    where: { id: 1 },
+    create: { id: 1, last_assigned_user_id: null },
+    update: {},
+  });
+
+  const lastIndex = pool.findIndex((u) => u.id === state.last_assigned_user_id);
+  const nextIndex = lastIndex === -1 ? 0 : (lastIndex + 1) % pool.length;
+  const next = pool[nextIndex];
+
+  await prisma.metaAssignmentState.update({
+    where: { id: 1 },
+    data: { last_assigned_user_id: next.id },
+  });
+
+  return next.id;
+}
+
 type MetaLeadData = Awaited<ReturnType<typeof fetchLead>>;
 
 async function upsertMetaLead(data: MetaLeadData) {
@@ -114,7 +142,7 @@ async function linkToOpportunity(data: MetaLeadData, crmLeadId: string) {
   if (!data.form_id) return;
 
   const opp = await prisma.opportunity.findFirst({
-    where: { meta_form_id: data.form_id, deleted_at: null },
+    where: { meta_form_ids: { has: data.form_id }, deleted_at: null },
     select: { id: true },
   });
   if (!opp) {
@@ -163,11 +191,12 @@ async function autoImportToCRM(data: MetaLeadData): Promise<string | null> {
     return null;
   }
 
-  const adminId = await getDefaultAdminId();
+  const [adminId, assigneeId] = await Promise.all([getDefaultAdminId(), pickNextAssignee()]);
   if (!adminId) {
     console.warn("[Meta webhook] No active admin — cannot create CRM lead");
     return null;
   }
+  const effectiveAssigneeId = assigneeId ?? adminId;
 
   // 3. Phone dedup — link to existing lead instead of creating a duplicate
   const existingLead = await prisma.lead.findFirst({
@@ -199,8 +228,8 @@ async function autoImportToCRM(data: MetaLeadData): Promise<string | null> {
         temperature:    "Cold",
         status:         "New",
         activity_stage: "New",
-        lead_owner_id:  adminId,
-        assigned_to_id: adminId,
+        lead_owner_id:  effectiveAssigneeId,
+        assigned_to_id: effectiveAssigneeId,
         created_by_id:  adminId,
       },
     });

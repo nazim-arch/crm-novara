@@ -38,6 +38,7 @@ export default async function EditOpportunityPage({ params }: { params: Params }
           commission_percent: Number(opp.commission_percent),
           status: opp.status,
           notes: opp.notes ?? undefined,
+          meta_form_ids: opp.meta_form_ids ?? [],
         }}
         existingConfigurations={opp.configurations.map((c) => ({
           id: c.id,

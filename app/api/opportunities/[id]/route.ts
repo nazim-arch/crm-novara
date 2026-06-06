@@ -76,7 +76,7 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
       return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten() }, { status: 400 });
     }
 
-    const { configurations, notes, developer, opportunity_by, meta_form_id, ...rest } = parsed.data;
+    const { configurations, notes, developer, opportunity_by, meta_form_ids, ...rest } = parsed.data;
     const isLand = rest.property_type === "Land";
     const activeConfigs = configurations.filter((c) => !c._delete);
     const configRows = activeConfigs.map((row) => {
@@ -95,7 +95,7 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
       data: {
         ...rest, developer: developer || null, notes: notes || null,
         opportunity_by: opportunity_by ?? "Developer",
-        meta_form_id: meta_form_id || null,
+        meta_form_ids: meta_form_ids ?? [],
         total_sales_value, possible_revenue, updated_at: new Date(),
         configurations: {
           create: configRows.map((row) => ({
