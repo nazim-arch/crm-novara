@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/daily-digest",
       "schedule": "30 2 * * *"
+    },
+    {
+      "path": "/api/cron/meta-reconcile",
+      "schedule": "30 18 * * *"
     }
   ]
 }

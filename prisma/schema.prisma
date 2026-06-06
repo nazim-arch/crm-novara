@@ -290,6 +290,9 @@ model Lead {
   lost_reason           LostReason?
   lost_notes            String?
 
+  // Location
+  city String?
+
   // Soft delete
   deleted_at DateTime?
   deleted_by String?
@@ -311,6 +314,7 @@ model Lead {
   stage_history  LeadStageHistory[]
   followups      FollowUp[]
   review_events  LeadReviewEvent[]
+  meta_leads     MetaLead[]
 
   @@index([phone])
   @@index([email])
@@ -353,6 +357,9 @@ model Opportunity {
   possible_revenue  Decimal? @db.Decimal(14, 2)
   closed_revenue    Decimal? @db.Decimal(14, 2)
 
+  // Meta Lead Ads integration — set by admin to auto-link incoming leads
+  meta_form_id  String?
+
   deleted_at    DateTime?
   created_by_id String
   created_by    User              @relation("OppCreator", fields: [created_by_id], references: [id])
@@ -365,11 +372,13 @@ model Opportunity {
   expenses       OpportunityExpense[]
   follow_ups     FollowUp[]
   review_events  LeadReviewEvent[]
+  meta_leads     MetaLead[]
 
   @@index([status])
   @@index([property_type])
   @@index([deleted_at])
   @@index([created_at])
+  @@index([meta_form_id])
   @@map("opportunities")
 }
 
@@ -1036,6 +1045,35 @@ model ir_signal_log {
   
   @@index([campaignId])
   @@index([processed])
+}
+
+// ─────────────────────────────────────────────
+// META LEAD ADS (inbound webhook storage)
+// ─────────────────────────────────────────────
+
+model MetaLead {
+  leadgen_id     String       @id
+  created_time   DateTime?
+  ad_id          String?
+  adset_id       String?
+  campaign_id    String?
+  form_id        String?
+  full_name      String?
+  phone          String?
+  email          String?
+  city           String?
+  raw            Json?
+  received_at    DateTime     @default(now())
+
+  crm_lead_id    String?
+  crm_lead       Lead?        @relation(fields: [crm_lead_id], references: [id])
+
+  opportunity_id String?
+  opportunity    Opportunity? @relation(fields: [opportunity_id], references: [id])
+
+  @@index([crm_lead_id])
+  @@index([form_id])
+  @@map("meta_leads")
 }
 
 // ─── SOURCE CHANNELS ───

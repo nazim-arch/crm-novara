@@ -297,6 +297,18 @@ export function OpportunityForm({
               </SelectContent>
             </Select>
           </div>
+
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="meta_form_id">Meta Form ID</Label>
+            <Input
+              id="meta_form_id"
+              {...register("meta_form_id")}
+              placeholder="Paste Lead Ad form ID from Meta Ads Manager"
+            />
+            <p className="text-xs text-muted-foreground">
+              Links incoming Meta Lead Ads submissions to this opportunity automatically.
+            </p>
+          </div>
         </CardContent>
       </Card>
 

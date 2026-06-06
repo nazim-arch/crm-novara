@@ -5,6 +5,13 @@ const schema = z.object({
   AUTH_SECRET:  z.string().min(1, "AUTH_SECRET is required"),
   UPSTASH_REDIS_REST_URL:   z.string().url().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1).optional(),
+  // Meta Lead Ads integration
+  META_APP_SECRET:           z.string().min(1).optional(),
+  META_SYSTEM_USER_TOKEN:    z.string().min(1).optional(),
+  META_WEBHOOK_VERIFY_TOKEN: z.string().min(1).optional(),
+  META_PAGE_ID:              z.string().min(1).optional(),
+  META_DATASET_ID:           z.string().min(1).optional(),
+  META_GRAPH_VERSION:        z.string().default("v21.0"),
 });
 
 const parsed = schema.safeParse(process.env);

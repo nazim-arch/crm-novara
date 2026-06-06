@@ -142,7 +142,7 @@ export async function POST(request: Request) {
     const {
       email, whatsapp, campaign_source, referral_source, unit_type,
       location_preference, timeline_to_buy, reason_for_interest,
-      next_followup_date, notes: _notes, financing_required, ...rest
+      next_followup_date, notes: _notes, financing_required, city, ...rest
     } = parsed.data;
 
     // Hard duplicate stop — phone or email must be unique among active leads
@@ -167,6 +167,7 @@ export async function POST(request: Request) {
         campaign_source: campaign_source || null, referral_source: referral_source || null,
         unit_type: unit_type || null, location_preference: location_preference || null,
         timeline_to_buy: timeline_to_buy || null, reason_for_interest: reason_for_interest || null,
+        city: city || null,
         next_followup_date: next_followup_date ?? null, financing_required: financing_required ?? null,
         created_by_id: session.user.id,
       },

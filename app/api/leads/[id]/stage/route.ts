@@ -5,6 +5,7 @@ import { changeStageSchema } from "@/lib/validations/lead";
 import { hasPermissionAsync } from "@/lib/rbac";
 import { notifyLeadStageChanged, notifyLeadWon, notifyLeadLost } from "@/lib/email-notifications";
 import { createLeadReviewEvent } from "@/lib/lead-review-events";
+import { sendStageEvent } from "@/lib/meta-capi";
 
 type Params = Promise<{ id: string }>;
 
@@ -43,6 +44,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
 
     const lead = await prisma.lead.findUnique({
       where: { id, deleted_at: null },
+      include: { meta_leads: true },
     });
     if (!lead) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
@@ -134,6 +136,19 @@ export async function POST(request: Request, { params }: { params: Params }) {
         ? [prisma.leadOpportunity.update({ where: { id: opportunity_link_id! }, data: linkUpdateData })]
         : []),
     ]);
+
+    // Fire CAPI conversion events for Meta-sourced leads (fire-and-forget)
+    if (to_stage && lead.meta_leads.length > 0) {
+      for (const ml of lead.meta_leads) {
+        sendStageEvent({
+          leadgenId: ml.leadgen_id,
+          stage:     to_stage,
+          email:     ml.email    ?? undefined,
+          phone:     ml.phone    ?? undefined,
+          valueInr:  to_stage === "Won" ? Number(settlement_value ?? 0) : undefined,
+        }).catch((err) => console.error("[CAPI stage event]", ml.leadgen_id, err));
+      }
+    }
 
     // Enqueue for Admin review
     createLeadReviewEvent({

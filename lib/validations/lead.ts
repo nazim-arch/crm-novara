@@ -27,6 +27,7 @@ const leadBaseSchema = z.object({
   notes: z.string().optional().or(z.literal("")),
   potential_lead_value: z.coerce.number().positive("Potential lead value must be a positive number").optional(),
   financing_required: z.boolean().optional(),
+  city: z.string().optional().or(z.literal("")),
 });
 
 export const createLeadSchema = leadBaseSchema.refine(

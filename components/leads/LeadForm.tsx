@@ -45,7 +45,14 @@ interface LeadFormProps {
 
 const LEAD_SOURCES = [
   "Website", "Facebook", "Instagram", "Google Ads",
-  "Referral", "Walk-in", "Cold Call", "Exhibition", "WhatsApp", "Other",
+  "Referral", "Walk-in", "Cold Call", "Exhibition", "WhatsApp",
+  "Meta Ads - Direct", "Other",
+];
+
+const CITY_OPTIONS = [
+  "Hyderabad", "Bangalore", "Mumbai", "Pune", "Chennai",
+  "Delhi NCR", "Noida", "Gurugram", "Ahmedabad", "Kolkata",
+  "Surat", "Jaipur", "Lucknow", "Other",
 ];
 
 const PROPERTY_TYPES = [
@@ -470,6 +477,26 @@ export function LeadForm({
                   <div className="space-y-1.5">
                     <Label htmlFor="location_preference">Location Preference</Label>
                     <Input id="location_preference" {...register("location_preference")} placeholder="e.g. Wakad, Pune" />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label>City</Label>
+                    <Select
+                      defaultValue={defaultValues?.city != null ? defaultValues.city : undefined}
+                      onValueChange={(v) => v && setValue("city", v === "__none__" ? "" : v)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select city…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">
+                          <span className="text-muted-foreground">None</span>
+                        </SelectItem>
+                        {CITY_OPTIONS.map((c) => (
+                          <SelectItem key={c} value={c}>{c}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   {/* ── Unit Type: dropdown from opp configs, else free text ─ */}
