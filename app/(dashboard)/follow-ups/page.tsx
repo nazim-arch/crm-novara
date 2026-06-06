@@ -44,6 +44,7 @@ export default async function FollowUpsPage({
       where: { ...scopeFilter, completed_at: null },
       include: fuInclude,
       orderBy: { scheduled_at: "asc" },
+      take: 200,
     }),
     isManagerOrAdmin
       ? prisma.user.findMany({

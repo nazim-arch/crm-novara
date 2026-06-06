@@ -34,7 +34,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
         client: { select: { id: true, name: true } },
       },
       orderBy: { due_date: "asc" },
-      take: 500,
+      take: 200,
     }),
     prisma.user.findMany({
       where: { is_active: true },

@@ -5,6 +5,7 @@ import { updateLeadSchema } from "@/lib/validations/lead";
 import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
 import { CommissionRecordStatus } from "@/lib/commission-utils";
 import { notifyLeadReassigned } from "@/lib/email-notifications";
+import { revalidateTag } from "next/cache";
 
 type Params = Promise<{ id: string }>;
 
@@ -160,6 +161,7 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
       });
     }
 
+    revalidateTag("crm-dashboard");
     return NextResponse.json({ data: lead });
   } catch (error) {
     console.error("PATCH /api/leads/[id]:", error);
@@ -305,6 +307,7 @@ export async function DELETE(_request: Request, { params }: { params: Params }) 
       }
     }
 
+    revalidateTag("crm-dashboard");
     return NextResponse.json({ data: { success: true } });
   } catch (error) {
     console.error("DELETE /api/leads/[id]:", error);

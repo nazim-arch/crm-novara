@@ -6,6 +6,7 @@ import { createLeadSchema } from "@/lib/validations/lead";
 import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { notifyLeadAssigned, notifyLeadCreatedAdmins } from "@/lib/email-notifications";
+import { revalidateTag } from "next/cache";
 
 export async function GET(request: Request) {
   try {
@@ -231,6 +232,7 @@ export async function POST(request: Request) {
       assignedToName: assignee?.name ?? "Unknown",
     });
 
+    revalidateTag("crm-dashboard");
     return NextResponse.json({ data: lead }, { status: 201 });
   } catch (error) {
     console.error("POST /api/leads:", error);

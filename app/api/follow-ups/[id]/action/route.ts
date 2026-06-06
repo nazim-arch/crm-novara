@@ -2,8 +2,15 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { cache } from "react";
+import { revalidateTag } from "next/cache";
 import { createLeadReviewEvent } from "@/lib/lead-review-events";
 import { notifyLeadWon, notifyLeadLost, notifyLeadStageChanged } from "@/lib/email-notifications";
+
+// Memoized per-request — avoids re-fetching admins when multiple notifications fire in one request
+const getActiveAdmins = cache(() =>
+  prisma.user.findMany({ where: { role: "Admin", is_active: true }, select: { id: true } })
+);
 
 type Params = Promise<{ id: string }>;
 
@@ -131,6 +138,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
           data: { last_contact_date: now },
         });
       }
+      revalidateTag("crm-dashboard");
       return NextResponse.json({ data: updated });
     }
 
@@ -201,6 +209,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
           });
         }
       }
+      revalidateTag("crm-dashboard");
       return NextResponse.json({ data: fuUpdate, action: "contacted" });
     }
 
@@ -226,6 +235,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
             },
           });
         }
+        revalidateTag("crm-dashboard");
         return NextResponse.json({ data: updated, action: "callback_today" });
       }
 
@@ -257,6 +267,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
             },
           });
         }
+        revalidateTag("crm-dashboard");
         return NextResponse.json({ data: fuUpdate, action: "completed" });
       }
 
@@ -363,6 +374,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
           });
         }
       }
+      revalidateTag("crm-dashboard");
       return NextResponse.json({ data: updated, action: "notes_updated" });
     }
 
@@ -397,6 +409,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
           trigger_context: { from_status: fromStage, to_stage: data.to_stage, notes: data.notes },
         });
       }
+      revalidateTag("crm-dashboard");
       return NextResponse.json({ data: fuUpdate, action: "stage_updated" });
     }
 
@@ -459,7 +472,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
       ]);
 
       // Notify admins
-      const admins = await prisma.user.findMany({ where: { role: "Admin", is_active: true }, select: { id: true } });
+      const admins = await getActiveAdmins();
       if (admins.length > 0) {
         await prisma.notification.createMany({
           data: admins.map((a) => ({

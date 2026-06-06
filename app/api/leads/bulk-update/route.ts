@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
 import { z } from "zod";
+import { revalidateTag } from "next/cache";
 
 // ── Validation ─────────────────────────────────────────────────────────────
 
@@ -287,6 +288,7 @@ export async function POST(request: Request) {
       }
     }
 
+    revalidateTag("crm-dashboard");
     return NextResponse.json(result, { status: 200 });
   } catch (error) {
     console.error("POST /api/leads/bulk-update:", error);

@@ -68,7 +68,7 @@ export async function GET(request: Request) {
       created_by: { select: { id: true, name: true } },
     },
     orderBy: { scheduled_at: "asc" },
-    take: 500,
+    take: 200,
   });
 
   return NextResponse.json({ data: followUps });
