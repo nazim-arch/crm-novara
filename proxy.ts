@@ -32,7 +32,8 @@ export async function proxy(req: NextRequest) {
   if (
     pathname.startsWith("/api/") &&
     !pathname.startsWith("/api/health") &&
-    !pathname.startsWith("/api/inngest")
+    !pathname.startsWith("/api/inngest") &&
+    !pathname.startsWith("/api/meta-leads")
   ) {
     const { limit, window, prefix } = getRule(pathname, req.method);
     const { success, limit: lim, remaining, reset } = await ratelimit(
@@ -72,6 +73,7 @@ export async function proxy(req: NextRequest) {
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/api/health") ||
     pathname.startsWith("/api/inngest") ||
+    pathname.startsWith("/api/meta-leads") ||
     pathname.startsWith("/_next") ||
     pathname.includes(".")
   ) {
