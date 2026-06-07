@@ -35,32 +35,38 @@ export function OppFilters({ currentSearch, currentStatus }: OppFiltersProps) {
   }, 300);
 
   return (
-    <div className="flex flex-col sm:flex-row gap-2">
-      <div className="relative flex-1">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-        <Input
-          placeholder="Search name, project, location…"
-          defaultValue={currentSearch ?? ""}
-          onChange={(e) => handleSearch(e.target.value)}
-          className="pl-8 h-9 text-sm"
-        />
+    <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
+      <div className="flex flex-col gap-1 flex-1">
+        <span className="text-[11px] font-medium text-muted-foreground">Search</span>
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            placeholder="Search name, project, location…"
+            defaultValue={currentSearch ?? ""}
+            onChange={(e) => handleSearch(e.target.value)}
+            className="pl-8 h-9 text-sm"
+          />
+        </div>
       </div>
-      <Select
-        value={currentStatus ?? "all"}
-        onValueChange={(v) => v && updateParam("status", v)}
-      >
-        <SelectTrigger className="h-9 sm:w-40 text-sm">
-          <SelectValue>
-            {currentStatus && currentStatus !== "all" ? currentStatus : "All statuses"}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All statuses</SelectItem>
-          <SelectItem value="Active">Active</SelectItem>
-          <SelectItem value="Inactive">Inactive</SelectItem>
-          <SelectItem value="Sold">Sold</SelectItem>
-        </SelectContent>
-      </Select>
+      <div className="flex flex-col gap-1">
+        <span className="text-[11px] font-medium text-muted-foreground">Status</span>
+        <Select
+          value={currentStatus ?? "all"}
+          onValueChange={(v) => v && updateParam("status", v)}
+        >
+          <SelectTrigger className="h-9 sm:w-40 text-sm">
+            <SelectValue>
+              {currentStatus && currentStatus !== "all" ? currentStatus : "All statuses"}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="Active">Active</SelectItem>
+            <SelectItem value="Inactive">Inactive</SelectItem>
+            <SelectItem value="Sold">Sold</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   );
 }

@@ -160,52 +160,61 @@ export function TaskTable({ tasks, users, clients }: TaskTableProps) {
   return (
     <div className="space-y-4">
       {/* Header filters */}
-      <div className="flex flex-col sm:flex-row gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input
-            placeholder="Search title or number…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 h-9 w-full text-sm"
-          />
+      <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
+        <div className="flex flex-col gap-1 flex-1">
+          <span className="text-[11px] font-medium text-muted-foreground">Search</span>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Search title or number…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-8 h-9 w-full text-sm"
+            />
+          </div>
         </div>
         {users.length > 0 && (
-          <Select value={assigneeFilter} onValueChange={(v) => v && setAssigneeFilter(v)}>
-            <SelectTrigger className="h-9 sm:w-44 text-sm">
-              <SelectValue>
-                {assigneeFilter === "all"
-                  ? "All assignees"
-                  : users.find((u) => u.id === assigneeFilter)?.name ?? "All assignees"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All assignees</SelectItem>
-              {users.map((u) => (
-                <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] font-medium text-muted-foreground">Assigned To</span>
+            <Select value={assigneeFilter} onValueChange={(v) => v && setAssigneeFilter(v)}>
+              <SelectTrigger className="h-9 sm:w-44 text-sm">
+                <SelectValue>
+                  {assigneeFilter === "all"
+                    ? "All assignees"
+                    : users.find((u) => u.id === assigneeFilter)?.name ?? "All assignees"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All assignees</SelectItem>
+                {users.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         )}
         {clients.length > 0 && (
-          <Select value={clientFilter} onValueChange={(v) => v && setClientFilter(v)}>
-            <SelectTrigger className="h-9 sm:w-40 text-sm">
-              <SelectValue>
-                {clientFilter === "all"
-                  ? "All clients"
-                  : clientFilter === "none"
-                  ? "No client"
-                  : clients.find((c) => c.id === clientFilter)?.name ?? "All clients"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All clients</SelectItem>
-              <SelectItem value="none">No client</SelectItem>
-              {clients.map((c) => (
-                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] font-medium text-muted-foreground">Client</span>
+            <Select value={clientFilter} onValueChange={(v) => v && setClientFilter(v)}>
+              <SelectTrigger className="h-9 sm:w-40 text-sm">
+                <SelectValue>
+                  {clientFilter === "all"
+                    ? "All clients"
+                    : clientFilter === "none"
+                    ? "No client"
+                    : clients.find((c) => c.id === clientFilter)?.name ?? "All clients"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All clients</SelectItem>
+                <SelectItem value="none">No client</SelectItem>
+                {clients.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         )}
       </div>
 
