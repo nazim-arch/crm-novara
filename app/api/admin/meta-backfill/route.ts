@@ -1,12 +1,10 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { generateId } from "@/lib/id-generator";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function normalizePhone(phone: string): string {
-  // Strip all non-digits, keep last 10 (Indian mobile numbers)
   return phone.replace(/\D/g, "").slice(-10);
 }
 
@@ -19,16 +17,14 @@ function parseCSV(text: string): Record<string, string>[] {
   function parseField(): string {
     if (pos >= n) return "";
     if (src[pos] === '"') {
-      pos++; // skip opening quote
+      pos++;
       let val = "";
       while (pos < n) {
         if (src[pos] === '"') {
           pos++;
-          if (pos < n && src[pos] === '"') { val += '"'; pos++; } // escaped quote
+          if (pos < n && src[pos] === '"') { val += '"'; pos++; }
           else break;
-        } else {
-          val += src[pos++];
-        }
+        } else { val += src[pos++]; }
       }
       return val;
     }
@@ -59,34 +55,11 @@ function parseCSV(text: string): Record<string, string>[] {
   return rows;
 }
 
-async function getAdminId(): Promise<string> {
-  const admin = await prisma.user.findFirst({
-    where: { role: "Admin", is_active: true },
-    orderBy: { created_at: "asc" },
-    select: { id: true },
-  });
-  if (!admin) throw new Error("No active Admin user found");
-  return admin.id;
-}
-
-// Reuses same round-robin logic as the live webhook
-async function pickAssignee(adminId: string): Promise<string> {
-  const [sales, teamLeads] = await Promise.all([
-    prisma.user.findMany({ where: { role: "Sales", is_active: true }, select: { id: true }, orderBy: { name: "asc" } }),
-    prisma.user.findMany({ where: { role: "TeamLead", is_active: true }, select: { id: true }, orderBy: { name: "asc" } }),
-  ]);
-  const pool = [...sales, ...teamLeads];
-  if (pool.length === 0) return adminId;
-
-  const state = await prisma.metaAssignmentState.upsert({
-    where: { id: 1 },
-    create: { id: 1, last_assigned_user_id: null },
-    update: {},
-  });
-  const lastIdx = pool.findIndex((u) => u.id === state.last_assigned_user_id);
-  const next = pool[lastIdx === -1 ? 0 : (lastIdx + 1) % pool.length];
-  await prisma.metaAssignmentState.update({ where: { id: 1 }, data: { last_assigned_user_id: next.id } });
-  return next.id;
+// Run promise-returning functions in parallel, capped at `size` concurrent
+async function batch<T>(items: T[], fn: (item: T) => Promise<unknown>, size = 50) {
+  for (let i = 0; i < items.length; i += size) {
+    await Promise.all(items.slice(i, i + size).map(fn));
+  }
 }
 
 // ─── Route ────────────────────────────────────────────────────────────────────
@@ -117,33 +90,38 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No data rows found in CSV" }, { status: 400 });
     }
 
-    // ── Pre-load lookups (minimise per-row round trips) ──────────────────────
+    // ── Phase 1: Pre-load all lookups in parallel (6 queries → ~100ms) ──────
 
-    // All active CRM leads — build phone and email Maps for O(1) lookups
-    const allLeads = await prisma.lead.findMany({
-      where: { deleted_at: null },
-      select: { id: true, phone: true, email: true },
-    });
-    const phoneMap = new Map<string, string>(); // normalised last-10 → lead.id
-    const emailMap = new Map<string, string>(); // lowercase email → lead.id
+    const [allLeads, existingMeta, opps, salesUsers, teamLeadUsers, adminUser, metaState] =
+      await Promise.all([
+        prisma.lead.findMany({ where: { deleted_at: null }, select: { id: true, phone: true, email: true } }),
+        prisma.metaLead.findMany({ select: { leadgen_id: true, crm_lead_id: true } }),
+        prisma.opportunity.findMany({
+          where: { deleted_at: null, meta_form_ids: { isEmpty: false } },
+          select: { id: true, meta_form_ids: true },
+        }),
+        prisma.user.findMany({ where: { role: "Sales",    is_active: true }, select: { id: true }, orderBy: { name: "asc" } }),
+        prisma.user.findMany({ where: { role: "TeamLead", is_active: true }, select: { id: true }, orderBy: { name: "asc" } }),
+        prisma.user.findFirst({ where: { role: "Admin",   is_active: true }, orderBy: { created_at: "asc" }, select: { id: true } }),
+        prisma.metaAssignmentState.findUnique({ where: { id: 1 } }),
+      ]);
+
+    if (!adminUser) return NextResponse.json({ error: "No active Admin user found" }, { status: 500 });
+    const adminId = adminUser.id;
+
+    // Phone & email maps for O(1) lead matching
+    const phoneMap = new Map<string, string>(); // normalised 10-digit → lead.id
+    const emailMap = new Map<string, string>(); // lowercase email   → lead.id
     for (const lead of allLeads) {
       const norm = normalizePhone(lead.phone);
       if (norm.length >= 10) phoneMap.set(norm, lead.id);
       if (lead.email) emailMap.set(lead.email.toLowerCase().trim(), lead.id);
     }
 
-    // Existing MetaLeads — skip rows already fully linked
-    const existingMeta = await prisma.metaLead.findMany({
-      select: { leadgen_id: true, crm_lead_id: true },
-    });
-    // Mutable map — updated as we create new links during this run
+    // Existing MetaLead map: leadgen_id → crm_lead_id (null if not yet linked)
     const metaMap = new Map(existingMeta.map((m) => [m.leadgen_id, m.crm_lead_id]));
 
-    // form_id → opportunity_id (first match wins, mirrors live webhook behaviour)
-    const opps = await prisma.opportunity.findMany({
-      where: { deleted_at: null, meta_form_ids: { isEmpty: false } },
-      select: { id: true, meta_form_ids: true },
-    });
+    // form_id → opportunity_id (first match wins)
     const formOppMap = new Map<string, string>();
     for (const opp of opps) {
       for (const fid of opp.meta_form_ids) {
@@ -151,159 +129,268 @@ export async function POST(request: Request) {
       }
     }
 
-    const adminId = await getAdminId();
+    // Round-robin in memory — one state write at the very end
+    const pool = [...salesUsers, ...teamLeadUsers];
+    let rrIndex = pool.findIndex((u) => u.id === metaState?.last_assigned_user_id);
+    function nextAssignee(): string {
+      if (pool.length === 0) return adminId;
+      rrIndex = (rrIndex + 1) % pool.length;
+      return pool[rrIndex].id;
+    }
+
+    // ── Phase 2: Classify all rows (in memory, no DB) ────────────────────────
+
+    type MatchedRow = { row: Record<string, string>; crmLeadId: string };
+    type NewRow     = { row: Record<string, string>; assigneeId: string };
 
     const stats: BackfillResult = { total: csvRows.length, matched: 0, created: 0, skipped: 0, errors: [] };
 
-    // ── Process each CSV row ─────────────────────────────────────────────────
+    const toSkipIds   = new Set<string>(); // already fully linked
+    const matched: MatchedRow[] = [];
+    const toCreate:  NewRow[]   = [];
+
+    // Track phones/emails seen within this CSV to avoid intra-CSV duplicates
+    const csvPhones = new Set<string>();
+    const csvEmails = new Set<string>();
 
     for (const row of csvRows) {
       const leadgenId = row.leadgen_id?.trim();
       if (!leadgenId) { stats.skipped++; continue; }
 
-      const rawPhone   = row.phone?.trim() ?? "";
-      const normPhone  = normalizePhone(rawPhone);
-      const email      = row.email?.trim().toLowerCase() || null;
-      const formId     = row.form_id?.trim() || null;
-      const createdAt  = row.created_time ? new Date(row.created_time) : null;
+      // Already fully linked from a previous run
+      if (metaMap.get(leadgenId)) { toSkipIds.add(leadgenId); stats.skipped++; continue; }
 
-      let rawJson: unknown = null;
-      try { rawJson = row.raw_fields ? JSON.parse(row.raw_fields) : null; } catch { /* keep null */ }
+      const rawPhone  = row.phone?.trim() ?? "";
+      const normPhone = normalizePhone(rawPhone);
+      const email     = row.email?.trim().toLowerCase() || null;
 
-      // 1. Upsert MetaLead — idempotent on leadgen_id PK.
-      //    On update: refresh attribution fields only (preserve existing crm_lead_id link).
-      await prisma.metaLead.upsert({
-        where: { leadgen_id: leadgenId },
-        create: {
-          leadgen_id:   leadgenId,
-          form_id:      formId,
-          ad_id:        row.ad_id    || null,
-          adset_id:     row.adset_id || null,
-          campaign_id:  row.campaign_id || null,
-          full_name:    row.full_name || null,
-          phone:        rawPhone || null,
-          email:        email,
-          city:         row.city || null,
-          created_time: createdAt,
-          raw:          rawJson as never,
-        },
-        update: {
-          form_id:     formId,
-          ad_id:       row.ad_id    || null,
-          adset_id:    row.adset_id || null,
-          campaign_id: row.campaign_id || null,
-        },
-      });
-
-      // 2. Already fully linked — nothing more to do.
-      if (metaMap.get(leadgenId)) { stats.skipped++; continue; }
-
-      // 3. Resolve CRM lead: phone first (last-10 normalised), then email fallback.
-      let crmLeadId: string | null =
+      // Resolve CRM lead: phone → email → null
+      const crmLeadId =
         (normPhone.length >= 10 ? phoneMap.get(normPhone) ?? null : null) ??
         (email ? emailMap.get(email) ?? null : null);
 
       if (crmLeadId) {
-        // 4a. Link MetaLead → existing CRM lead
-        await prisma.metaLead.update({ where: { leadgen_id: leadgenId }, data: { crm_lead_id: crmLeadId } });
-        metaMap.set(leadgenId, crmLeadId);
+        matched.push({ row, crmLeadId });
         stats.matched++;
-      } else {
-        // 4b. No CRM match — create a new lead
-        if (!rawPhone && !email) {
-          stats.errors.push({ leadgen_id: leadgenId, reason: "No phone or email — cannot create CRM lead" });
-          continue;
-        }
+        continue;
+      }
 
-        try {
-          const assigneeId  = await pickAssignee(adminId);
-          const lead_number = await generateId("LEAD");
+      // No CRM lead — will create one
+      if (!rawPhone && !email) {
+        stats.errors.push({ leadgen_id: leadgenId, reason: "No phone or email — cannot create CRM lead" });
+        continue;
+      }
 
-          const newLead = await prisma.$transaction(async (tx) => {
-            const lead = await tx.lead.create({
-              data: {
-                lead_number,
-                full_name:       row.full_name || "Meta Lead",
-                phone:           rawPhone || `meta_${leadgenId}`,
-                email:           email,
-                city:            row.city || null,
-                lead_source:     "Meta Ads - Direct (backfill)",
-                campaign_source: row.campaign_id || null,
-                temperature:     "Cold",
-                status:          "New",
-                activity_stage:  "New",
-                lead_owner_id:   assigneeId,
-                assigned_to_id:  assigneeId,
-                created_by_id:   adminId,
-              },
-            });
+      // Deduplicate within CSV: if another row already claimed this phone/email, skip
+      const phoneDupe = normPhone.length >= 10 && csvPhones.has(normPhone);
+      const emailDupe = email && csvEmails.has(email);
+      if (phoneDupe || emailDupe) { stats.skipped++; continue; }
 
-            await tx.leadStageHistory.create({
-              data: {
-                lead_id:       lead.id,
-                to_stage:      "New",
-                changed_by_id: adminId,
-                notes:         "Created via Meta historical backfill",
-              },
-            });
+      if (normPhone.length >= 10) csvPhones.add(normPhone);
+      if (email) csvEmails.add(email);
 
-            await tx.activity.create({
-              data: {
-                entity_type: "Lead",
-                entity_id:   lead.id,
-                action:      "lead_created",
-                actor_id:    adminId,
-                metadata:    { lead_number: lead.lead_number, source: "meta_backfill", leadgen_id: leadgenId },
-              },
-            });
+      toCreate.push({ row, assigneeId: nextAssignee() });
+    }
 
-            await tx.metaLead.update({
-              where: { leadgen_id: leadgenId },
-              data:  { crm_lead_id: lead.id },
-            });
+    // ── Phase 3: Bulk upsert MetaLeads (1 query — skips existing) ────────────
 
-            return lead;
-          });
+    const allNewMetaRows = [
+      ...matched.map(({ row }) => row),
+      ...toCreate.map(({ row }) => row),
+    ];
 
-          crmLeadId = newLead.id;
-          // Update in-memory maps so duplicate phones later in the same CSV don't create a second lead
-          if (normPhone.length >= 10) phoneMap.set(normPhone, crmLeadId);
-          if (email) emailMap.set(email, crmLeadId);
-          metaMap.set(leadgenId, crmLeadId);
-          stats.created++;
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : "Unknown error";
-          const isDupe = msg.includes("Unique constraint") || msg.includes("unique");
-          stats.errors.push({
-            leadgen_id: leadgenId,
-            reason: isDupe ? `Duplicate phone already in DB: ${rawPhone}` : msg,
-          });
-          continue;
+    if (allNewMetaRows.length > 0) {
+      await prisma.metaLead.createMany({
+        data: allNewMetaRows.map((row) => {
+          let rawJson: unknown = null;
+          try { rawJson = row.raw_fields ? JSON.parse(row.raw_fields) : null; } catch { /* keep null */ }
+          return {
+            leadgen_id:   row.leadgen_id.trim(),
+            form_id:      row.form_id      || null,
+            ad_id:        row.ad_id        || null,
+            adset_id:     row.adset_id     || null,
+            campaign_id:  row.campaign_id  || null,
+            full_name:    row.full_name    || null,
+            phone:        row.phone?.trim() || null,
+            email:        row.email?.trim().toLowerCase() || null,
+            city:         row.city         || null,
+            created_time: row.created_time ? new Date(row.created_time) : null,
+            raw:          rawJson as never,
+          };
+        }),
+        skipDuplicates: true,
+      });
+    }
+
+    // ── Phase 4: Bulk create new CRM leads ───────────────────────────────────
+
+    let newLeadNumbers: string[] = [];
+    let newLeadIds: Map<string, string> = new Map(); // leadgen_id → crmLeadId
+
+    if (toCreate.length > 0) {
+      // Allocate N consecutive lead numbers in a single atomic increment
+      const n = toCreate.length;
+      const seqResult = await prisma.$queryRaw<[{ last_val: bigint }]>`
+        INSERT INTO sequence_counters (entity, last_val)
+        VALUES ('LEAD', ${n}::bigint)
+        ON CONFLICT (entity) DO UPDATE
+          SET last_val = sequence_counters.last_val + ${n}::bigint
+        RETURNING last_val
+      `;
+      const lastVal = Number(seqResult[0].last_val);
+      newLeadNumbers = Array.from({ length: n }, (_, i) =>
+        `DS-LEAD-${String(lastVal - n + 1 + i).padStart(6, "0")}`
+      );
+
+      const now = new Date();
+
+      // Bulk insert all new leads (1 query)
+      await prisma.lead.createMany({
+        data: toCreate.map(({ row, assigneeId }, i) => ({
+          lead_number:     newLeadNumbers[i],
+          full_name:       row.full_name || "Meta Lead",
+          phone:           row.phone?.trim() || `meta_${row.leadgen_id.trim()}`,
+          email:           row.email?.trim().toLowerCase() || null,
+          city:            row.city || null,
+          lead_source:     "Meta Ads - Direct (backfill)",
+          campaign_source: row.campaign_id || null,
+          temperature:     "Cold",
+          status:          "New",
+          activity_stage:  "New",
+          lead_owner_id:   assigneeId,
+          assigned_to_id:  assigneeId,
+          created_by_id:   adminId,
+          created_at:      now,
+          updated_at:      now,
+        })),
+        skipDuplicates: true, // guard against any remaining phone conflicts
+      });
+
+      // Fetch the IDs of the created leads (1 query)
+      const createdLeads = await prisma.lead.findMany({
+        where: { lead_number: { in: newLeadNumbers } },
+        select: { id: true, lead_number: true },
+      });
+      const numberToId = new Map(createdLeads.map((l) => [l.lead_number, l.id]));
+
+      // Build leadgen_id → crmLeadId for created rows
+      for (let i = 0; i < toCreate.length; i++) {
+        const leadId = numberToId.get(newLeadNumbers[i]);
+        if (leadId) {
+          newLeadIds.set(toCreate[i].row.leadgen_id.trim(), leadId);
+          // Also update phone/email maps for downstream opportunity linking
+          const norm = normalizePhone(toCreate[i].row.phone?.trim() ?? "");
+          if (norm.length >= 10) phoneMap.set(norm, leadId);
+          const em = toCreate[i].row.email?.trim().toLowerCase() || null;
+          if (em) emailMap.set(em, leadId);
         }
       }
 
-      // 5. Auto-link to Opportunity via form_id (mirrors live webhook)
-      if (formId && crmLeadId) {
-        const oppId = formOppMap.get(formId);
-        if (oppId) {
-          await prisma.metaLead.update({ where: { leadgen_id: leadgenId }, data: { opportunity_id: oppId } });
-          try {
-            await prisma.leadOpportunity.create({
-              data: {
-                lead_id:        crmLeadId,
-                opportunity_id: oppId,
-                tagged_by_id:   adminId,
-                notes:          "Auto-linked via Meta historical backfill",
-              },
-            });
-          } catch { /* unique constraint — already linked */ }
-        }
+      stats.created = createdLeads.length;
+
+      // Bulk create LeadStageHistory (1 query)
+      const historyRows = Array.from(newLeadIds.entries()).map(([, leadId]) => ({
+        lead_id:       leadId,
+        to_stage:      "New" as const,
+        changed_by_id: adminId,
+        notes:         "Created via Meta historical backfill",
+      }));
+      if (historyRows.length > 0) {
+        await prisma.leadStageHistory.createMany({ data: historyRows });
       }
+
+      // Bulk create Activity logs (1 query)
+      const activityRows = toCreate
+        .map(({ row }, i) => {
+          const leadId = newLeadIds.get(row.leadgen_id.trim());
+          if (!leadId) return null;
+          return {
+            entity_type: "Lead" as const,
+            entity_id:   leadId,
+            action:      "lead_created" as const,
+            actor_id:    adminId,
+            metadata:    { lead_number: newLeadNumbers[i], source: "meta_backfill", leadgen_id: row.leadgen_id.trim() },
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null);
+      if (activityRows.length > 0) {
+        await prisma.activity.createMany({ data: activityRows });
+      }
+    }
+
+    // ── Phase 5: Link MetaLeads → CRM leads (batched parallel, 50 at a time) ─
+
+    const metaLinks: { leadgen_id: string; crm_lead_id: string }[] = [
+      ...matched.map(({ row, crmLeadId }) => ({ leadgen_id: row.leadgen_id.trim(), crm_lead_id: crmLeadId })),
+      ...toCreate.map(({ row }) => {
+        const leadId = newLeadIds.get(row.leadgen_id.trim());
+        return leadId ? { leadgen_id: row.leadgen_id.trim(), crm_lead_id: leadId } : null;
+      }).filter(Boolean) as { leadgen_id: string; crm_lead_id: string }[],
+    ];
+
+    await batch(metaLinks, ({ leadgen_id, crm_lead_id }) =>
+      prisma.metaLead.update({ where: { leadgen_id }, data: { crm_lead_id } })
+    );
+
+    // ── Phase 6: Bulk create LeadOpportunity links (1 query) ─────────────────
+
+    type OppLink = { lead_id: string; opportunity_id: string; leadgen_id: string };
+    const oppLinks: OppLink[] = [];
+
+    const allProcessed: { leadgenId: string; crmLeadId: string }[] = [
+      ...matched.map(({ row, crmLeadId }) => ({ leadgenId: row.leadgen_id.trim(), crmLeadId })),
+      ...toCreate.map(({ row }) => {
+        const leadId = newLeadIds.get(row.leadgen_id.trim());
+        return leadId ? { leadgenId: row.leadgen_id.trim(), crmLeadId: leadId } : null;
+      }).filter(Boolean) as { leadgenId: string; crmLeadId: string }[],
+    ];
+
+    // Build a quick map of leadgenId → row for form_id lookup
+    const leadgenRowMap = new Map<string, Record<string, string>>();
+    for (const { row } of [...matched, ...toCreate]) {
+      leadgenRowMap.set(row.leadgen_id.trim(), row);
+    }
+
+    for (const { leadgenId, crmLeadId } of allProcessed) {
+      const row = leadgenRowMap.get(leadgenId);
+      const formId = row?.form_id?.trim();
+      if (!formId) continue;
+      const oppId = formOppMap.get(formId);
+      if (!oppId) continue;
+      oppLinks.push({ lead_id: crmLeadId, opportunity_id: oppId, leadgen_id: leadgenId });
+    }
+
+    if (oppLinks.length > 0) {
+      // Bulk insert opportunity links (1 query)
+      await prisma.leadOpportunity.createMany({
+        data: oppLinks.map(({ lead_id, opportunity_id }) => ({
+          lead_id,
+          opportunity_id,
+          tagged_by_id: adminId,
+          notes: "Auto-linked via Meta historical backfill",
+        })),
+        skipDuplicates: true,
+      });
+
+      // Update MetaLead.opportunity_id (batched parallel)
+      await batch(oppLinks, ({ leadgen_id, opportunity_id }) =>
+        prisma.metaLead.update({ where: { leadgen_id }, data: { opportunity_id } })
+      );
+    }
+
+    // ── Phase 7: Save round-robin state (1 upsert) ───────────────────────────
+
+    if (pool.length > 0 && toCreate.length > 0) {
+      await prisma.metaAssignmentState.upsert({
+        where:  { id: 1 },
+        create: { id: 1, last_assigned_user_id: pool[rrIndex]?.id ?? null },
+        update: {         last_assigned_user_id: pool[rrIndex]?.id ?? null },
+      });
     }
 
     return NextResponse.json(stats);
   } catch (error) {
     console.error("POST /api/admin/meta-backfill:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
