@@ -4,7 +4,14 @@ import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Upload, CheckCircle2, AlertCircle, Loader2, FileText } from "lucide-react";
-import type { BackfillResult } from "@/app/api/admin/meta-backfill/route";
+
+type BackfillResult = {
+  total: number;
+  matched: number;
+  created: number;
+  skipped: number;
+  errors: { leadgen_id: string; reason: string }[];
+};
 
 export default function MetaBackfillPage() {
   const [file, setFile] = useState<File | null>(null);
@@ -24,9 +31,17 @@ export default function MetaBackfillPage() {
 
     try {
       const res = await fetch("/api/admin/meta-backfill", { method: "POST", body: fd });
-      const json = await res.json();
+      const text = await res.text();
+      let json: BackfillResult | { error: string };
+      try {
+        json = JSON.parse(text);
+      } catch {
+        // Server returned non-JSON (HTML error page) — show first 200 chars
+        setError(`Server error ${res.status}: ${text.replace(/<[^>]+>/g, "").trim().slice(0, 200)}`);
+        return;
+      }
       if (!res.ok) {
-        setError(json.error ?? `Server error ${res.status}`);
+        setError((json as { error: string }).error ?? `Server error ${res.status}`);
         return;
       }
       setResult(json as BackfillResult);

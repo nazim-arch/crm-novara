@@ -3,9 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { generateId } from "@/lib/id-generator";
 
-export const runtime = "nodejs";
-export const maxDuration = 60;
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function normalizePhone(phone: string): string {
