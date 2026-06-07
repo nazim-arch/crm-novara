@@ -18,6 +18,7 @@ type User = { id: string; name: string };
 
 interface LeadFiltersProps {
   users: User[];
+  leadSources: string[];
   currentParams: {
     status?: string;
     temperature?: string;
@@ -29,7 +30,7 @@ interface LeadFiltersProps {
   };
 }
 
-export function LeadFilters({ users, currentParams }: LeadFiltersProps) {
+export function LeadFilters({ users, leadSources, currentParams }: LeadFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
 
@@ -154,6 +155,25 @@ export function LeadFilters({ users, currentParams }: LeadFiltersProps) {
           <SelectItem value="Junk">Junk</SelectItem>
         </SelectContent>
       </Select>
+
+      {leadSources.length > 0 && (
+        <Select
+          value={currentParams.source ?? "all"}
+          onValueChange={(v) => updateParam("source", v ?? "all")}
+        >
+          <SelectTrigger className="w-full sm:w-44">
+            <SelectValue placeholder="Lead source" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All sources</SelectItem>
+            {leadSources.map((s) => (
+              <SelectItem key={s} value={s}>
+                {s}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
 
       {hasFilters && (
         <Button

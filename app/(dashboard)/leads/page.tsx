@@ -256,7 +256,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     Object.entries(baseOrder).map(([k]) => [k, sortDir])
   ) as Prisma.LeadOrderByWithRelationInput;
 
-  const [total, leads, users] = await Promise.all([
+  const [total, leads, users, leadSourceRows] = await Promise.all([
     prisma.lead.count({ where }),
     prisma.lead.findMany({
       where,
@@ -296,6 +296,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
       where: { is_active: true },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
+    }),
+    prisma.lead.findMany({
+      where: { deleted_at: null, lead_source: { not: "" } },
+      select: { lead_source: true },
+      distinct: ["lead_source"],
+      orderBy: { lead_source: "asc" },
     }),
   ]);
 
@@ -401,6 +407,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
       {/* Filters */}
       <LeadFilters
         users={users}
+        leadSources={leadSourceRows.map((r) => r.lead_source)}
         currentParams={{
           status: sp.status,
           temperature: sp.temperature,
