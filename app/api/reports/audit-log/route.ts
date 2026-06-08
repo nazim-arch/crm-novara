@@ -73,6 +73,12 @@ function extractValues(
       return { oldValue: "—", newValue: "Attempted: WhatsApp" };
     case "attempt_email":
       return { oldValue: "—", newValue: "Attempted: Email" };
+    case "call_attempted":
+      return { oldValue: "—", newValue: "Call Attempted" };
+    case "whatsapp_opened":
+      return { oldValue: "—", newValue: "WhatsApp Opened" };
+    case "whatsapp_message_sent":
+      return { oldValue: "—", newValue: "WhatsApp Message Sent" };
     case "user_created":
       return { oldValue: "—", newValue: "User Created" };
     case "user_updated": {
@@ -103,6 +109,9 @@ function actionLabel(action: string): string {
     attempt_call: "Call Attempt",
     attempt_whatsapp: "WhatsApp Attempt",
     attempt_email: "Email Attempt",
+    call_attempted: "Call Attempted",
+    whatsapp_opened: "WhatsApp Opened",
+    whatsapp_message_sent: "WhatsApp Message Sent",
     user_created: "User Created",
     user_updated: "User Updated",
   };
@@ -122,6 +131,7 @@ export async function GET(request: Request) {
     const action = searchParams.get("action") ?? "";
     const dateFrom = searchParams.get("date_from") ?? "";
     const dateTo = searchParams.get("date_to") ?? "";
+    const recordQuery = (searchParams.get("record_query") ?? "").trim();
     const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
 
     const where: Prisma.ActivityWhereInput = {};
@@ -139,6 +149,59 @@ export async function GET(request: Request) {
       where.created_at = {};
       if (dateFrom) where.created_at.gte = new Date(dateFrom + "T00:00:00");
       if (dateTo) where.created_at.lte = new Date(dateTo + "T23:59:59");
+    }
+
+    // Record search — resolve matching entity IDs before the main query
+    if (recordQuery) {
+      const effectiveType = entityType && entityType !== "all" ? entityType : null;
+      const matchingIds: string[] = [];
+
+      if (!effectiveType || effectiveType === "Lead") {
+        const leads = await prisma.lead.findMany({
+          where: {
+            OR: [
+              { lead_number: { contains: recordQuery, mode: "insensitive" } },
+              { full_name:   { contains: recordQuery, mode: "insensitive" } },
+              { phone:       { contains: recordQuery } },
+            ],
+          },
+          select: { id: true },
+        });
+        matchingIds.push(...leads.map((l) => l.id));
+      }
+      if (!effectiveType || effectiveType === "Opportunity") {
+        const opps = await prisma.opportunity.findMany({
+          where: {
+            OR: [
+              { opp_number: { contains: recordQuery, mode: "insensitive" } },
+              { name:        { contains: recordQuery, mode: "insensitive" } },
+            ],
+          },
+          select: { id: true },
+        });
+        matchingIds.push(...opps.map((o) => o.id));
+      }
+      if (!effectiveType || effectiveType === "Task") {
+        const tasks = await prisma.task.findMany({
+          where: {
+            OR: [
+              { task_number: { contains: recordQuery, mode: "insensitive" } },
+              { title:        { contains: recordQuery, mode: "insensitive" } },
+            ],
+          },
+          select: { id: true },
+        });
+        matchingIds.push(...tasks.map((t) => t.id));
+      }
+      if (!effectiveType || effectiveType === "User") {
+        const uList = await prisma.user.findMany({
+          where: { name: { contains: recordQuery, mode: "insensitive" } },
+          select: { id: true },
+        });
+        matchingIds.push(...uList.map((u) => u.id));
+      }
+
+      where.entity_id = { in: matchingIds.length > 0 ? matchingIds : ["__no_match__"] };
     }
 
     const [activities, total] = await Promise.all([
