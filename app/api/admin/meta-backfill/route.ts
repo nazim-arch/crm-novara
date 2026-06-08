@@ -94,7 +94,7 @@ export async function POST(request: Request) {
 
     const [allLeads, existingMeta, opps, salesUsers, teamLeadUsers, adminUser, metaState] =
       await Promise.all([
-        prisma.lead.findMany({ where: { deleted_at: null }, select: { id: true, phone: true, email: true } }),
+        prisma.lead.findMany({ where: { deleted_at: null }, select: { id: true, phone: true, email: true, status: true, activity_stage: true } }),
         prisma.metaLead.findMany({ select: { leadgen_id: true, crm_lead_id: true } }),
         prisma.opportunity.findMany({
           where: { deleted_at: null, meta_form_ids: { isEmpty: false } },
@@ -334,7 +334,14 @@ export async function POST(request: Request) {
 
     // ── Phase 6: Bulk create LeadOpportunity links (1 query) ─────────────────
 
-    type OppLink = { lead_id: string; opportunity_id: string; leadgen_id: string };
+    // Build a status map for existing leads so links inherit their real stage
+    const leadStatusMap = new Map<string, { status: string; activity_stage: string }>(
+      allLeads.map((l) => [l.id, { status: l.status, activity_stage: l.activity_stage }])
+    );
+    // Newly created leads start at "New" — track their IDs to distinguish from matched
+    const newlyCreatedLeadIds = new Set(newLeadIds.values());
+
+    type OppLink = { lead_id: string; opportunity_id: string; leadgen_id: string; status: string; activity_stage: string };
     const oppLinks: OppLink[] = [];
 
     const allProcessed: { leadgenId: string; crmLeadId: string }[] = [
@@ -357,17 +364,23 @@ export async function POST(request: Request) {
       if (!formId) continue;
       const oppId = formOppMap.get(formId);
       if (!oppId) continue;
-      oppLinks.push({ lead_id: crmLeadId, opportunity_id: oppId, leadgen_id: leadgenId });
+      // New leads start at "New"; matched existing leads inherit their current stage
+      const stageSource = newlyCreatedLeadIds.has(crmLeadId)
+        ? { status: "New", activity_stage: "New" }
+        : (leadStatusMap.get(crmLeadId) ?? { status: "New", activity_stage: "New" });
+      oppLinks.push({ lead_id: crmLeadId, opportunity_id: oppId, leadgen_id: leadgenId, ...stageSource });
     }
 
     if (oppLinks.length > 0) {
       // Bulk insert opportunity links (1 query)
       await prisma.leadOpportunity.createMany({
-        data: oppLinks.map(({ lead_id, opportunity_id }) => ({
+        data: oppLinks.map(({ lead_id, opportunity_id, status, activity_stage }) => ({
           lead_id,
           opportunity_id,
-          tagged_by_id: adminId,
-          notes: "Auto-linked via Meta historical backfill",
+          tagged_by_id:   adminId,
+          notes:          "Auto-linked via Meta historical backfill",
+          status:         status         as never,
+          activity_stage: activity_stage as never,
         })),
         skipDuplicates: true,
       });
