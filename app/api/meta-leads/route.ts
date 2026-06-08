@@ -156,25 +156,33 @@ async function linkToOpportunity(data: MetaLeadData, crmLeadId: string) {
     return;
   }
 
+  // Explicit guard: if this lead is already linked to this opportunity, do nothing.
+  // Meta integration is a one-time action per lead+opportunity pair.
+  const alreadyLinked = await prisma.leadOpportunity.findUnique({
+    where: { lead_id_opportunity_id: { lead_id: crmLeadId, opportunity_id: opp.id } },
+    select: { id: true },
+  });
+  if (alreadyLinked) {
+    console.log(`[Meta webhook] Lead ${crmLeadId} already linked to opp ${opp.id} — skipping duplicate link`);
+    return;
+  }
+
   // Update MetaLead with the matched opportunity
   await prisma.metaLead.update({
     where: { leadgen_id: data.leadgen_id },
     data: { opportunity_id: opp.id },
   });
 
-  // Create the LeadOpportunity link (skip if already exists)
-  try {
-    await prisma.leadOpportunity.create({
-      data: {
-        lead_id:       crmLeadId,
-        opportunity_id: opp.id,
-        tagged_by_id:  adminId,
-        notes:         "Auto-linked via Meta Lead Ads webhook",
-      },
-    });
-  } catch {
-    // Unique constraint violation — link already exists, safe to ignore
-  }
+  // Create the LeadOpportunity link.
+  // status and activity_stage intentionally default to "New" — new opportunity tracking always starts fresh.
+  await prisma.leadOpportunity.create({
+    data: {
+      lead_id:        crmLeadId,
+      opportunity_id: opp.id,
+      tagged_by_id:   adminId,
+      notes:          "Auto-linked via Meta Lead Ads webhook",
+    },
+  });
 }
 
 async function autoImportToCRM(data: MetaLeadData): Promise<string | null> {

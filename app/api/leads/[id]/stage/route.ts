@@ -135,6 +135,34 @@ export async function POST(request: Request, { params }: { params: Params }) {
       ...(link && Object.keys(linkUpdateData).length > 0
         ? [prisma.leadOpportunity.update({ where: { id: opportunity_link_id! }, data: linkUpdateData })]
         : []),
+      // When no specific opportunity link is targeted, sync ALL linked opportunities.
+      // Prevents lo.status drifting out of sync with lead.status (e.g. bulk updates, admin actions).
+      ...(to_stage && !opportunity_link_id
+        ? [
+            prisma.leadOpportunity.updateMany({
+              where: { lead_id: id },
+              data: {
+                status: to_stage,
+                ...(lost_reason ? { lost_reason } : {}),
+                ...(lost_notes  ? { lost_notes }  : {}),
+                ...(to_stage === "Won" && settlement_value !== undefined
+                  ? { settlement_value }
+                  : { settlement_value: null }),
+                ...(to_stage === "Won" && deal_commission_percent !== undefined
+                  ? { deal_commission_percent }
+                  : { deal_commission_percent: null }),
+              },
+            }),
+          ]
+        : []),
+      ...(activity_stage && !opportunity_link_id
+        ? [
+            prisma.leadOpportunity.updateMany({
+              where: { lead_id: id },
+              data: { activity_stage },
+            }),
+          ]
+        : []),
     ]);
 
     // Fire CAPI conversion events for Meta-sourced leads (fire-and-forget)
