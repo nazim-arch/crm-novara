@@ -117,7 +117,7 @@ const tooltipStyle = {
   border: "1px solid hsl(var(--border))",
   background: "hsl(var(--popover))",
   color: "hsl(var(--popover-foreground))",
-  boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+  boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
   padding: "8px 12px",
 };
 
@@ -134,56 +134,59 @@ const PERIOD_OPTIONS = [
 
 function KpiCard({
   label, value, sub, icon: Icon,
-  iconClass = "text-muted-foreground", valueClass = "", href, urgent = false,
-  badge,
+  valueClass = "", href, urgentColor, badge,
 }: {
   label: string; value: string | number; sub?: string;
-  icon: React.ElementType; iconClass?: string; valueClass?: string;
-  href?: string; urgent?: boolean; badge?: string;
+  icon: React.ElementType; valueClass?: string;
+  href?: string; urgentColor?: "red" | "orange"; badge?: string;
 }) {
+  const border = urgentColor === "red"
+    ? "border-l-2 border-l-red-500"
+    : urgentColor === "orange"
+    ? "border-l-2 border-l-orange-400"
+    : "";
+
   const inner = (
-    <CardContent className="pt-4">
-      <div className="flex items-start justify-between">
-        <div className="min-w-0 flex-1">
-          <p className="text-xs text-muted-foreground mb-1 truncate">{label}</p>
-          <div className="flex items-baseline gap-2">
-            <p className={`text-2xl font-bold leading-none ${valueClass}`}>{value}</p>
-            {badge && (
-              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
-                {badge}
-              </span>
-            )}
-          </div>
-          {sub && <p className="text-xs text-muted-foreground mt-1 truncate">{sub}</p>}
-        </div>
-        <div className={`p-2 rounded-lg bg-muted/40 shrink-0 ml-2 ${iconClass}`}>
-          <Icon className="h-5 w-5" />
-        </div>
+    <div className="p-5">
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide leading-none">{label}</p>
+        <Icon className="h-4 w-4 text-muted-foreground/40 shrink-0" />
       </div>
-    </CardContent>
+      <div className="flex items-baseline gap-2">
+        <p className={`text-3xl font-bold tabular-nums leading-none ${valueClass}`}>{value}</p>
+        {badge && (
+          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
+            {badge}
+          </span>
+        )}
+      </div>
+      {sub && <p className="text-[11px] text-muted-foreground/70 mt-1.5 truncate">{sub}</p>}
+    </div>
   );
 
   if (href) {
     return (
-      <Card className={`hover:shadow-md transition-shadow cursor-pointer ${urgent ? "border-destructive/30 bg-destructive/5" : ""}`}>
+      <Card className={`hover:shadow-sm transition-shadow cursor-pointer ${border}`}>
         <Link href={href} className="block">{inner}</Link>
       </Card>
     );
   }
-  return <Card className={urgent ? "border-destructive/30 bg-destructive/5" : ""}>{inner}</Card>;
+  return <Card className={border}>{inner}</Card>;
 }
 
 function TempBadge({ temp }: { temp: string | null }) {
-  const map: Record<string, string> = {
-    Hot: "bg-red-100 text-red-700 border-red-200",
-    Warm: "bg-orange-100 text-orange-700 border-orange-200",
-    Cold: "bg-blue-100 text-blue-700 border-blue-200",
-    FollowUpLater: "bg-purple-100 text-purple-700 border-purple-200",
+  const map: Record<string, { dot: string; text: string; label: string }> = {
+    Hot:           { dot: "bg-red-500",    text: "text-red-600",    label: "Hot" },
+    Warm:          { dot: "bg-orange-400", text: "text-orange-600", label: "Warm" },
+    Cold:          { dot: "bg-blue-400",   text: "text-blue-600",   label: "Cold" },
+    FollowUpLater: { dot: "bg-purple-400", text: "text-purple-600", label: "Later" },
   };
   if (!temp) return null;
+  const s = map[temp] ?? { dot: "bg-muted-foreground", text: "text-muted-foreground", label: temp };
   return (
-    <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${map[temp] ?? "bg-muted text-muted-foreground"}`}>
-      {temp === "Hot" ? "🔥" : temp === "Warm" ? "☀️" : temp === "Cold" ? "❄️" : "🔔"} {temp}
+    <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${s.text}`}>
+      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${s.dot}`} />
+      {s.label}
     </span>
   );
 }
@@ -303,8 +306,8 @@ export function SalesDashboardClient({
 
       {/* ── PERIOD OVERVIEW ───────────────────────────────────────────────── */}
       <section>
-        <div className="flex items-baseline justify-between mb-3">
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+        <div className="flex items-baseline justify-between pb-3 border-b mb-4">
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             Period Overview
           </h2>
           <span className="text-xs text-muted-foreground font-medium">{rangeLabel}</span>
@@ -321,7 +324,6 @@ export function SalesDashboardClient({
             value={periodKpis.actioned}
             sub="Had meaningful update"
             icon={CheckCircle2}
-            iconClass={periodKpis.actioned > 0 ? "text-green-600" : "text-muted-foreground"}
             valueClass={periodKpis.actioned > 0 ? "text-green-600" : ""}
             href={`/leads?filter=actioned&period=${currentPeriod}${currentFrom ? `&from=${currentFrom}` : ""}${currentTo ? `&to=${currentTo}` : ""}`}
           />
@@ -330,10 +332,9 @@ export function SalesDashboardClient({
             value={periodKpis.notActioned}
             sub="Created but untouched"
             icon={XCircle}
-            iconClass={periodKpis.notActioned > 0 ? "text-amber-600" : "text-muted-foreground"}
             valueClass={periodKpis.notActioned > 0 ? "text-amber-600" : ""}
             href={`/leads?filter=pending_action&period=${currentPeriod}${currentFrom ? `&from=${currentFrom}` : ""}${currentTo ? `&to=${currentTo}` : ""}`}
-            urgent={periodKpis.notActioned > 0 && periodKpis.received > 0 && periodKpis.responseRate < 50}
+            urgentColor={periodKpis.notActioned > 0 && periodKpis.received > 0 && periodKpis.responseRate < 50 ? "orange" : undefined}
           />
           <KpiCard
             label="Response Rate"
@@ -341,14 +342,12 @@ export function SalesDashboardClient({
             sub={`${periodKpis.actioned} of ${periodKpis.received} actioned`}
             icon={TrendingUp}
             valueClass={rateColor}
-            iconClass={rateColor}
           />
           <KpiCard
             label="Deals Won"
             value={periodKpis.wonInPeriod}
             sub="Won this period"
             icon={Trophy}
-            iconClass={periodKpis.wonInPeriod > 0 ? "text-yellow-600" : "text-muted-foreground"}
             valueClass={periodKpis.wonInPeriod > 0 ? "text-yellow-600" : ""}
             href="/leads?status=Won"
           />
@@ -357,44 +356,45 @@ export function SalesDashboardClient({
 
       {/* ── LIVE RIGHT NOW ────────────────────────────────────────────────── */}
       <section>
-        <div className="flex items-baseline justify-between mb-3">
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+        <div className="flex items-baseline justify-between pb-3 border-b mb-4">
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             Live Right Now
           </h2>
           <span className="text-xs text-muted-foreground">Always today&apos;s view</span>
         </div>
+
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60 mb-2">
+          Action Alerts
+        </p>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           <KpiCard
             label="To Action Today"
             value={liveKpis.toActionToday}
             sub="Overdue + pending + new"
             icon={Zap}
-            iconClass={liveKpis.toActionToday > 0 ? "text-orange-600" : "text-muted-foreground"}
             valueClass={liveKpis.toActionToday > 0 ? "text-orange-600" : ""}
             href="/leads?filter=to_action_today"
-            urgent={liveKpis.toActionToday > 0}
+            urgentColor={liveKpis.toActionToday > 0 ? "orange" : undefined}
           />
           <KpiCard
             label="Overdue Follow-ups"
             value={liveKpis.overdueFollowUps}
             icon={AlertTriangle}
-            iconClass={liveKpis.overdueFollowUps > 0 ? "text-destructive" : "text-muted-foreground"}
             valueClass={liveKpis.overdueFollowUps > 0 ? "text-destructive" : ""}
             href="/leads?filter=overdue_followup"
-            urgent={liveKpis.overdueFollowUps > 0}
+            urgentColor={liveKpis.overdueFollowUps > 0 ? "red" : undefined}
           />
           <KpiCard
             label="Today's Follow-ups"
             value={liveKpis.todayFollowUps}
             icon={CalendarClock}
-            iconClass={liveKpis.todayFollowUps > 0 ? "text-green-600" : "text-muted-foreground"}
+            valueClass={liveKpis.todayFollowUps > 0 ? "text-green-600" : ""}
             href="/follow-ups"
           />
           <KpiCard
             label="Hot Leads"
             value={liveKpis.hotLeads}
             icon={Flame}
-            iconClass="text-red-500"
             valueClass="text-red-600"
             href="/leads?temperature=Hot"
           />
@@ -403,32 +403,47 @@ export function SalesDashboardClient({
             value={liveKpis.pendingFirstAction}
             sub="New — never touched"
             icon={Eye}
-            iconClass={liveKpis.pendingFirstAction > 0 ? "text-yellow-600" : "text-muted-foreground"}
-            valueClass={liveKpis.pendingFirstAction > 0 ? "text-yellow-600" : ""}
+            valueClass={liveKpis.pendingFirstAction > 0 ? "text-amber-600" : ""}
             href="/leads?filter=pending_action"
           />
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
-          <KpiCard label="Warm Leads" value={liveKpis.warmLeads} icon={Thermometer}
-            iconClass="text-orange-500" href="/leads?temperature=Warm" />
-          <KpiCard label="Cold Leads" value={liveKpis.coldLeads} icon={Snowflake}
-            iconClass="text-blue-500" href="/leads?temperature=Cold" />
+
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60 mt-5 mb-2">
+          Pipeline Health
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <KpiCard
+            label="Warm Leads"
+            value={liveKpis.warmLeads}
+            icon={Thermometer}
+            valueClass={liveKpis.warmLeads > 0 ? "text-orange-600" : ""}
+            href="/leads?temperature=Warm"
+          />
+          <KpiCard
+            label="Cold Leads"
+            value={liveKpis.coldLeads}
+            icon={Snowflake}
+            valueClass={liveKpis.coldLeads > 0 ? "text-blue-600" : ""}
+            href="/leads?temperature=Cold"
+          />
           <KpiCard
             label={`Stale (${staleDays}d+)`}
             value={liveKpis.staleLeads}
             icon={Clock}
-            iconClass={liveKpis.staleLeads > 0 ? "text-amber-600" : "text-muted-foreground"}
             valueClass={liveKpis.staleLeads > 0 ? "text-amber-600" : ""}
             href={`/leads?filter=stale&stale_days=${staleDays}`}
           />
-          <KpiCard label="No Activity" value={liveKpis.noActivityLeads} icon={XCircle}
-            iconClass="text-muted-foreground" href="/leads?filter=no_activity" />
+          <KpiCard
+            label="No Activity"
+            value={liveKpis.noActivityLeads}
+            icon={XCircle}
+            href="/leads?filter=no_activity"
+          />
           <KpiCard
             label="No FU Scheduled"
             value={liveKpis.noFollowUpCount}
             sub="Active, no next date set"
             icon={BellOff}
-            iconClass={liveKpis.noFollowUpCount > 0 ? "text-amber-500" : "text-muted-foreground"}
             valueClass={liveKpis.noFollowUpCount > 0 ? "text-amber-600" : ""}
             href="/leads?filter=no_followup"
           />
@@ -438,18 +453,18 @@ export function SalesDashboardClient({
       {/* ── SMART INSIGHTS ───────────────────────────────────────────────── */}
       {insights.length > 0 && (
         <section>
-          <Card className="border-amber-200 bg-amber-50/50 dark:bg-amber-950/10 dark:border-amber-900/30">
+          <Card className="border-border bg-muted/20">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2 text-amber-700 dark:text-amber-400">
-                <Lightbulb className="h-4 w-4" />
-                Smart Insights — {rangeLabel}
+              <CardTitle className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                <Lightbulb className="h-3.5 w-3.5" />
+                Insights — {rangeLabel}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 {insights.map((insight, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-amber-800 dark:text-amber-300">
-                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />
+                  <li key={i} className="flex items-start gap-2 text-sm text-foreground/80">
+                    <span className="mt-1.5 h-1 w-1 rounded-full bg-muted-foreground/40 shrink-0" />
                     {insight}
                   </li>
                 ))}
@@ -461,9 +476,11 @@ export function SalesDashboardClient({
 
       {/* ── TODAY'S ACTION QUEUE ─────────────────────────────────────────── */}
       <section>
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-          Today&apos;s Action Queue
-        </h2>
+        <div className="flex items-baseline justify-between pb-3 border-b mb-4">
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+            Today&apos;s Action Queue
+          </h2>
+        </div>
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
@@ -472,7 +489,7 @@ export function SalesDashboardClient({
                 Priority Actions
                 <Badge variant="secondary">{actionQueue.length}</Badge>
               </CardTitle>
-              <Link href="/leads?filter=to_action_today" className="text-xs text-primary hover:underline">
+              <Link href="/leads?filter=to_action_today" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
                 View all →
               </Link>
             </div>
@@ -480,65 +497,66 @@ export function SalesDashboardClient({
           <CardContent className="p-0">
             {actionQueue.length === 0 ? (
               <p className="text-sm text-muted-foreground py-6 text-center">
-                🎉 No urgent actions today — great work!
+                All clear — no urgent actions today.
               </p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b bg-muted/30 text-xs text-muted-foreground">
-                      <th className="text-left px-4 py-2">Lead</th>
-                      <th className="text-left px-3 py-2">Temp</th>
-                      <th className="text-left px-3 py-2 hidden md:table-cell">Source</th>
-                      <th className="text-left px-3 py-2 hidden lg:table-cell">Opportunity</th>
-                      <th className="text-left px-3 py-2 hidden md:table-cell">Owner</th>
-                      <th className="text-left px-3 py-2">Follow-up</th>
-                      <th className="text-left px-3 py-2 hidden lg:table-cell">Stage</th>
-                      <th className="px-4 py-2">Actions</th>
+                    <tr className="border-b text-[10px] uppercase tracking-widest text-muted-foreground/60">
+                      <th className="text-left px-4 py-2.5 font-medium">Lead</th>
+                      <th className="text-left px-3 py-2.5 font-medium">Temp</th>
+                      <th className="text-left px-3 py-2.5 font-medium hidden md:table-cell">Source</th>
+                      <th className="text-left px-3 py-2.5 font-medium hidden lg:table-cell">Opportunity</th>
+                      <th className="text-left px-3 py-2.5 font-medium hidden md:table-cell">Owner</th>
+                      <th className="text-left px-3 py-2.5 font-medium">Follow-up</th>
+                      <th className="text-left px-3 py-2.5 font-medium hidden lg:table-cell">Stage</th>
+                      <th className="px-4 py-2.5" />
                     </tr>
                   </thead>
                   <tbody>
                     {actionQueue.map((lead) => {
                       const isOverdue = lead.next_followup_date && new Date(lead.next_followup_date) < new Date();
                       return (
-                        <tr key={lead.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
-                          <td className="px-4 py-2.5">
+                        <tr key={lead.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                          <td className="px-4 py-3">
                             <Link href={`/leads/${lead.id}`} className="hover:underline">
                               <p className="font-medium text-sm leading-tight">{lead.full_name}</p>
-                              <p className="text-[10px] text-muted-foreground font-mono">{lead.lead_number}</p>
+                              <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{lead.lead_number}</p>
                               {lead.phone && <p className="text-[10px] text-muted-foreground">{lead.phone}</p>}
                             </Link>
                           </td>
-                          <td className="px-3 py-2.5"><TempBadge temp={lead.temperature} /></td>
-                          <td className="px-3 py-2.5 hidden md:table-cell text-xs text-muted-foreground">
+                          <td className="px-3 py-3"><TempBadge temp={lead.temperature} /></td>
+                          <td className="px-3 py-3 hidden md:table-cell text-xs text-muted-foreground">
                             {lead.lead_source ?? "—"}
                           </td>
-                          <td className="px-3 py-2.5 hidden lg:table-cell text-xs">
+                          <td className="px-3 py-3 hidden lg:table-cell text-xs">
                             {lead.opportunity_name ? (
                               <Link href={`/opportunities/${lead.opportunity_id}`}
-                                className="text-primary hover:underline truncate block max-w-[120px]">
+                                className="text-foreground hover:underline truncate block max-w-[120px]">
                                 {lead.opportunity_name}
                               </Link>
                             ) : "—"}
                           </td>
-                          <td className="px-3 py-2.5 hidden md:table-cell text-xs text-muted-foreground">
+                          <td className="px-3 py-3 hidden md:table-cell text-xs text-muted-foreground">
                             {lead.assigned_to_name}
                           </td>
-                          <td className="px-3 py-2.5">
+                          <td className="px-3 py-3">
                             {lead.next_followup_date ? (
-                              <span className={`text-xs font-medium ${isOverdue ? "text-destructive" : "text-muted-foreground"}`}>
-                                {isOverdue ? "⚠ " : ""}{formatShortDate(lead.next_followup_date)}
+                              <span className={`text-xs font-medium flex items-center gap-1 ${isOverdue ? "text-destructive" : "text-muted-foreground"}`}>
+                                {isOverdue && <span className="inline-block h-1.5 w-1.5 rounded-full bg-destructive shrink-0" />}
+                                {formatShortDate(lead.next_followup_date)}
                               </span>
                             ) : (
-                              <span className="text-xs text-muted-foreground italic">Not set</span>
+                              <span className="text-xs text-muted-foreground/60">Not set</span>
                             )}
                           </td>
-                          <td className="px-3 py-2.5 hidden lg:table-cell">
-                            <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
+                          <td className="px-3 py-3 hidden lg:table-cell">
+                            <span className="text-[10px] bg-muted/60 px-1.5 py-0.5 rounded text-muted-foreground">
                               {lead.activity_stage ?? lead.status}
                             </span>
                           </td>
-                          <td className="px-4 py-2.5">
+                          <td className="px-4 py-3">
                             <div className="flex items-center gap-1">
                               <LeadContactActions
                                 leadId={lead.id}
@@ -566,18 +584,20 @@ export function SalesDashboardClient({
 
       {/* ── CHARTS: FUNNEL + OPPORTUNITIES + SOURCE ───────────────────────── */}
       <section>
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-          Lead Intelligence
-        </h2>
+        <div className="flex items-baseline justify-between pb-3 border-b mb-4">
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+            Lead Intelligence
+          </h2>
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
           {/* Pipeline Funnel */}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <BarChart3 className="h-4 w-4" />
+                <BarChart3 className="h-4 w-4 text-muted-foreground/60" />
                 Pipeline Funnel
-                <span className="text-xs text-muted-foreground ml-1">(all-time)</span>
+                <span className="text-xs text-muted-foreground font-normal ml-1">all-time</span>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -593,13 +613,13 @@ export function SalesDashboardClient({
                         <span className="w-24 text-xs text-muted-foreground shrink-0 group-hover:text-foreground transition-colors">
                           {STAGE_LABELS[s.stage] ?? s.stage}
                         </span>
-                        <div className="flex-1 h-5 bg-muted/40 rounded overflow-hidden">
+                        <div className="flex-1 h-4 bg-muted/40 rounded overflow-hidden">
                           <div
-                            className="h-full bg-primary/70 group-hover:bg-primary transition-colors rounded"
+                            className="h-full bg-primary/60 group-hover:bg-primary/80 transition-colors rounded"
                             style={{ width: `${pct}%` }}
                           />
                         </div>
-                        <span className="w-8 text-right font-semibold text-xs">{s.count}</span>
+                        <span className="w-8 text-right font-semibold text-xs tabular-nums">{s.count}</span>
                       </div>
                     </Link>
                   );
@@ -613,7 +633,7 @@ export function SalesDashboardClient({
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium">Leads by Opportunity</CardTitle>
-                <Link href="/opportunities" className="text-xs text-primary hover:underline">All</Link>
+                <Link href="/opportunities" className="text-xs text-muted-foreground hover:text-foreground transition-colors">All →</Link>
               </div>
             </CardHeader>
             <CardContent>
@@ -641,7 +661,7 @@ export function SalesDashboardClient({
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium">
-                Source — <span className="font-normal text-muted-foreground">{rangeLabel}</span>
+                Source <span className="font-normal text-muted-foreground text-xs">— {rangeLabel}</span>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -677,9 +697,9 @@ export function SalesDashboardClient({
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <UserCheck className="h-4 w-4" />
+                <UserCheck className="h-4 w-4 text-muted-foreground/60" />
                 Sales Owner Load
-                <span className="text-xs text-muted-foreground ml-1">(active leads)</span>
+                <span className="text-xs text-muted-foreground font-normal ml-1">active leads</span>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -693,14 +713,14 @@ export function SalesDashboardClient({
                     return (
                       <Link key={owner.id} href={`/leads?assigned_to=${owner.id}`} className="group block">
                         <div className="flex items-center gap-2">
-                          <span className="w-32 text-xs truncate group-hover:text-primary transition-colors">{owner.name}</span>
-                          <div className="flex-1 h-5 bg-muted/40 rounded overflow-hidden">
+                          <span className="w-32 text-xs truncate text-muted-foreground group-hover:text-foreground transition-colors">{owner.name}</span>
+                          <div className="flex-1 h-4 bg-muted/40 rounded overflow-hidden">
                             <div
-                              className="h-full bg-green-500/70 group-hover:bg-green-500 transition-colors rounded"
+                              className="h-full bg-emerald-500/60 group-hover:bg-emerald-500/80 transition-colors rounded"
                               style={{ width: `${pct}%` }}
                             />
                           </div>
-                          <span className="w-8 text-right font-semibold text-xs">{owner.count}</span>
+                          <span className="w-8 text-right font-semibold text-xs tabular-nums">{owner.count}</span>
                         </div>
                       </Link>
                     );
@@ -730,13 +750,13 @@ export function SalesDashboardClient({
                   >
                     {tempData.map((entry, i) => (
                       <Cell key={i} fill={entry.color}
-                        opacity={activePieIndex === undefined || activePieIndex === i ? 1 : 0.45}
+                        opacity={activePieIndex === undefined || activePieIndex === i ? 1 : 0.35}
                         style={{ transition: "opacity 0.15s ease" }}
                       />
                     ))}
                   </Pie>
                   <Tooltip contentStyle={tooltipStyle} formatter={(v) => [v, "Leads"]} />
-                  <Legend iconSize={10} wrapperStyle={{ fontSize: 12 }} />
+                  <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
                 </PieChart>
               </ResponsiveContainer>
             </CardContent>
@@ -746,9 +766,11 @@ export function SalesDashboardClient({
 
       {/* ── TODAY'S FOCUS ────────────────────────────────────────────────── */}
       <section>
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-          Today&apos;s Focus
-        </h2>
+        <div className="flex items-baseline justify-between pb-3 border-b mb-4">
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+            Today&apos;s Focus
+          </h2>
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
           <Card>
@@ -761,29 +783,29 @@ export function SalesDashboardClient({
             </CardHeader>
             <CardContent>
               {todayLeads.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-2">No follow-ups scheduled for today</p>
+                <p className="text-sm text-muted-foreground py-2">No follow-ups scheduled for today.</p>
               ) : (
-                <div className="space-y-1.5">
+                <div className="space-y-1">
                   {todayLeads.slice(0, 8).map((l) => (
                     <Link key={l.id} href={`/leads/${l.id}`}
-                      className="flex items-start justify-between gap-2 p-2 rounded-lg hover:bg-muted/30 transition-colors border border-transparent hover:border-border"
+                      className="flex items-start justify-between gap-2 px-2 py-2 rounded-lg hover:bg-muted/40 transition-colors"
                     >
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">{l.full_name}</p>
-                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <div className="flex items-center gap-2 mt-0.5">
                           <span className="text-[10px] text-muted-foreground font-mono">{l.lead_number}</span>
                           <TempBadge temp={l.temperature} />
                         </div>
                         <p className="text-[10px] text-muted-foreground mt-0.5">{l.assigned_to_name}</p>
                       </div>
                       {l.potential_lead_value ? (
-                        <span className="text-xs font-medium text-primary whitespace-nowrap shrink-0">{fc(l.potential_lead_value)}</span>
+                        <span className="text-xs font-medium text-foreground/70 whitespace-nowrap shrink-0 tabular-nums">{fc(l.potential_lead_value)}</span>
                       ) : null}
                     </Link>
                   ))}
                   {todayLeads.length > 8 && (
-                    <Link href="/follow-ups" className="block text-xs text-center text-primary py-1 hover:underline">
-                      +{todayLeads.length - 8} more → View All
+                    <Link href="/follow-ups" className="block text-xs text-center text-muted-foreground py-1.5 hover:text-foreground transition-colors">
+                      +{todayLeads.length - 8} more — View All
                     </Link>
                   )}
                 </div>
@@ -801,30 +823,30 @@ export function SalesDashboardClient({
             </CardHeader>
             <CardContent>
               {overdueLeads.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-2">No overdue follow-ups 🎉</p>
+                <p className="text-sm text-muted-foreground py-2">No overdue follow-ups.</p>
               ) : (
-                <div className="space-y-1.5">
+                <div className="space-y-1">
                   {overdueLeads.slice(0, 7).map((l) => (
                     <Link key={l.id} href={`/leads/${l.id}`}
-                      className="flex items-start justify-between gap-2 p-2 rounded-lg hover:bg-red-50/50 dark:hover:bg-red-950/20 transition-colors border border-transparent hover:border-red-200"
+                      className="flex items-start justify-between gap-2 px-2 py-2 rounded-lg hover:bg-destructive/5 transition-colors"
                     >
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">{l.full_name}</p>
-                        <div className="flex items-center gap-1.5 mt-0.5">
+                        <div className="flex items-center gap-2 mt-0.5">
                           <TempBadge temp={l.temperature} />
                           <span className="text-[10px] text-destructive font-medium">{l.days_overdue}d overdue</span>
                         </div>
                         <p className="text-[10px] text-muted-foreground mt-0.5">{l.assigned_to_name}</p>
                       </div>
                       {l.potential_lead_value ? (
-                        <span className="text-xs font-medium text-primary whitespace-nowrap shrink-0">{fc(l.potential_lead_value)}</span>
+                        <span className="text-xs font-medium text-foreground/70 whitespace-nowrap shrink-0 tabular-nums">{fc(l.potential_lead_value)}</span>
                       ) : null}
                     </Link>
                   ))}
                   {overdueLeads.length > 7 && (
                     <Link href="/leads?filter=overdue_followup"
-                      className="block text-xs text-center text-destructive py-1 hover:underline">
-                      +{overdueLeads.length - 7} more → View All
+                      className="block text-xs text-center text-destructive/70 py-1.5 hover:text-destructive transition-colors">
+                      +{overdueLeads.length - 7} more — View All
                     </Link>
                   )}
                 </div>
