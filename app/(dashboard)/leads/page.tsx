@@ -12,7 +12,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, X, CheckCircle2, AlertCircle } from "lucide-react";
+import { Plus, X, CheckCircle2, AlertCircle, Users as UsersIcon } from "lucide-react";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { EmptyState } from "@/components/ui/empty-state";
 import type { Prisma, PropertyType } from "@/lib/generated/prisma/client";
 import { LeadFilters } from "@/components/leads/LeadFilters";
 import { LeadImportModal } from "@/components/leads/LeadImportModal";
@@ -372,22 +374,21 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
 
   return (
     <div className="p-3 sm:p-6 space-y-3 sm:space-y-4">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <h1 className="text-lg sm:text-xl font-semibold">Leads</h1>
-          <p className="text-xs sm:text-sm text-muted-foreground">{total} leads</p>
-        </div>
-        <div className="flex items-center gap-1.5 flex-wrap justify-end">
-          {canExport && <ExportButton href="/api/leads/export" filename="leads.xlsx" />}
-          {canImport && <LeadImportModal />}
-          {canImport && <LeadUpdateModal />}
-          <Button render={<Link href="/leads/new" />} size="sm">
-            <Plus className="h-4 w-4 sm:mr-1" />
-            <span className="hidden sm:inline">New Lead</span>
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Leads"
+        description={`${total} leads`}
+        actions={
+          <>
+            {canExport && <ExportButton href="/api/leads/export" filename="leads.xlsx" />}
+            {canImport && <LeadImportModal />}
+            {canImport && <LeadUpdateModal />}
+            <Button render={<Link href="/leads/new" />} size="sm">
+              <Plus className="h-4 w-4 sm:mr-1" />
+              <span className="hidden sm:inline">New Lead</span>
+            </Button>
+          </>
+        }
+      />
 
       {/* Active special filter banner */}
       {activeFilterLabel && (
@@ -422,7 +423,18 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
       {/* Mobile card view */}
       <div className="md:hidden space-y-2">
         {rows.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground text-sm">No leads found</div>
+          <div className="rounded-xl border bg-card">
+            <EmptyState
+              icon={UsersIcon}
+              title="No leads found"
+              description="Try adjusting your filters, or add a new lead to get started."
+              action={
+                <Button render={<Link href="/leads/new" />} size="sm" variant="outline">
+                  <Plus className="h-4 w-4 mr-1" /> New Lead
+                </Button>
+              }
+            />
+          </div>
         ) : (
           rows.map((row) => (
             <div key={row.row_key} className="rounded-xl border bg-card p-3 space-y-2.5 shadow-sm">
@@ -575,9 +587,18 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
           </TableHeader>
           <TableBody>
             {rows.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={13} className="text-center py-12 text-muted-foreground">
-                  No leads found
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={13}>
+                  <EmptyState
+                    icon={UsersIcon}
+                    title="No leads found"
+                    description="Try adjusting your filters, or add a new lead to get started."
+                    action={
+                      <Button render={<Link href="/leads/new" />} size="sm" variant="outline">
+                        <Plus className="h-4 w-4 mr-1" /> New Lead
+                      </Button>
+                    }
+                  />
                 </TableCell>
               </TableRow>
             ) : (

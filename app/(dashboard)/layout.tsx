@@ -35,7 +35,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <NotificationBell />
             <DropdownMenu>
               <DropdownMenuTrigger>
-                <Avatar className="h-8 w-8 cursor-pointer">
+                <Avatar className="h-8 w-8 cursor-pointer ring-offset-background transition-shadow hover:ring-2 hover:ring-ring/40">
                   <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
                     {initials}
                   </AvatarFallback>

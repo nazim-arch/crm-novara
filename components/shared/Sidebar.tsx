@@ -11,7 +11,6 @@ import {
   Settings, LayoutDashboard, Radar, Menu, Briefcase, Mic2, SlidersHorizontal,
   TrendingUp, FileText, ShieldCheck, Target, ClipboardCheck, CalendarDays, History, Activity, BrainCircuit,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 
 type NavChild = { href: string; label: string; tab: string; roles: string[] };
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; roles: string[]; tab?: string; children?: NavChild[] };
@@ -123,10 +122,10 @@ function SidebarNav({ role, onNavigate }: NavProps) {
                   href={item.href}
                   onClick={onNavigate}
                   className={cn(
-                    "flex items-center gap-2.5 px-2 py-2 rounded-md text-sm transition-colors",
+                    "relative flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
                     isActive
-                      ? "bg-primary/10 text-primary font-medium"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-4 before:w-0.5 before:rounded-full before:bg-primary"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted active:bg-muted/80"
                   )}
                 >
                   <Icon className="h-4 w-4 shrink-0" />
@@ -165,17 +164,17 @@ function SidebarNav({ role, onNavigate }: NavProps) {
 
 const Logo = () => (
   <div className="flex items-center gap-2">
-    <div className="w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm">
+    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground flex items-center justify-center font-bold text-sm shadow-sm">
       D
     </div>
-    <span className="font-semibold text-sm">DealStack</span>
+    <span className="font-semibold text-sm tracking-tight">DealStack</span>
   </div>
 );
 
 // ── Desktop sidebar (hidden on mobile) ───────────────────────────────────────
 export function Sidebar({ role }: { role: string }) {
   return (
-    <aside className="hidden md:flex w-56 shrink-0 border-r bg-card flex-col h-full">
+    <aside className="hidden md:flex w-56 shrink-0 border-r bg-sidebar flex-col h-full">
       <div className="h-14 flex items-center px-4 border-b">
         <Logo />
       </div>

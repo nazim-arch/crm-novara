@@ -12,6 +12,9 @@ import {
 } from "@/components/ui/table";
 import { Plus, Building2 } from "lucide-react";
 import { hasPermissionAsync } from "@/lib/rbac";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { EmptyState } from "@/components/ui/empty-state";
+import { OpportunityStatusBadge } from "@/components/shared/LeadStatusBadge";
 import { ExportButton } from "@/components/shared/ExportButton";
 import { SortableHeader } from "@/components/shared/SortableHeader";
 import { ColumnFilterHeader } from "@/components/shared/ColumnFilterHeader";
@@ -112,30 +115,33 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
 
   return (
     <div className="p-3 sm:p-6 space-y-3 sm:space-y-4">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <h1 className="text-lg sm:text-xl font-semibold">Opportunities</h1>
-          <p className="text-xs sm:text-sm text-muted-foreground">{total} total</p>
-        </div>
-        <div className="flex items-center gap-1.5">
-          {canExport && <ExportButton href="/api/opportunities/export" filename="opportunities.xlsx" />}
-          {canCreate && (
-            <Button render={<Link href="/opportunities/new" />} size="sm">
-              <Plus className="h-4 w-4 sm:mr-1" />
-              <span className="hidden sm:inline">New Opportunity</span>
-            </Button>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Opportunities"
+        description={`${total} total`}
+        actions={
+          <>
+            {canExport && <ExportButton href="/api/opportunities/export" filename="opportunities.xlsx" />}
+            {canCreate && (
+              <Button render={<Link href="/opportunities/new" />} size="sm">
+                <Plus className="h-4 w-4 sm:mr-1" />
+                <span className="hidden sm:inline">New Opportunity</span>
+              </Button>
+            )}
+          </>
+        }
+      />
 
       <OppFilters currentSearch={sp.search} currentStatus={sp.status} />
 
       {/* Mobile card view */}
       <div className="md:hidden space-y-2">
         {opportunities.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground text-sm">
-            <Building2 className="h-8 w-8 mx-auto mb-2 opacity-30" />
-            No opportunities yet
+          <div className="rounded-xl border bg-card">
+            <EmptyState
+              icon={Building2}
+              title="No opportunities yet"
+              description="Create your first opportunity to start tracking deals."
+            />
           </div>
         ) : (
           opportunities.map((opp) => (
@@ -148,12 +154,8 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
                   <p className="text-xs text-muted-foreground truncate">{opp.project}</p>
                   <span className="text-[11px] text-muted-foreground font-mono">{opp.opp_number}</span>
                 </div>
-                <span className={`shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                  opp.status === "Active" ? "bg-green-100 text-green-700"
-                  : opp.status === "Sold" ? "bg-blue-100 text-blue-700"
-                  : "bg-gray-100 text-gray-600"
-                }`}>
-                  {opp.status}
+                <span className="shrink-0">
+                  <OpportunityStatusBadge status={opp.status} />
                 </span>
               </div>
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -214,10 +216,13 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
           </TableHeader>
           <TableBody>
             {opportunities.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={canViewFinancials ? 9 : 7} className="text-center py-12 text-muted-foreground">
-                  <Building2 className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                  No opportunities yet
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={canViewFinancials ? 9 : 7}>
+                  <EmptyState
+                    icon={Building2}
+                    title="No opportunities yet"
+                    description="Create your first opportunity to start tracking deals."
+                  />
                 </TableCell>
               </TableRow>
             ) : (
@@ -241,13 +246,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
                   )}
                   <TableCell className="text-sm">{opp._count.leads}</TableCell>
                   <TableCell>
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                      opp.status === "Active" ? "bg-green-100 text-green-700"
-                      : opp.status === "Sold" ? "bg-blue-100 text-blue-700"
-                      : "bg-gray-100 text-gray-600"
-                    }`}>
-                      {opp.status}
-                    </span>
+                    <OpportunityStatusBadge status={opp.status} />
                   </TableCell>
                 </TableRow>
               ))

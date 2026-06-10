@@ -7,6 +7,7 @@ import { KanbanBoard } from "@/components/tasks/KanbanBoard";
 import { Plus, List, LayoutGrid } from "lucide-react";
 import { hasPermissionAsync, taskScopeFilter } from "@/lib/rbac";
 import { ExportButton } from "@/components/shared/ExportButton";
+import { PageHeader } from "@/components/shared/PageHeader";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
 type SearchParams = Promise<{ view?: string }>;
@@ -53,35 +54,37 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
 
   return (
     <div className="p-3 sm:p-6 space-y-3 sm:space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <h1 className="text-lg sm:text-xl font-semibold">Tasks</h1>
-          <p className="text-xs sm:text-sm text-muted-foreground">{tasks.length} tasks</p>
-        </div>
-        <div className="flex gap-1.5 items-center">
-          <div className="flex border rounded-md overflow-hidden">
-            <Link
-              href="/tasks?view=list"
-              className={`p-2 ${view === "list" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
-            >
-              <List className="h-4 w-4" />
-            </Link>
-            <Link
-              href="/tasks?view=kanban"
-              className={`p-2 ${view === "kanban" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </Link>
-          </div>
-          {canExport && <ExportButton href="/api/tasks/export" filename="tasks.xlsx" />}
-          {canCreate && (
-            <Button render={<Link href="/tasks/new" />} size="sm">
-              <Plus className="h-4 w-4 sm:mr-1" />
-              <span className="hidden sm:inline">New Task</span>
-            </Button>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Tasks"
+        description={`${tasks.length} tasks`}
+        actions={
+          <>
+            <div className="flex border rounded-lg overflow-hidden" role="group" aria-label="View mode">
+              <Link
+                href="/tasks?view=list"
+                aria-label="List view"
+                className={`p-2 transition-colors ${view === "list" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+              >
+                <List className="h-4 w-4" />
+              </Link>
+              <Link
+                href="/tasks?view=kanban"
+                aria-label="Kanban view"
+                className={`p-2 transition-colors ${view === "kanban" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </Link>
+            </div>
+            {canExport && <ExportButton href="/api/tasks/export" filename="tasks.xlsx" />}
+            {canCreate && (
+              <Button render={<Link href="/tasks/new" />} size="sm">
+                <Plus className="h-4 w-4 sm:mr-1" />
+                <span className="hidden sm:inline">New Task</span>
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {view === "kanban" ? (
         <KanbanBoard tasks={tasks} />

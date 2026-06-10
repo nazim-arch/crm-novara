@@ -22,7 +22,8 @@ import { Input } from "@/components/ui/input";
 import { TaskStatusBadge, PriorityBadge } from "@/components/shared/LeadStatusBadge";
 import { formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, Clock, Search, ArrowUpDown, ArrowUp, ArrowDown, Timer } from "lucide-react";
+import { AlertTriangle, Clock, Search, ArrowUpDown, ArrowUp, ArrowDown, Timer, CheckSquare } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ColumnFilterHeader } from "@/components/shared/ColumnFilterHeader";
 import { startOfDay, endOfDay, addDays, differenceInCalendarDays } from "date-fns";
 
@@ -307,7 +308,11 @@ function TaskGrid({
   if (tasks.length === 0) {
     return (
       <div className="rounded-lg border bg-card">
-        <p className="text-center py-12 text-muted-foreground text-sm">No tasks in this category</p>
+        <EmptyState
+          icon={CheckSquare}
+          title="No tasks in this category"
+          description="Tasks matching this filter will show up here."
+        />
       </div>
     );
   }

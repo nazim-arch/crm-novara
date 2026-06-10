@@ -166,4 +166,26 @@ export function TaskStatusBadge({ status }: { status: string }) {
   );
 }
 
+export function OpportunityStatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    Active: "bg-green-100 text-green-700",
+    Sold: "bg-blue-100 text-blue-700",
+    Inactive: "bg-gray-100 text-gray-600",
+    OnHold: "bg-amber-100 text-amber-700",
+  };
+  const labels: Record<string, string> = {
+    OnHold: "On Hold",
+  };
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+        styles[status] ?? "bg-gray-100 text-gray-600"
+      )}
+    >
+      {labels[status] ?? status}
+    </span>
+  );
+}
+
 export { Badge };
