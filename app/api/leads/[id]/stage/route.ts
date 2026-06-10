@@ -168,12 +168,16 @@ export async function POST(request: Request, { params }: { params: Params }) {
     // Fire CAPI conversion events for Meta-sourced leads (fire-and-forget)
     if (to_stage && lead.meta_leads.length > 0) {
       for (const ml of lead.meta_leads) {
+        const rawName = ml.full_name ?? lead.full_name;
         sendStageEvent({
-          leadgenId: ml.leadgen_id,
-          stage:     to_stage,
-          email:     ml.email    ?? undefined,
-          phone:     ml.phone    ?? undefined,
-          valueInr:  to_stage === "Won" ? Number(settlement_value ?? 0) : undefined,
+          leadgenId:  ml.leadgen_id,
+          stage:      to_stage,
+          email:      ml.email ?? lead.email ?? undefined,
+          phone:      ml.phone ?? undefined,
+          firstName:  rawName ? rawName.split(" ")[0] : undefined,
+          city:       ml.city  ?? lead.city  ?? undefined,
+          crmLeadId:  lead.id,
+          valueInr:   to_stage === "Won" ? Number(settlement_value ?? 0) : undefined,
         }).catch((err) => console.error("[CAPI stage event]", ml.leadgen_id, err));
       }
     }

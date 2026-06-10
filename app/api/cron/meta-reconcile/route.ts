@@ -22,7 +22,8 @@ export async function POST(request: Request) {
     },
     include: {
       crm_lead: {
-        select: { status: true, email: true, phone: true, settlement_value: true },
+        select: { id: true, status: true, email: true, phone: true,
+                  full_name: true, city: true, settlement_value: true },
       },
     },
   });
@@ -34,13 +35,15 @@ export async function POST(request: Request) {
     if (!ml.crm_lead || !CAPI_STAGES.has(ml.crm_lead.status)) continue;
     try {
       await sendStageEvent({
-        leadgenId: ml.leadgen_id,
-        stage:     ml.crm_lead.status,
-        email:     ml.email ?? undefined,
-        phone:     ml.phone ?? undefined,
-        valueInr:  ml.crm_lead.status === "Won"
-          ? Number(ml.crm_lead.settlement_value ?? 0)
-          : undefined,
+        leadgenId:  ml.leadgen_id,
+        stage:      ml.crm_lead.status,
+        email:      ml.email ?? ml.crm_lead.email    ?? undefined,
+        phone:      ml.phone ?? undefined,
+        firstName:  (ml.full_name ?? ml.crm_lead.full_name ?? "").split(" ")[0] || undefined,
+        city:       ml.city  ?? ml.crm_lead.city     ?? undefined,
+        crmLeadId:  ml.crm_lead_id                   ?? undefined,
+        valueInr:   ml.crm_lead.status === "Won"
+          ? Number(ml.crm_lead.settlement_value ?? 0) : undefined,
       });
       processed++;
     } catch (err) {

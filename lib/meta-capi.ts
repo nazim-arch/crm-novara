@@ -19,11 +19,22 @@ function hashPhone(phone: string): string {
   return sha256(phone.replace(/\D/g, ""));
 }
 
+function hashName(n: string): string {
+  return sha256(n.toLowerCase().trim().replace(/[^a-z]/g, ""));
+}
+
+function hashCity(c: string): string {
+  return sha256(c.toLowerCase().trim().replace(/\s+/g, ""));
+}
+
 export async function sendStageEvent(opts: {
   leadgenId: string;
   stage: string;
   email?: string;
   phone?: string;
+  firstName?: string;
+  city?: string;
+  crmLeadId?: string;
   valueInr?: number;
   eventTimeSec?: number;
 }): Promise<void> {
@@ -48,8 +59,12 @@ export async function sendStageEvent(opts: {
   const userData: Record<string, unknown> = {
     lead_id: parseInt(opts.leadgenId, 10),
   };
-  if (opts.email) userData.em = [hashEmail(opts.email)];
-  if (opts.phone) userData.ph = [hashPhone(opts.phone)];
+  if (opts.email)     userData.em          = [hashEmail(opts.email)];
+  if (opts.phone)     userData.ph          = [hashPhone(opts.phone)];
+  if (opts.firstName) userData.fn          = [hashName(opts.firstName)];
+  if (opts.city)      userData.ct          = [hashCity(opts.city)];
+                      userData.country     = [sha256("in")];
+  if (opts.crmLeadId) userData.external_id = [sha256(opts.crmLeadId)];
 
   const customData: Record<string, unknown> = {
     event_source:      "CRM",
