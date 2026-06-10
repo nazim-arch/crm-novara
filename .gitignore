@@ -46,3 +46,11 @@ next-env.d.ts
 e2e/.auth/
 playwright-report/
 test-results/
+
+# MCP server build artifacts
+mcp-server/node_modules/
+mcp-server/dist/
+
+# generated handoff docs and archives (repo root only)
+/*.docx
+/*.zip
