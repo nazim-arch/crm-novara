@@ -80,7 +80,7 @@ export function ColumnPicker({
           </Button>
         }
       />
-      <DropdownMenuContent align="end" className="w-52">
+      <DropdownMenuContent align="end" className="w-56 max-h-[70vh] overflow-y-auto">
         <div className="px-1.5 py-1 text-xs font-medium text-muted-foreground">
           Visible columns
         </div>

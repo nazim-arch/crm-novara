@@ -20,12 +20,13 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { TaskStatusBadge, PriorityBadge } from "@/components/shared/LeadStatusBadge";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatCurrency } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, Clock, Search, ArrowUpDown, ArrowUp, ArrowDown, Timer, CheckSquare } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ColumnPicker } from "@/components/shared/ColumnPicker";
 import { TASK_COLUMNS } from "@/lib/task-columns";
+import type { ReactNode } from "react";
 import { ColumnFilterHeader } from "@/components/shared/ColumnFilterHeader";
 import { startOfDay, endOfDay, addDays, differenceInCalendarDays } from "date-fns";
 
@@ -33,15 +34,20 @@ type Task = {
   id: string;
   task_number: string;
   title: string;
+  description?: string | null;
   status: string;
   priority: string;
   due_date: Date;
   start_date: Date | null;
   completion_date: Date | null;
   created_at: Date;
+  updated_at?: Date;
+  sector?: string | null;
+  recurrence?: string;
   revenue_tagged: boolean;
   revenue_amount: { toString(): string } | null;
   assigned_to: { id: string; name: string };
+  created_by?: { id: string; name: string } | null;
   lead: { id: string; lead_number: string; full_name: string } | null;
   opportunity: { id: string; opp_number: string; name: string } | null;
   client: { id: string; name: string } | null;
@@ -110,7 +116,7 @@ export function TaskTable({ tasks, users, clients, initialColumns }: TaskTablePr
   const [sortCol, setSortCol] = useState("due_date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [visibleCols, setVisibleCols] = useState<Set<string>>(
-    () => new Set(initialColumns ?? TASK_COLUMNS.map((c) => c.id))
+    () => new Set(initialColumns ?? TASK_COLUMNS.filter((c) => !c.defaultHidden).map((c) => c.id))
   );
 
   const toggleSort = (col: string) => {
@@ -336,6 +342,63 @@ function TaskGrid({
     );
   }
 
+  const visibleTaskCols = TASK_COLUMNS.filter((c) => visible.has(c.id));
+  const dash = <span className="text-muted-foreground text-xs">—</span>;
+  const TASK_CELL_CLASS: Record<string, string> = { days: "text-center", revenue: "text-right" };
+
+  const taskHead = (id: string): ReactNode => {
+    switch (id) {
+      case "title": return sh("title", "Task");
+      case "status": return sh("status", "Status");
+      case "priority":
+        return <ColumnFilterHeader column="priority" label="Priority" currentSort={sortCol} currentDir={sortDir} filterOptions={PRIORITY_OPTIONS} currentFilter={priorityFilter} onFilter={onPriorityFilter} onSort={onSort} />;
+      case "due_date": return sh("due_date", "Due Date");
+      case "assigned_to":
+        return <ColumnFilterHeader column="assigned_to" label="Assigned To" currentSort={sortCol} currentDir={sortDir} filterOptions={users.map((u) => ({ label: u.name, value: u.id }))} currentFilter={assigneeFilter} onFilter={onAssigneeFilter} onSort={onSort} />;
+      default: return TASK_COLUMNS.find((c) => c.id === id)?.label ?? id;
+    }
+  };
+
+  const taskCell = (id: string, task: Task, isOverdue: boolean): ReactNode => {
+    switch (id) {
+      case "title":
+        return (
+          <>
+            <Link href={`/tasks/${task.id}`} className="font-medium hover:underline">{task.title}</Link>
+            <p className="text-xs text-muted-foreground font-mono">{task.task_number}</p>
+          </>
+        );
+      case "status": return <TaskStatusBadge status={task.status} />;
+      case "priority": return <PriorityBadge priority={task.priority} />;
+      case "due_date":
+        return <span className={cn(isOverdue && "text-destructive font-medium")}>{formatDate(task.due_date)}</span>;
+      case "start_date": return task.start_date ? formatDate(task.start_date) : dash;
+      case "completion_date": return task.completion_date ? formatDate(task.completion_date) : dash;
+      case "assigned_to": return task.assigned_to.name;
+      case "created_by": return task.created_by?.name ?? dash;
+      case "days": return <DaysElapsedBadge task={task} />;
+      case "client":
+        return task.client ? (
+          <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/30 px-1.5 py-0.5 rounded">{task.client.name}</span>
+        ) : dash;
+      case "linked":
+        return task.lead ? (
+          <Link href={`/leads/${task.lead.id}`} className="text-primary hover:underline text-xs">{task.lead.lead_number}</Link>
+        ) : task.opportunity ? (
+          <Link href={`/opportunities/${task.opportunity.id}`} className="text-primary hover:underline text-xs">{task.opportunity.opp_number}</Link>
+        ) : (
+          <span className="text-muted-foreground text-xs">Standalone</span>
+        );
+      case "sector": return task.sector ?? dash;
+      case "recurrence": return task.recurrence && task.recurrence !== "None" ? task.recurrence : dash;
+      case "revenue": return task.revenue_tagged && task.revenue_amount ? formatCurrency(Number(task.revenue_amount)) : dash;
+      case "description": return task.description ? <span className="line-clamp-1 max-w-[16rem]">{task.description}</span> : dash;
+      case "created_at": return formatDate(task.created_at);
+      case "updated_at": return task.updated_at ? formatDate(task.updated_at) : dash;
+      default: return dash;
+    }
+  };
+
   return (
     <>
       {/* Mobile card view */}
@@ -390,40 +453,11 @@ function TaskGrid({
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
-              <TableHead>{sh("title", "Task")}</TableHead>
-              {visible.has("status") && <TableHead>{sh("status", "Status")}</TableHead>}
-              {visible.has("priority") && (
-                <TableHead>
-                  <ColumnFilterHeader
-                    column="priority"
-                    label="Priority"
-                    currentSort={sortCol}
-                    currentDir={sortDir}
-                    filterOptions={PRIORITY_OPTIONS}
-                    currentFilter={priorityFilter}
-                    onFilter={onPriorityFilter}
-                    onSort={onSort}
-                  />
+              {visibleTaskCols.map((col) => (
+                <TableHead key={col.id} className={TASK_CELL_CLASS[col.id]}>
+                  {taskHead(col.id)}
                 </TableHead>
-              )}
-              {visible.has("due_date") && <TableHead>{sh("due_date", "Due Date")}</TableHead>}
-              {visible.has("assigned_to") && (
-                <TableHead>
-                  <ColumnFilterHeader
-                    column="assigned_to"
-                    label="Assigned To"
-                    currentSort={sortCol}
-                    currentDir={sortDir}
-                    filterOptions={users.map((u) => ({ label: u.name, value: u.id }))}
-                    currentFilter={assigneeFilter}
-                    onFilter={onAssigneeFilter}
-                    onSort={onSort}
-                  />
-                </TableHead>
-              )}
-              {visible.has("days") && <TableHead className="text-center">Days</TableHead>}
-              {visible.has("client") && <TableHead>Client</TableHead>}
-              {visible.has("linked") && <TableHead>Linked To</TableHead>}
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -431,51 +465,11 @@ function TaskGrid({
               const isOverdue = new Date(task.due_date) < new Date() && !["Done", "Cancelled"].includes(task.status);
               return (
                 <TableRow key={task.id} className="hover:bg-muted/30">
-                  <TableCell>
-                    <Link href={`/tasks/${task.id}`} className="font-medium hover:underline">
-                      {task.title}
-                    </Link>
-                    <p className="text-xs text-muted-foreground font-mono">{task.task_number}</p>
-                  </TableCell>
-                  {visible.has("status") && <TableCell><TaskStatusBadge status={task.status} /></TableCell>}
-                  {visible.has("priority") && <TableCell><PriorityBadge priority={task.priority} /></TableCell>}
-                  {visible.has("due_date") && (
-                    <TableCell className={cn("text-sm", isOverdue && "text-destructive font-medium")}>
-                      {formatDate(task.due_date)}
+                  {visibleTaskCols.map((col) => (
+                    <TableCell key={col.id} className={cn("text-sm", TASK_CELL_CLASS[col.id])}>
+                      {taskCell(col.id, task, isOverdue)}
                     </TableCell>
-                  )}
-                  {visible.has("assigned_to") && <TableCell className="text-sm">{task.assigned_to.name}</TableCell>}
-                  {visible.has("days") && (
-                    <TableCell className="text-center">
-                      <DaysElapsedBadge task={task} />
-                    </TableCell>
-                  )}
-                  {visible.has("client") && (
-                    <TableCell className="text-sm">
-                      {task.client ? (
-                        <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/30 px-1.5 py-0.5 rounded">
-                          {task.client.name}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">—</span>
-                      )}
-                    </TableCell>
-                  )}
-                  {visible.has("linked") && (
-                    <TableCell className="text-sm">
-                      {task.lead ? (
-                        <Link href={`/leads/${task.lead.id}`} className="text-primary hover:underline text-xs">
-                          {task.lead.lead_number}
-                        </Link>
-                      ) : task.opportunity ? (
-                        <Link href={`/opportunities/${task.opportunity.id}`} className="text-primary hover:underline text-xs">
-                          {task.opportunity.opp_number}
-                        </Link>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">Standalone</span>
-                      )}
-                    </TableCell>
-                  )}
+                  ))}
                 </TableRow>
               );
             })}

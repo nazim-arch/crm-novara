@@ -1,9 +1,21 @@
 import { prisma } from "@/lib/prisma";
 
-export type ColumnDef = { id: string; label: string; locked?: boolean };
+export type ColumnDef = {
+  id: string;
+  label: string;
+  /** Always shown; cannot be toggled off in the picker. */
+  locked?: boolean;
+  /** Available in the picker but hidden until the user opts in. */
+  defaultHidden?: boolean;
+};
 
 export function prefKey(listKey: string): string {
   return `columns:${listKey}`;
+}
+
+/** Column ids shown when the user has no saved preference. */
+export function defaultVisibleColumns(columns: ColumnDef[]): string[] {
+  return columns.filter((c) => !c.defaultHidden).map((c) => c.id);
 }
 
 /**
@@ -16,7 +28,6 @@ export async function getVisibleColumns(
   listKey: string,
   columns: ColumnDef[]
 ): Promise<Set<string>> {
-  const allIds = columns.map((c) => c.id);
   try {
     const pref = await prisma.userPreference.findUnique({
       where: { user_id_key: { user_id: userId, key: prefKey(listKey) } },
@@ -24,7 +35,7 @@ export async function getVisibleColumns(
     });
     const val = pref?.value;
     if (Array.isArray(val)) {
-      const known = new Set(allIds);
+      const known = new Set(columns.map((c) => c.id));
       const visible = new Set(
         val.filter((v): v is string => typeof v === "string" && known.has(v))
       );
@@ -34,5 +45,5 @@ export async function getVisibleColumns(
   } catch {
     // Table may not exist yet (pending migration) — fall back to defaults
   }
-  return new Set(allIds);
+  return new Set(defaultVisibleColumns(columns));
 }

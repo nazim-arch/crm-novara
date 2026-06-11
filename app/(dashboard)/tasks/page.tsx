@@ -32,6 +32,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
       where,
       include: {
         assigned_to: { select: { id: true, name: true } },
+        created_by: { select: { id: true, name: true } },
         lead: { select: { id: true, lead_number: true, full_name: true } },
         opportunity: { select: { id: true, opp_number: true, name: true } },
         client: { select: { id: true, name: true } },

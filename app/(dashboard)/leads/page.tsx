@@ -1,8 +1,9 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { LeadStatusBadge, TemperatureBadge } from "@/components/shared/LeadStatusBadge";
+import { LeadStatusBadge, TemperatureBadge, ActivityStageBadge } from "@/components/shared/LeadStatusBadge";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import {
   Table,
@@ -115,19 +116,43 @@ const PROFILE_OPTIONS = [
   { label: "Incomplete", value: "incomplete" },
 ];
 
+// Columns marked defaultHidden are available in the picker but off by default,
+// so existing layouts are preserved while every useful field is selectable.
 const LEAD_COLUMNS: ColumnDef[] = [
   { id: "lead_number", label: "Lead ID" },
   { id: "name", label: "Name", locked: true },
   { id: "profile", label: "Profile" },
   { id: "opportunity", label: "Opportunity" },
   { id: "phone", label: "Phone" },
+  { id: "email", label: "Email", defaultHidden: true },
+  { id: "whatsapp", label: "WhatsApp", defaultHidden: true },
   { id: "status", label: "Status" },
+  { id: "activity_stage", label: "Activity Stage", defaultHidden: true },
   { id: "temperature", label: "Temperature" },
+  { id: "lead_type", label: "Lead Type", defaultHidden: true },
+  { id: "lead_source", label: "Lead Source", defaultHidden: true },
   { id: "assigned_to", label: "Assigned To" },
+  { id: "lead_owner", label: "Lead Owner", defaultHidden: true },
+  { id: "created_by", label: "Created By", defaultHidden: true },
   { id: "property_type", label: "Property Type" },
+  { id: "unit_type", label: "Unit Type", defaultHidden: true },
+  { id: "city", label: "City", defaultHidden: true },
+  { id: "location_preference", label: "Location Preference", defaultHidden: true },
+  { id: "budget", label: "Budget", defaultHidden: true },
+  { id: "timeline_to_buy", label: "Timeline to Buy", defaultHidden: true },
+  { id: "purpose", label: "Purpose", defaultHidden: true },
+  { id: "closing_probability", label: "Closing %", defaultHidden: true },
   { id: "followup", label: "Follow-up" },
+  { id: "followup_type", label: "Follow-up Type", defaultHidden: true },
+  { id: "first_contact_date", label: "First Contact", defaultHidden: true },
   { id: "last_contact", label: "Last Contact" },
   { id: "value", label: "Pipeline Value" },
+  { id: "deal_value", label: "Deal Value", defaultHidden: true },
+  { id: "commission_estimate", label: "Commission Est.", defaultHidden: true },
+  { id: "settlement_value", label: "Settlement Value", defaultHidden: true },
+  { id: "financing_required", label: "Financing Required", defaultHidden: true },
+  { id: "created_at", label: "Created Date", defaultHidden: true },
+  { id: "updated_at", label: "Last Updated", defaultHidden: true },
   { id: "contact", label: "Contact" },
 ];
 
@@ -161,6 +186,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
   const today = new Date();
   const todayStart = startOfDay(today);
   const todayEnd = endOfDay(today);
+  const staleContactCutoff = subDays(today, 7); // last-contact older than this is flagged
   const staleDays = Math.max(1, Number(sp.stale_days ?? "7"));
 
   const page = Math.max(1, Number(sp.page ?? "1"));
@@ -296,7 +322,25 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
         budget_min: true,
         budget_max: true,
         location_preference: true,
+        email: true,
+        whatsapp: true,
+        lead_type: true,
+        unit_type: true,
+        city: true,
+        timeline_to_buy: true,
+        purpose: true,
+        closing_probability: true,
+        followup_type: true,
+        first_contact_date: true,
+        deal_value: true,
+        commission_estimate: true,
+        settlement_value: true,
+        financing_required: true,
+        created_at: true,
+        updated_at: true,
         assigned_to: { select: { id: true, name: true } },
+        lead_owner: { select: { id: true, name: true } },
+        created_by: { select: { id: true, name: true } },
         _count: { select: { followups: true } },
         opportunities: {
           select: {
@@ -361,12 +405,136 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
   });
 
   const v = await getVisibleColumns(session.user.id, "leads", LEAD_COLUMNS);
-  const visibleCount = LEAD_COLUMNS.filter((c) => v.has(c.id)).length;
+  const visibleLeadCols = LEAD_COLUMNS.filter((c) => v.has(c.id));
+  const visibleCount = visibleLeadCols.length;
 
   const totalPages = Math.ceil(total / limit);
   const sh = (col: string, label: string, className?: string) => (
     <SortableHeader column={col} label={label} currentSort={sortCol} currentDir={sortDir} className={className} />
   );
+
+  type LeadRow = (typeof rows)[number];
+  const fmtMoney = (val: unknown) => (val != null ? formatCurrency(Number(val)) : "—");
+  const fmtBudget = (min: unknown, max: unknown) => {
+    if (min == null && max == null) return "—";
+    if (min != null && max != null) return `${formatCurrency(Number(min))} – ${formatCurrency(Number(max))}`;
+    return formatCurrency(Number(min ?? max));
+  };
+
+  // Per-column width / alignment for the desktop table
+  const LEAD_HEAD_CLASS: Record<string, string> = {
+    lead_number: "w-32",
+    profile: "w-28",
+    contact: "w-24",
+    value: "text-right",
+    deal_value: "text-right",
+    commission_estimate: "text-right",
+    settlement_value: "text-right",
+    budget: "text-right",
+    closing_probability: "text-right",
+  };
+
+  const leadHead = (id: string): ReactNode => {
+    switch (id) {
+      case "name": return sh("full_name", "Name");
+      case "profile":
+        return <ColumnFilterHeader label="Profile" filterParam="profile" filterOptions={PROFILE_OPTIONS} currentFilter={sp.profile} />;
+      case "status":
+        return <ColumnFilterHeader column="status" label="Status" currentSort={sortCol} currentDir={sortDir} filterParam="status" filterOptions={LEAD_STATUS_OPTIONS} currentFilter={sp.status} />;
+      case "temperature":
+        return <ColumnFilterHeader column="temperature" label="Temp" currentSort={sortCol} currentDir={sortDir} filterParam="temperature" filterOptions={TEMPERATURE_OPTIONS} currentFilter={sp.temperature} />;
+      case "assigned_to":
+        return <ColumnFilterHeader column="assigned_to" label="Assigned To" currentSort={sortCol} currentDir={sortDir} filterParam="assigned_to" filterOptions={users.map((u) => ({ label: u.name, value: u.id }))} currentFilter={sp.assigned_to} />;
+      case "property_type":
+        return <ColumnFilterHeader label="Property Type" filterParam="property_type" filterOptions={PROPERTY_TYPE_OPTIONS} currentFilter={sp.property_type} />;
+      case "followup": return sh("next_followup_date", "Follow-up");
+      case "last_contact": return sh("last_contact_date", "Last Contact");
+      case "value": return sh("potential_lead_value", "Pipeline Value", "ml-auto");
+      case "created_at": return sh("created_at", "Created Date");
+      case "updated_at": return sh("updated_at", "Last Updated");
+      default: return LEAD_COLUMNS.find((c) => c.id === id)?.label ?? id;
+    }
+  };
+
+  const dash = <span className="text-muted-foreground">—</span>;
+  const leadCell = (id: string, row: LeadRow): ReactNode => {
+    switch (id) {
+      case "lead_number":
+        return <Link href={`/leads/${row.id}`} className="font-mono text-xs text-primary hover:underline">{row.lead_number}</Link>;
+      case "name":
+        return <Link href={`/leads/${row.id}`} className="font-medium hover:underline">{row.full_name}</Link>;
+      case "profile":
+        return row.is_complete ? (
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" /> Complete</span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-500"><AlertCircle className="h-3.5 w-3.5" /> Incomplete</span>
+        );
+      case "opportunity":
+        return row.opportunity ? (
+          <Link href={`/opportunities/${row.opportunity.id}`} className="text-primary hover:underline text-xs">{row.opportunity.name}</Link>
+        ) : dash;
+      case "phone": return row.phone;
+      case "email": return row.email || dash;
+      case "whatsapp": return row.whatsapp || dash;
+      case "status": return <LeadStatusBadge status={row.link_status} />;
+      case "activity_stage": return <ActivityStageBadge stage={row.activity_stage} />;
+      case "temperature": return <TemperatureBadge temperature={row.temperature} />;
+      case "lead_type": return row.lead_type ?? dash;
+      case "lead_source": return row.lead_source || dash;
+      case "assigned_to": return row.assigned_to.name;
+      case "lead_owner": return row.lead_owner?.name ?? dash;
+      case "created_by": return row.created_by?.name ?? dash;
+      case "property_type": return row.property_type ?? dash;
+      case "unit_type": return row.unit_type ?? dash;
+      case "city": return row.city ?? dash;
+      case "location_preference": return row.location_preference ?? dash;
+      case "budget": return fmtBudget(row.budget_min, row.budget_max);
+      case "timeline_to_buy": return row.timeline_to_buy ?? dash;
+      case "purpose": return row.purpose ?? dash;
+      case "closing_probability": return row.closing_probability != null ? `${row.closing_probability}%` : dash;
+      case "followup":
+        return row.next_followup_date ? (
+          <div>
+            <span className={new Date(row.next_followup_date) < new Date() ? "text-destructive font-medium" : ""}>{formatDate(row.next_followup_date)}</span>
+            {row.followup_count > 0 && <span className="block text-[11px] text-muted-foreground">({row.followup_count} total)</span>}
+          </div>
+        ) : row.followup_count > 0 ? (
+          <div><span className="text-muted-foreground">—</span><span className="block text-[11px] text-muted-foreground">{row.followup_count} total</span></div>
+        ) : (
+          <span className="text-amber-500 text-xs font-medium">No FU</span>
+        );
+      case "followup_type": return row.followup_type ?? dash;
+      case "first_contact_date": return row.first_contact_date ? formatDate(row.first_contact_date) : dash;
+      case "last_contact":
+        return row.last_contact_date ? (
+          <span className={new Date(row.last_contact_date) < staleContactCutoff ? "text-amber-500" : ""}>{formatDate(row.last_contact_date)}</span>
+        ) : (
+          <span className="text-muted-foreground/50">Never</span>
+        );
+      case "value": return row.link_potential_value ? formatCurrency(Number(row.link_potential_value)) : "—";
+      case "deal_value": return fmtMoney(row.deal_value);
+      case "commission_estimate": return fmtMoney(row.commission_estimate);
+      case "settlement_value": return fmtMoney(row.settlement_value);
+      case "financing_required": return row.financing_required == null ? dash : row.financing_required ? "Yes" : "No";
+      case "created_at": return formatDate(row.created_at);
+      case "updated_at": return formatDate(row.updated_at);
+      case "contact":
+        return (
+          <LeadContactActions
+            leadId={row.id}
+            phone={row.phone}
+            leadName={row.full_name}
+            agentName={session?.user?.name ?? "Agent"}
+            propertyType={row.property_type}
+            budgetMin={row.budget_min ? Number(row.budget_min) : null}
+            budgetMax={row.budget_max ? Number(row.budget_max) : null}
+            location={row.location_preference}
+            variant="compact"
+          />
+        );
+      default: return dash;
+    }
+  };
 
   const PERIOD_LABEL: Record<string, string> = {
     today: "Today", yesterday: "Yesterday", this_week: "This Week",
@@ -553,73 +721,11 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
-              {v.has("lead_number") && <TableHead className="w-32">Lead ID</TableHead>}
-              <TableHead>{sh("full_name", "Name")}</TableHead>
-              {v.has("profile") && (
-                <TableHead className="w-28">
-                  <ColumnFilterHeader
-                    label="Profile"
-                    filterParam="profile"
-                    filterOptions={PROFILE_OPTIONS}
-                    currentFilter={sp.profile}
-                  />
+              {visibleLeadCols.map((col) => (
+                <TableHead key={col.id} className={LEAD_HEAD_CLASS[col.id]}>
+                  {leadHead(col.id)}
                 </TableHead>
-              )}
-              {v.has("opportunity") && <TableHead>Opportunity</TableHead>}
-              {v.has("phone") && <TableHead>Phone</TableHead>}
-              {v.has("status") && (
-                <TableHead>
-                  <ColumnFilterHeader
-                    column="status"
-                    label="Status"
-                    currentSort={sortCol}
-                    currentDir={sortDir}
-                    filterParam="status"
-                    filterOptions={LEAD_STATUS_OPTIONS}
-                    currentFilter={sp.status}
-                  />
-                </TableHead>
-              )}
-              {v.has("temperature") && (
-                <TableHead>
-                  <ColumnFilterHeader
-                    column="temperature"
-                    label="Temp"
-                    currentSort={sortCol}
-                    currentDir={sortDir}
-                    filterParam="temperature"
-                    filterOptions={TEMPERATURE_OPTIONS}
-                    currentFilter={sp.temperature}
-                  />
-                </TableHead>
-              )}
-              {v.has("assigned_to") && (
-                <TableHead>
-                  <ColumnFilterHeader
-                    column="assigned_to"
-                    label="Assigned To"
-                    currentSort={sortCol}
-                    currentDir={sortDir}
-                    filterParam="assigned_to"
-                    filterOptions={users.map((u) => ({ label: u.name, value: u.id }))}
-                    currentFilter={sp.assigned_to}
-                  />
-                </TableHead>
-              )}
-              {v.has("property_type") && (
-                <TableHead>
-                  <ColumnFilterHeader
-                    label="Property Type"
-                    filterParam="property_type"
-                    filterOptions={PROPERTY_TYPE_OPTIONS}
-                    currentFilter={sp.property_type}
-                  />
-                </TableHead>
-              )}
-              {v.has("followup") && <TableHead>{sh("next_followup_date", "Follow-up")}</TableHead>}
-              {v.has("last_contact") && <TableHead>{sh("last_contact_date", "Last Contact")}</TableHead>}
-              {v.has("value") && <TableHead className="text-right">{sh("potential_lead_value", "Pipeline Value", "ml-auto")}</TableHead>}
-              {v.has("contact") && <TableHead className="w-24">Contact</TableHead>}
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -641,99 +747,14 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
             ) : (
               rows.map((row) => (
                 <TableRow key={row.row_key} className="hover:bg-muted/30 cursor-pointer">
-                  {v.has("lead_number") && (
-                    <TableCell>
-                      <Link href={`/leads/${row.id}`} className="font-mono text-xs text-primary hover:underline">
-                        {row.lead_number}
-                      </Link>
+                  {visibleLeadCols.map((col) => (
+                    <TableCell
+                      key={col.id}
+                      className={LEAD_HEAD_CLASS[col.id]?.includes("text-right") ? "text-right text-sm" : "text-sm"}
+                    >
+                      {leadCell(col.id, row)}
                     </TableCell>
-                  )}
-                  <TableCell>
-                    <Link href={`/leads/${row.id}`} className="font-medium hover:underline">
-                      {row.full_name}
-                    </Link>
-                  </TableCell>
-                  {v.has("profile") && (
-                    <TableCell>
-                      {row.is_complete ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Complete
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-500">
-                          <AlertCircle className="h-3.5 w-3.5" /> Incomplete
-                        </span>
-                      )}
-                    </TableCell>
-                  )}
-                  {v.has("opportunity") && (
-                    <TableCell className="text-sm">
-                      {row.opportunity ? (
-                        <Link href={`/opportunities/${row.opportunity.id}`} className="text-primary hover:underline text-xs">
-                          {row.opportunity.name}
-                        </Link>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                  )}
-                  {v.has("phone") && <TableCell className="text-sm text-muted-foreground">{row.phone}</TableCell>}
-                  {v.has("status") && <TableCell><LeadStatusBadge status={row.link_status} /></TableCell>}
-                  {v.has("temperature") && <TableCell><TemperatureBadge temperature={row.temperature} /></TableCell>}
-                  {v.has("assigned_to") && <TableCell className="text-sm">{row.assigned_to.name}</TableCell>}
-                  {v.has("property_type") && <TableCell className="text-sm text-muted-foreground">{row.property_type ?? "—"}</TableCell>}
-                  {v.has("followup") && (
-                    <TableCell className="text-sm">
-                      {row.next_followup_date ? (
-                        <div>
-                          <span className={new Date(row.next_followup_date) < new Date() ? "text-destructive font-medium" : ""}>
-                            {formatDate(row.next_followup_date)}
-                          </span>
-                          {row.followup_count > 0 && (
-                            <span className="block text-[11px] text-muted-foreground">({row.followup_count} total)</span>
-                          )}
-                        </div>
-                      ) : row.followup_count > 0 ? (
-                        <div>
-                          <span className="text-muted-foreground">—</span>
-                          <span className="block text-[11px] text-muted-foreground">{row.followup_count} total</span>
-                        </div>
-                      ) : (
-                        <span className="text-amber-500 text-xs font-medium">No FU</span>
-                      )}
-                    </TableCell>
-                  )}
-                  {v.has("last_contact") && (
-                    <TableCell className="text-sm text-muted-foreground">
-                      {row.last_contact_date ? (
-                        <span className={new Date(row.last_contact_date) < new Date(Date.now() - 7 * 86400000) ? "text-amber-500" : ""}>
-                          {formatDate(row.last_contact_date)}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground/50">Never</span>
-                      )}
-                    </TableCell>
-                  )}
-                  {v.has("value") && (
-                    <TableCell className="text-right text-sm">
-                      {row.link_potential_value ? formatCurrency(Number(row.link_potential_value)) : "—"}
-                    </TableCell>
-                  )}
-                  {v.has("contact") && (
-                    <TableCell>
-                      <LeadContactActions
-                        leadId={row.id}
-                        phone={row.phone}
-                        leadName={row.full_name}
-                        agentName={session?.user?.name ?? "Agent"}
-                        propertyType={row.property_type}
-                        budgetMin={row.budget_min ? Number(row.budget_min) : null}
-                        budgetMax={row.budget_max ? Number(row.budget_max) : null}
-                        location={row.location_preference}
-                        variant="compact"
-                      />
-                    </TableCell>
-                  )}
+                  ))}
                 </TableRow>
               ))
             )}
