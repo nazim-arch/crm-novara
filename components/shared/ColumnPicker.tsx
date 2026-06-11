@@ -10,7 +10,6 @@ import {
   DropdownMenuContent,
   DropdownMenuCheckboxItem,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -82,7 +81,9 @@ export function ColumnPicker({
         }
       />
       <DropdownMenuContent align="end" className="w-52">
-        <DropdownMenuLabel>Visible columns</DropdownMenuLabel>
+        <div className="px-1.5 py-1 text-xs font-medium text-muted-foreground">
+          Visible columns
+        </div>
         <DropdownMenuSeparator />
         {columns.map((col) => (
           <DropdownMenuCheckboxItem
