@@ -15,6 +15,8 @@ import { hasPermissionAsync } from "@/lib/rbac";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { EmptyState } from "@/components/ui/empty-state";
 import { OpportunityStatusBadge } from "@/components/shared/LeadStatusBadge";
+import { ColumnPicker } from "@/components/shared/ColumnPicker";
+import { getVisibleColumns, type ColumnDef } from "@/lib/column-prefs";
 import { ExportButton } from "@/components/shared/ExportButton";
 import { SortableHeader } from "@/components/shared/SortableHeader";
 import { ColumnFilterHeader } from "@/components/shared/ColumnFilterHeader";
@@ -44,6 +46,18 @@ const OPP_BY_OPTIONS = [
 ];
 
 type SearchParams = Promise<{ status?: string; search?: string; page?: string; sort?: string; dir?: string; property_type?: string; opportunity_by?: string }>;
+
+const OPP_COLUMNS: ColumnDef[] = [
+  { id: "opp_number", label: "ID" },
+  { id: "name", label: "Name / Project", locked: true },
+  { id: "location", label: "Location" },
+  { id: "property_type", label: "Type" },
+  { id: "opportunity_by", label: "Opp By" },
+  { id: "commission", label: "Commission" },
+  { id: "possible_revenue", label: "Possible Revenue" },
+  { id: "leads", label: "Leads" },
+  { id: "status", label: "Status" },
+];
 
 function formatCurrency(n: number) {
   if (n >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(2)} Cr`;
@@ -107,6 +121,15 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
   const canCreate = session?.user && await hasPermissionAsync(session.user.role, "opportunity:create");
   const canViewFinancials = session?.user && await hasPermissionAsync(session.user.role, "financial:view");
 
+  // Financial columns are only offered to users with financial:view
+  const availableColumns = OPP_COLUMNS.filter(
+    (c) => canViewFinancials || !["commission", "possible_revenue"].includes(c.id)
+  );
+  const v = session?.user
+    ? await getVisibleColumns(session.user.id, "opportunities", availableColumns)
+    : new Set(availableColumns.map((c) => c.id));
+  const visibleCount = availableColumns.filter((c) => v.has(c.id)).length;
+
   const sh = (col: string, label: string) => (
     <SortableHeader column={col} label={label} currentSort={sortCol} currentDir={sortDir} />
   );
@@ -120,6 +143,12 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
         description={`${total} total`}
         actions={
           <>
+            <ColumnPicker
+              listKey="opportunities"
+              columns={availableColumns}
+              visible={[...v]}
+              className="hidden md:inline-flex"
+            />
             {canExport && <ExportButton href="/api/opportunities/export" filename="opportunities.xlsx" />}
             {canCreate && (
               <Button render={<Link href="/opportunities/new" />} size="sm">
@@ -176,48 +205,54 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
-              <TableHead>ID</TableHead>
+              {v.has("opp_number") && <TableHead>ID</TableHead>}
               <TableHead>{sh("name", "Name / Project")}</TableHead>
-              <TableHead>{sh("location", "Location")}</TableHead>
-              <TableHead>
-                <ColumnFilterHeader
-                  column="property_type"
-                  label="Type"
-                  currentSort={sortCol}
-                  currentDir={sortDir}
-                  filterParam="property_type"
-                  filterOptions={OPP_PROPERTY_TYPE_OPTIONS}
-                  currentFilter={sp.property_type}
-                />
-              </TableHead>
-              <TableHead>
-                <ColumnFilterHeader
-                  label="Opp By"
-                  filterParam="opportunity_by"
-                  filterOptions={OPP_BY_OPTIONS}
-                  currentFilter={sp.opportunity_by}
-                />
-              </TableHead>
-              {canViewFinancials && <TableHead>{sh("commission_percent", "Commission")}</TableHead>}
-              {canViewFinancials && <TableHead>{sh("possible_revenue", "Possible Revenue")}</TableHead>}
-              <TableHead>Leads</TableHead>
-              <TableHead>
-                <ColumnFilterHeader
-                  column="status"
-                  label="Status"
-                  currentSort={sortCol}
-                  currentDir={sortDir}
-                  filterParam="status"
-                  filterOptions={OPP_STATUS_OPTIONS}
-                  currentFilter={sp.status}
-                />
-              </TableHead>
+              {v.has("location") && <TableHead>{sh("location", "Location")}</TableHead>}
+              {v.has("property_type") && (
+                <TableHead>
+                  <ColumnFilterHeader
+                    column="property_type"
+                    label="Type"
+                    currentSort={sortCol}
+                    currentDir={sortDir}
+                    filterParam="property_type"
+                    filterOptions={OPP_PROPERTY_TYPE_OPTIONS}
+                    currentFilter={sp.property_type}
+                  />
+                </TableHead>
+              )}
+              {v.has("opportunity_by") && (
+                <TableHead>
+                  <ColumnFilterHeader
+                    label="Opp By"
+                    filterParam="opportunity_by"
+                    filterOptions={OPP_BY_OPTIONS}
+                    currentFilter={sp.opportunity_by}
+                  />
+                </TableHead>
+              )}
+              {canViewFinancials && v.has("commission") && <TableHead>{sh("commission_percent", "Commission")}</TableHead>}
+              {canViewFinancials && v.has("possible_revenue") && <TableHead>{sh("possible_revenue", "Possible Revenue")}</TableHead>}
+              {v.has("leads") && <TableHead>Leads</TableHead>}
+              {v.has("status") && (
+                <TableHead>
+                  <ColumnFilterHeader
+                    column="status"
+                    label="Status"
+                    currentSort={sortCol}
+                    currentDir={sortDir}
+                    filterParam="status"
+                    filterOptions={OPP_STATUS_OPTIONS}
+                    currentFilter={sp.status}
+                  />
+                </TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
             {opportunities.length === 0 ? (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={canViewFinancials ? 9 : 7}>
+                <TableCell colSpan={visibleCount}>
                   <EmptyState
                     icon={Building2}
                     title="No opportunities yet"
@@ -228,26 +263,28 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
             ) : (
               opportunities.map((opp) => (
                 <TableRow key={opp.id} className="hover:bg-muted/30">
-                  <TableCell className="font-mono text-xs text-muted-foreground">{opp.opp_number}</TableCell>
+                  {v.has("opp_number") && <TableCell className="font-mono text-xs text-muted-foreground">{opp.opp_number}</TableCell>}
                   <TableCell>
                     <Link href={`/opportunities/${opp.id}`} className="font-medium hover:underline">
                       {opp.name}
                     </Link>
                     <p className="text-xs text-muted-foreground">{opp.project}</p>
                   </TableCell>
-                  <TableCell className="text-sm">{opp.location}</TableCell>
-                  <TableCell className="text-sm">{opp.property_type}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{opp.opportunity_by ?? "Developer"}</TableCell>
-                  {canViewFinancials && <TableCell className="text-sm">{Number(opp.commission_percent)}%</TableCell>}
-                  {canViewFinancials && (
+                  {v.has("location") && <TableCell className="text-sm">{opp.location}</TableCell>}
+                  {v.has("property_type") && <TableCell className="text-sm">{opp.property_type}</TableCell>}
+                  {v.has("opportunity_by") && <TableCell className="text-sm text-muted-foreground">{opp.opportunity_by ?? "Developer"}</TableCell>}
+                  {canViewFinancials && v.has("commission") && <TableCell className="text-sm">{Number(opp.commission_percent)}%</TableCell>}
+                  {canViewFinancials && v.has("possible_revenue") && (
                     <TableCell className="text-sm">
                       {opp.possible_revenue ? formatCurrency(Number(opp.possible_revenue)) : "—"}
                     </TableCell>
                   )}
-                  <TableCell className="text-sm">{opp._count.leads}</TableCell>
-                  <TableCell>
-                    <OpportunityStatusBadge status={opp.status} />
-                  </TableCell>
+                  {v.has("leads") && <TableCell className="text-sm">{opp._count.leads}</TableCell>}
+                  {v.has("status") && (
+                    <TableCell>
+                      <OpportunityStatusBadge status={opp.status} />
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}

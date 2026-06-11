@@ -24,6 +24,8 @@ import { formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, Clock, Search, ArrowUpDown, ArrowUp, ArrowDown, Timer, CheckSquare } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ColumnPicker } from "@/components/shared/ColumnPicker";
+import { TASK_COLUMNS } from "@/lib/task-columns";
 import { ColumnFilterHeader } from "@/components/shared/ColumnFilterHeader";
 import { startOfDay, endOfDay, addDays, differenceInCalendarDays } from "date-fns";
 
@@ -53,6 +55,8 @@ interface TaskTableProps {
   users: User[];
   clients: Client[];
   currentParams: { status?: string; assigned_to?: string };
+  /** Visible column ids (per-user preference); defaults to all columns */
+  initialColumns?: string[];
 }
 
 const ACTIVE_STATUSES = ["Todo", "InProgress"];
@@ -98,13 +102,16 @@ const PRIORITY_OPTIONS = [
   { label: "Low", value: "Low" },
 ];
 
-export function TaskTable({ tasks, users, clients }: TaskTableProps) {
+export function TaskTable({ tasks, users, clients, initialColumns }: TaskTableProps) {
   const [search, setSearch] = useState("");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [clientFilter, setClientFilter] = useState("all");
   const [sortCol, setSortCol] = useState("due_date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [visibleCols, setVisibleCols] = useState<Set<string>>(
+    () => new Set(initialColumns ?? TASK_COLUMNS.map((c) => c.id))
+  );
 
   const toggleSort = (col: string) => {
     if (sortCol === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -217,6 +224,16 @@ export function TaskTable({ tasks, users, clients }: TaskTableProps) {
             </Select>
           </div>
         )}
+        <div className="hidden md:flex flex-col gap-1">
+          <span className="text-[11px] font-medium text-muted-foreground">&nbsp;</span>
+          <ColumnPicker
+            listKey="tasks"
+            columns={TASK_COLUMNS}
+            visible={[...visibleCols]}
+            onVisibleChange={(ids) => setVisibleCols(new Set(ids))}
+            className="h-9"
+          />
+        </div>
       </div>
 
       {/* Bucket tabs */}
@@ -269,6 +286,7 @@ export function TaskTable({ tasks, users, clients }: TaskTableProps) {
               assigneeFilter={assigneeFilter}
               onAssigneeFilter={(v) => setAssigneeFilter(v ?? "all")}
               users={users}
+              visible={visibleCols}
             />
           </TabsContent>
         ))}
@@ -291,7 +309,7 @@ function TaskGrid({
   tasks, sortCol, sortDir, onSort,
   priorityFilter, onPriorityFilter,
   assigneeFilter, onAssigneeFilter,
-  users,
+  users, visible,
 }: {
   tasks: Task[];
   sortCol: string;
@@ -302,6 +320,7 @@ function TaskGrid({
   assigneeFilter: string;
   onAssigneeFilter: (v: string | null) => void;
   users: User[];
+  visible: Set<string>;
 }) {
   const sh = (col: string, label: string) => <SortBtn col={col} label={label} sortCol={sortCol} sortDir={sortDir} onSort={onSort} />;
 
@@ -372,35 +391,39 @@ function TaskGrid({
           <TableHeader>
             <TableRow className="bg-muted/50">
               <TableHead>{sh("title", "Task")}</TableHead>
-              <TableHead>{sh("status", "Status")}</TableHead>
-              <TableHead>
-                <ColumnFilterHeader
-                  column="priority"
-                  label="Priority"
-                  currentSort={sortCol}
-                  currentDir={sortDir}
-                  filterOptions={PRIORITY_OPTIONS}
-                  currentFilter={priorityFilter}
-                  onFilter={onPriorityFilter}
-                  onSort={onSort}
-                />
-              </TableHead>
-              <TableHead>{sh("due_date", "Due Date")}</TableHead>
-              <TableHead>
-                <ColumnFilterHeader
-                  column="assigned_to"
-                  label="Assigned To"
-                  currentSort={sortCol}
-                  currentDir={sortDir}
-                  filterOptions={users.map((u) => ({ label: u.name, value: u.id }))}
-                  currentFilter={assigneeFilter}
-                  onFilter={onAssigneeFilter}
-                  onSort={onSort}
-                />
-              </TableHead>
-              <TableHead className="text-center">Days</TableHead>
-              <TableHead>Client</TableHead>
-              <TableHead>Linked To</TableHead>
+              {visible.has("status") && <TableHead>{sh("status", "Status")}</TableHead>}
+              {visible.has("priority") && (
+                <TableHead>
+                  <ColumnFilterHeader
+                    column="priority"
+                    label="Priority"
+                    currentSort={sortCol}
+                    currentDir={sortDir}
+                    filterOptions={PRIORITY_OPTIONS}
+                    currentFilter={priorityFilter}
+                    onFilter={onPriorityFilter}
+                    onSort={onSort}
+                  />
+                </TableHead>
+              )}
+              {visible.has("due_date") && <TableHead>{sh("due_date", "Due Date")}</TableHead>}
+              {visible.has("assigned_to") && (
+                <TableHead>
+                  <ColumnFilterHeader
+                    column="assigned_to"
+                    label="Assigned To"
+                    currentSort={sortCol}
+                    currentDir={sortDir}
+                    filterOptions={users.map((u) => ({ label: u.name, value: u.id }))}
+                    currentFilter={assigneeFilter}
+                    onFilter={onAssigneeFilter}
+                    onSort={onSort}
+                  />
+                </TableHead>
+              )}
+              {visible.has("days") && <TableHead className="text-center">Days</TableHead>}
+              {visible.has("client") && <TableHead>Client</TableHead>}
+              {visible.has("linked") && <TableHead>Linked To</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -414,37 +437,45 @@ function TaskGrid({
                     </Link>
                     <p className="text-xs text-muted-foreground font-mono">{task.task_number}</p>
                   </TableCell>
-                  <TableCell><TaskStatusBadge status={task.status} /></TableCell>
-                  <TableCell><PriorityBadge priority={task.priority} /></TableCell>
-                  <TableCell className={cn("text-sm", isOverdue && "text-destructive font-medium")}>
-                    {formatDate(task.due_date)}
-                  </TableCell>
-                  <TableCell className="text-sm">{task.assigned_to.name}</TableCell>
-                  <TableCell className="text-center">
-                    <DaysElapsedBadge task={task} />
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {task.client ? (
-                      <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/30 px-1.5 py-0.5 rounded">
-                        {task.client.name}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground text-xs">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {task.lead ? (
-                      <Link href={`/leads/${task.lead.id}`} className="text-primary hover:underline text-xs">
-                        {task.lead.lead_number}
-                      </Link>
-                    ) : task.opportunity ? (
-                      <Link href={`/opportunities/${task.opportunity.id}`} className="text-primary hover:underline text-xs">
-                        {task.opportunity.opp_number}
-                      </Link>
-                    ) : (
-                      <span className="text-muted-foreground text-xs">Standalone</span>
-                    )}
-                  </TableCell>
+                  {visible.has("status") && <TableCell><TaskStatusBadge status={task.status} /></TableCell>}
+                  {visible.has("priority") && <TableCell><PriorityBadge priority={task.priority} /></TableCell>}
+                  {visible.has("due_date") && (
+                    <TableCell className={cn("text-sm", isOverdue && "text-destructive font-medium")}>
+                      {formatDate(task.due_date)}
+                    </TableCell>
+                  )}
+                  {visible.has("assigned_to") && <TableCell className="text-sm">{task.assigned_to.name}</TableCell>}
+                  {visible.has("days") && (
+                    <TableCell className="text-center">
+                      <DaysElapsedBadge task={task} />
+                    </TableCell>
+                  )}
+                  {visible.has("client") && (
+                    <TableCell className="text-sm">
+                      {task.client ? (
+                        <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/30 px-1.5 py-0.5 rounded">
+                          {task.client.name}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
+                    </TableCell>
+                  )}
+                  {visible.has("linked") && (
+                    <TableCell className="text-sm">
+                      {task.lead ? (
+                        <Link href={`/leads/${task.lead.id}`} className="text-primary hover:underline text-xs">
+                          {task.lead.lead_number}
+                        </Link>
+                      ) : task.opportunity ? (
+                        <Link href={`/opportunities/${task.opportunity.id}`} className="text-primary hover:underline text-xs">
+                          {task.opportunity.opp_number}
+                        </Link>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">Standalone</span>
+                      )}
+                    </TableCell>
+                  )}
                 </TableRow>
               );
             })}

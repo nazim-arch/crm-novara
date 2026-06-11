@@ -205,6 +205,7 @@ model User {
   lead_opp_tags        LeadOpportunity[]
   expenses_added       OpportunityExpense[]
   password_reset_tokens PasswordResetToken[]
+  preferences           UserPreference[]
 
   commission_slabs         SalesCommissionSlab[]   @relation("CommissionSlabs")
   commission_slabs_created SalesCommissionSlab[]   @relation("SlabsCreatedBy")
@@ -234,6 +235,20 @@ model PasswordResetToken {
 
   @@index([user_id])
   @@map("password_reset_tokens")
+}
+
+// Per-user UI preferences (e.g. list column visibility), keyed by feature
+model UserPreference {
+  id         String   @id @default(cuid())
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  key        String
+  value      Json     @default("{}")
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([user_id, key])
+  @@map("user_preferences")
 }
 
 // ─────────────────────────────────────────────

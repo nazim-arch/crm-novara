@@ -8,6 +8,8 @@ import { Plus, List, LayoutGrid } from "lucide-react";
 import { hasPermissionAsync, taskScopeFilter } from "@/lib/rbac";
 import { ExportButton } from "@/components/shared/ExportButton";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { getVisibleColumns } from "@/lib/column-prefs";
+import { TASK_COLUMNS } from "@/lib/task-columns";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
 type SearchParams = Promise<{ view?: string }>;
@@ -52,6 +54,10 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
   const canCreate = session?.user && await hasPermissionAsync(session.user.role, "task:create");
   const isScoped = !!scope;
 
+  const visibleTaskCols = session?.user
+    ? await getVisibleColumns(session.user.id, "tasks", TASK_COLUMNS)
+    : new Set(TASK_COLUMNS.map((c) => c.id));
+
   return (
     <div className="p-3 sm:p-6 space-y-3 sm:space-y-4">
       <PageHeader
@@ -89,7 +95,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
       {view === "kanban" ? (
         <KanbanBoard tasks={tasks} />
       ) : (
-        <TaskTable tasks={tasks} users={isScoped ? [] : users} clients={clients} currentParams={{}} />
+        <TaskTable tasks={tasks} users={isScoped ? [] : users} clients={clients} currentParams={{}} initialColumns={[...visibleTaskCols]} />
       )}
     </div>
   );
