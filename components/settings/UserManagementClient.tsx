@@ -29,6 +29,7 @@ type User = {
 
 const ACTIVE_ROLES = [
   { value: "Admin", label: "Admin" },
+  { value: "Manager", label: "Manager" },
   { value: "TeamLead", label: "Team Lead" },
   { value: "Sales", label: "Sales" },
   { value: "Operations", label: "Sage Operations" },
@@ -36,10 +37,10 @@ const ACTIVE_ROLES = [
 
 const ALL_ROLES = [
   { value: "Admin", label: "Admin" },
+  { value: "Manager", label: "Manager" },
   { value: "TeamLead", label: "Team Lead" },
   { value: "Sales", label: "Sales" },
   { value: "Operations", label: "Sage Operations" },
-  { value: "Manager", label: "Manager (Legacy)" },
   { value: "Viewer", label: "Viewer (Legacy)" },
 ];
 

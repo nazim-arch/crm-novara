@@ -77,10 +77,16 @@ export const DEFAULT_PERMS: Record<string, Permission[]> = {
   Operations: [
     "task:create", "task:read", "task:update",
   ],
+  // Manager mirrors TeamLead's action permissions, but sees ALL data (no scope
+  // restriction — see leadScopeFilter/taskScopeFilter, which only scope Sales/
+  // Operations/TeamLead). It additionally keeps report:view + financial:view so
+  // its oversight features (CRM Overview, Daily Activity, Pipeline Digest, Audit
+  // Log) remain available.
   Manager: [
-    "lead:create", "lead:read", "lead:update", "lead:delete",
-    "opportunity:create", "opportunity:update", "opportunity:read", "opportunity:delete",
-    "task:create", "task:read", "task:update", "task:delete",
+    "lead:create", "lead:read", "lead:update",
+    "opportunity:read",
+    "task:create", "task:read", "task:update",
+    "commission:view",
     "report:view", "financial:view",
   ],
   Viewer: ["lead:read", "task:read", "opportunity:read", "report:view"],
