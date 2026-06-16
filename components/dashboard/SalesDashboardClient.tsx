@@ -107,10 +107,10 @@ const TEMP_COLOR: Record<string, string> = {
 
 const STAGE_LABELS: Record<string, string> = {
   New: "New", Prospect: "Prospect", SiteVisitCompleted: "Site Visit",
-  Negotiation: "Negotiation", Won: "Won", Lost: "Lost",
+  Negotiation: "Negotiation", Booked: "Booked", Won: "Won", Lost: "Lost",
   OnHold: "On Hold", Recycle: "Recycle", InvalidLead: "Invalid",
 };
-const STAGE_ORDER = ["New","Prospect","SiteVisitCompleted","Negotiation","Won","Lost","OnHold","Recycle","InvalidLead"];
+const STAGE_ORDER = ["New","Prospect","SiteVisitCompleted","Negotiation","Booked","Won","Lost","OnHold","Recycle","InvalidLead"];
 
 const tooltipStyle = {
   fontSize: 12, borderRadius: 8,

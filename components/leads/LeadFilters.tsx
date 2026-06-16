@@ -97,6 +97,7 @@ export function LeadFilters({ users, leadSources, currentParams }: LeadFiltersPr
             <SelectItem value="Prospect">Prospect</SelectItem>
             <SelectItem value="SiteVisitCompleted">Site Visit Completed</SelectItem>
             <SelectItem value="Negotiation">Negotiation</SelectItem>
+            <SelectItem value="Booked">Booked</SelectItem>
             <SelectItem value="Won">Won</SelectItem>
             <SelectItem value="Lost">Lost</SelectItem>
             <SelectItem value="InvalidLead">Invalid Lead</SelectItem>

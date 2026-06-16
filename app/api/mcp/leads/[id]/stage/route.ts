@@ -29,7 +29,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
       return NextResponse.json({ error: "stage is required" }, { status: 400 });
     }
 
-    const validStages = ["New", "Contacted", "Prospect", "SiteVisitCompleted", "Negotiation", "Won", "Lost", "InvalidLead", "OnHold", "Recycle"];
+    const validStages = ["New", "Contacted", "Prospect", "SiteVisitCompleted", "Negotiation", "Booked", "Won", "Lost", "InvalidLead", "OnHold", "Recycle"];
     if (!validStages.includes(stage)) {
       return NextResponse.json({ error: `Invalid stage. Must be one of: ${validStages.join(", ")}` }, { status: 400 });
     }

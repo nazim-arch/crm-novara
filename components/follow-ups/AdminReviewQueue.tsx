@@ -173,6 +173,7 @@ function StatusBadge({ status }: { status: string }) {
     Prospect: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
     SiteVisitCompleted: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",
     Negotiation: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+    Booked: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
     Won: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
     Lost: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
     InvalidLead: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",

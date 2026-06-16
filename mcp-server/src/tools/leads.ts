@@ -8,7 +8,7 @@ export function registerLeadTools(server: McpServer) {
     "Search and list DealStackHQ leads. Supports filtering by status, temperature, assigned agent, date range, and full-text search.",
     {
       q: z.string().optional().describe("Search by name, phone, email, or lead number"),
-      status: z.enum(["New", "Contacted", "Prospect", "SiteVisitCompleted", "Negotiation", "Won", "Lost", "InvalidLead", "OnHold", "Recycle"]).optional(),
+      status: z.enum(["New", "Contacted", "Prospect", "SiteVisitCompleted", "Negotiation", "Booked", "Won", "Lost", "InvalidLead", "OnHold", "Recycle"]).optional(),
       temperature: z.enum(["Hot", "Warm", "Cold", "FollowUpLater"]).optional(),
       assigned_to: z.string().optional().describe("User ID of the assigned agent"),
       date_from: z.string().optional().describe("ISO date string — filter leads created on or after this date"),
@@ -83,7 +83,7 @@ export function registerLeadTools(server: McpServer) {
     "Move a lead to a new pipeline stage. For Won leads, provide settlement_value and deal_commission_percent. For Lost leads, provide lost_reason.",
     {
       lead_id: z.string().describe("Lead ID or lead number"),
-      stage: z.enum(["New", "Contacted", "Prospect", "SiteVisitCompleted", "Negotiation", "Won", "Lost", "InvalidLead", "OnHold", "Recycle"]),
+      stage: z.enum(["New", "Contacted", "Prospect", "SiteVisitCompleted", "Negotiation", "Booked", "Won", "Lost", "InvalidLead", "OnHold", "Recycle"]),
       notes: z.string().optional().describe("Notes about this stage change"),
       lost_reason: z.string().optional().describe("Reason for losing the lead (required when stage=Lost)"),
       lost_notes: z.string().optional(),

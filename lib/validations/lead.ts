@@ -48,7 +48,7 @@ export const updateLeadSchema = leadBaseSchema.partial().refine(
 
 export const PIPELINE_STAGES = [
   "New", "Contacted", "Prospect", "SiteVisitCompleted", "Negotiation",
-  "Won", "Lost", "InvalidLead", "OnHold", "Recycle",
+  "Booked", "Won", "Lost", "InvalidLead", "OnHold", "Recycle",
 ] as const;
 
 // Call-disposition states shown on the lead detail page and dashboards.

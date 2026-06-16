@@ -7,7 +7,7 @@ import { revalidateTag } from "next/cache";
 
 // ── Validation ─────────────────────────────────────────────────────────────
 
-const VALID_STATUSES = ["New", "Prospect", "SiteVisitCompleted", "Negotiation", "Won", "Lost", "OnHold", "Recycle"] as const;
+const VALID_STATUSES = ["New", "Prospect", "SiteVisitCompleted", "Negotiation", "Booked", "Won", "Lost", "OnHold", "Recycle"] as const;
 const VALID_TEMPS    = ["Hot", "Warm", "Cold", "FollowUpLater"] as const;
 const VALID_FU_TYPES = ["Call", "Email", "WhatsApp", "Visit", "Meeting", "Activity", "Internal"] as const;
 

@@ -136,7 +136,7 @@ async function downloadTemplate() {
 
   const notes = [
     "e.g. LD-00042  (REQUIRED)",
-    "New | Prospect | SiteVisitCompleted | Negotiation | Won | Lost | OnHold | Recycle",
+    "New | Prospect | SiteVisitCompleted | Negotiation | Booked | Won | Lost | OnHold | Recycle",
     "Hot | Warm | Cold | FollowUpLater",
     "YYYY-MM-DD e.g. 2026-06-15",
     "Call | Email | WhatsApp | Visit | Meeting | Activity | Internal",
@@ -328,7 +328,7 @@ export function LeadUpdateModal() {
                 ))}
               </div>
               <div className="text-xs text-muted-foreground space-y-0.5 pt-1">
-                <p><strong>Status:</strong> New · Prospect · SiteVisitCompleted · Negotiation · Won · Lost · OnHold · Recycle</p>
+                <p><strong>Status:</strong> New · Prospect · SiteVisitCompleted · Negotiation · Booked · Won · Lost · OnHold · Recycle</p>
                 <p><strong>Temperature:</strong> Hot · Warm · Cold · FollowUpLater</p>
                 <p><strong>Followup Type:</strong> Call · Email · WhatsApp · Visit · Meeting · Activity · Internal</p>
                 <p><strong>Date format:</strong> YYYY-MM-DD (e.g. 2026-06-15)</p>

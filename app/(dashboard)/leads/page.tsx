@@ -87,6 +87,7 @@ const LEAD_STATUS_OPTIONS = [
   { label: "Prospect", value: "Prospect" },
   { label: "Site Visit Done", value: "SiteVisitCompleted" },
   { label: "Negotiation", value: "Negotiation" },
+  { label: "Booked", value: "Booked" },
   { label: "Won", value: "Won" },
   { label: "Lost", value: "Lost" },
   { label: "Invalid", value: "InvalidLead" },

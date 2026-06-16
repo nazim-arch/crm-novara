@@ -141,7 +141,7 @@ const TEMP_COLOR: Record<string, string> = {
 };
 
 const STAGE_ORDER = [
-  "New", "Prospect", "SiteVisitCompleted", "Negotiation",
+  "New", "Prospect", "SiteVisitCompleted", "Negotiation", "Booked",
   "Won", "Lost", "OnHold", "Recycle", "InvalidLead",
 ];
 

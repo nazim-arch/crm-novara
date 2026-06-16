@@ -33,6 +33,7 @@ enum LeadStatus {
   Prospect
   SiteVisitCompleted
   Negotiation
+  Booked
   Won
   Lost
   InvalidLead

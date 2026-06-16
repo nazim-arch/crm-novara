@@ -345,7 +345,7 @@ async function main() {
   }
 
   // Leads where lo.status is MORE advanced than lead.status (reverse drift — unusual)
-  const stageOrder = ["New", "Contacted", "Prospect", "SiteVisitCompleted", "Negotiation", "Won", "Lost", "InvalidLead", "OnHold", "Recycle"];
+  const stageOrder = ["New", "Contacted", "Prospect", "SiteVisitCompleted", "Negotiation", "Booked", "Won", "Lost", "InvalidLead", "OnHold", "Recycle"];
   const loAheadOfLead = driftAny.filter((lo) => {
     const loIdx = stageOrder.indexOf(lo.status);
     const leadIdx = stageOrder.indexOf(lo.lead.status);

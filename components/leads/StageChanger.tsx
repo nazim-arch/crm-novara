@@ -31,6 +31,7 @@ const PIPELINE_STAGES = [
   { value: "Prospect", label: "Prospect" },
   { value: "SiteVisitCompleted", label: "Site Visit Completed" },
   { value: "Negotiation", label: "Negotiation" },
+  { value: "Booked", label: "Booked" },
   { value: "Won", label: "Won" },
   { value: "Lost", label: "Lost" },
   { value: "InvalidLead", label: "Invalid Lead" },

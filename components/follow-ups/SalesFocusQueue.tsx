@@ -73,7 +73,7 @@ type ModalType =
 interface ModalState { type: ModalType; item: FocusItem }
 
 const FOLLOW_UP_TYPES = ["Call", "Email", "WhatsApp", "Visit", "Meeting", "Activity", "Internal"] as const;
-const PIPELINE_STAGES = ["New", "Prospect", "SiteVisitCompleted", "Negotiation", "Won", "Lost", "InvalidLead", "OnHold", "Recycle"] as const;
+const PIPELINE_STAGES = ["New", "Prospect", "SiteVisitCompleted", "Negotiation", "Booked", "Won", "Lost", "InvalidLead", "OnHold", "Recycle"] as const;
 const OUTCOMES = ["Interested", "Not Interested", "Call Back", "Thinking", "Sent Details", "Site Visit Scheduled", "Site Visit Done", "Negotiating", "Deal Done", "Other"];
 const TEMPERATURES = ["Hot", "Warm", "Cold", "FollowUpLater"];
 const LOST_REASONS = ["Budget Mismatch", "Location Mismatch", "No Response", "Went with Competitor", "Not Looking Anymore", "Property Not Available", "Other"];

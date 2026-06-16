@@ -19,6 +19,7 @@ const STAGE_COLORS: Record<string, string> = {
   Visit: "#f59e0b",
   FollowUp: "#f97316",
   Negotiation: "#ef4444",
+  Booked: "#d97706",
   Won: "#22c55e",
   Lost: "#6b7280",
   OnHold: "#94a3b8",

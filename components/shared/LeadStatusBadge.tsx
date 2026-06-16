@@ -7,6 +7,7 @@ type LeadStatus =
   | "Prospect"
   | "SiteVisitCompleted"
   | "Negotiation"
+  | "Booked"
   | "Won"
   | "Lost"
   | "InvalidLead"
@@ -21,6 +22,7 @@ const STATUS_STYLES: Record<LeadStatus, string> = {
   Prospect: "bg-indigo-100 text-indigo-700",
   SiteVisitCompleted: "bg-cyan-100 text-cyan-700",
   Negotiation: "bg-orange-100 text-orange-700",
+  Booked: "bg-amber-100 text-amber-800",
   Won: "bg-green-100 text-green-700",
   Lost: "bg-red-100 text-red-700",
   InvalidLead: "bg-rose-100 text-rose-700",
@@ -34,6 +36,7 @@ const STATUS_LABELS: Record<LeadStatus, string> = {
   Prospect: "Prospect",
   SiteVisitCompleted: "Site Visit",
   Negotiation: "Negotiation",
+  Booked: "Booked",
   Won: "Won",
   Lost: "Lost",
   InvalidLead: "Invalid Lead",
