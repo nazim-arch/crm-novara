@@ -17,6 +17,15 @@ export async function GET(request: Request) {
       user_id: session.user.id,
       ...(unreadOnly && { read: false }),
     },
+    select: {
+      id: true,
+      type: true,
+      message: true,
+      entity_type: true,
+      entity_id: true,
+      read: true,
+      created_at: true,
+    },
     orderBy: { created_at: "desc" },
     take: limit,
   });

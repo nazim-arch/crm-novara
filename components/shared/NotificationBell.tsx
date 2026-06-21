@@ -38,9 +38,31 @@ export function NotificationBell() {
   }, []);
 
   useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 60_000);
-    return () => clearInterval(interval);
+    // Poll only while the tab is visible: background tabs would otherwise keep
+    // hitting /api/notifications every interval, burning serverless invocations.
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const start = () => {
+      if (interval !== null) return;
+      fetchNotifications();
+      interval = setInterval(fetchNotifications, 180_000);
+    };
+    const stop = () => {
+      if (interval === null) return;
+      clearInterval(interval);
+      interval = null;
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") start();
+      else stop();
+    };
+
+    onVisibility();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [fetchNotifications]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
