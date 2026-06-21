@@ -271,15 +271,17 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
       take: 1,
     }),
 
-    // ── Won in period via stage history ───────────────────────────────────
-    prisma.leadStageHistory.count({
-      where: {
-        to_stage: "Won",
-        changed_at: { gte: rangeStart, lte: rangeEnd },
-        lead: leadScope
-          ? { deleted_at: null, ...leadScope }
-          : { deleted_at: null },
-      },
+    // ── Won in period: distinct leads currently Won that reached Won in the
+    // period. Using current status (not raw stage_history) excludes leads that
+    // hit Won then moved back (e.g. regressed to Booked), and keeps this in sync
+    // with the card's /leads?status=Won link and the CRM dashboard's Won count.
+    prisma.lead.count({
+      where: leadWhere({
+        status: "Won",
+        stage_history: {
+          some: { to_stage: "Won", changed_at: { gte: rangeStart, lte: rangeEnd } },
+        },
+      }),
     }),
 
     // ── Site Visit reached in period via stage history ────────────────────
