@@ -455,7 +455,10 @@ const getSalesDashboardData = unstable_cache(
     };
   },
   ["sales-dashboard"],
-  { tags: ["sales-dashboard"], revalidate: 300 },
+  // Share the crm-dashboard tag so existing revalidateTag("crm-dashboard")
+  // calls on lead/opportunity/task/follow-up writes also bust this cache —
+  // otherwise it would stay stale up to `revalidate` seconds after edits.
+  { tags: ["crm-dashboard", "sales-dashboard"], revalidate: 300 },
 );
 
 // ── Page ───────────────────────────────────────────────────────────────────

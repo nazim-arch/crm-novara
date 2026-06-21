@@ -1,8 +1,7 @@
-﻿export const dynamic = "force-dynamic";
-
-import { auth } from "@/lib/auth";
+﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermissionAsync } from "@/lib/rbac";
+import { unstable_cache } from "next/cache";
 import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TaskStatsCards } from "@/components/dashboard/TaskStatsCards";
@@ -18,6 +17,166 @@ import { Suspense } from "react";
 function todayIST() {
   return new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
+
+// ── Cached data fetcher — shared across requests with same params ────────────
+// All DB work + serialization happens here so repeated dashboard views hit the
+// cache instead of re-running every query on each load. Shares the
+// "crm-dashboard" tag so existing revalidateTag("crm-dashboard") calls on task
+// writes (create/update/reassign/delete) bust it immediately.
+
+const getTaskDashboardData = unstable_cache(
+  async (
+    userId: string,
+    userName: string,
+    isScoped: boolean,
+    rangeStartISO: string,
+    rangeEndISO: string,
+    todayStartISO: string,
+    todayEndISO: string,
+  ) => {
+    const rangeStart = new Date(rangeStartISO);
+    const rangeEnd = new Date(rangeEndISO);
+    const todayStart = new Date(todayStartISO);
+    const todayEnd = new Date(todayEndISO);
+
+    const scopeFilter = isScoped ? { assigned_to_id: userId } : {};
+    const rangeFilter = { due_date: { gte: rangeStart, lte: rangeEnd } };
+
+    const [
+      totalTasks,
+      overdueTasks,
+      dueTodayTasks,
+      myTasks,
+      totalInRange,
+      completedInRange,
+      // Active tasks charts
+      byAssignee,
+      revenueAtRisk,
+      byClient,
+      // Completed tasks charts
+      completedByAssignee,
+      completedByClient,
+      // Kanban by user
+      kanbanTasks,
+      allActiveUsers,
+    ] = await Promise.all([
+      prisma.task.count({ where: { deleted_at: null, ...scopeFilter, status: { notIn: ["Done", "Cancelled"] } } }),
+      prisma.task.count({
+        where: { deleted_at: null, ...scopeFilter, due_date: { lt: todayStart }, status: { notIn: ["Done", "Cancelled"] } },
+      }),
+      prisma.task.count({
+        where: { deleted_at: null, ...scopeFilter, due_date: { gte: todayStart, lte: todayEnd }, status: { notIn: ["Done", "Cancelled"] } },
+      }),
+      prisma.task.count({
+        where: { deleted_at: null, assigned_to_id: userId, status: { notIn: ["Done", "Cancelled"] } },
+      }),
+      prisma.task.count({ where: { deleted_at: null, ...scopeFilter, ...rangeFilter } }),
+      prisma.task.count({ where: { deleted_at: null, ...scopeFilter, ...rangeFilter, status: "Done" } }),
+      // Active task charts (by range)
+      prisma.task.groupBy({
+        by: ["assigned_to_id"],
+        where: { deleted_at: null, ...scopeFilter, ...rangeFilter, status: { notIn: ["Done", "Cancelled"] } },
+        _count: { id: true },
+      }),
+      prisma.task.aggregate({
+        where: {
+          deleted_at: null, ...scopeFilter, revenue_tagged: true, revenue_amount: { not: null },
+          due_date: { lt: todayStart }, status: { notIn: ["Done", "Cancelled"] },
+        },
+        _sum: { revenue_amount: true },
+      }),
+      prisma.task.groupBy({
+        by: ["client_id"],
+        where: { deleted_at: null, ...scopeFilter, ...rangeFilter, status: { notIn: ["Done", "Cancelled"] }, client_id: { not: null } },
+        _count: { id: true },
+      }),
+      // Completed task charts (by range)
+      prisma.task.groupBy({
+        by: ["assigned_to_id"],
+        where: { deleted_at: null, ...scopeFilter, ...rangeFilter, status: "Done" },
+        _count: { id: true },
+      }),
+      prisma.task.groupBy({
+        by: ["client_id"],
+        where: { deleted_at: null, ...scopeFilter, ...rangeFilter, status: "Done", client_id: { not: null } },
+        _count: { id: true },
+      }),
+      // Kanban by user — all active (non-scoped only)
+      !isScoped ? prisma.task.findMany({
+        where: { deleted_at: { equals: null }, status: { in: ["Todo", "InProgress"] } },
+        select: {
+          id: true,
+          task_number: true,
+          title: true,
+          status: true,
+          priority: true,
+          due_date: true,
+          assigned_to_id: true,
+          lead: { select: { lead_number: true } },
+          client: { select: { name: true } },
+        },
+        orderBy: { due_date: "asc" },
+      }) : Promise.resolve([]),
+      !isScoped ? prisma.user.findMany({
+        where: { is_active: true },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      }) : Promise.resolve([]),
+    ]);
+
+    // For Admin/Manager (!isScoped) we already fetched allActiveUsers in the main Promise.all.
+    // Reuse that to build the assignee name map — saves one DB round-trip.
+    const allClientIds = [...new Set([
+      ...byClient.map(c => c.client_id).filter(Boolean) as string[],
+      ...completedByClient.map(c => c.client_id).filter(Boolean) as string[],
+    ])];
+
+    const clientRecords = allClientIds.length > 0
+      ? await prisma.client.findMany({ where: { id: { in: allClientIds } }, select: { id: true, name: true } })
+      : [];
+
+    const userMap = !isScoped
+      ? Object.fromEntries(allActiveUsers.map(u => [u.id, u.name]))
+      : { [userId]: userName };
+    const clientMap = Object.fromEntries(clientRecords.map(c => [c.id, c.name]));
+
+    const assigneeData = byAssignee.map(a => ({ name: userMap[a.assigned_to_id] ?? "Unknown", count: a._count.id }));
+    const clientData = byClient.map(c => ({ name: clientMap[c.client_id!] ?? "Unknown", count: c._count.id }));
+    const completedAssigneeData = completedByAssignee.map(a => ({ name: userMap[a.assigned_to_id] ?? "Unknown", count: a._count.id }));
+    const completedClientData = completedByClient.map(c => ({ name: clientMap[c.client_id!] ?? "Unknown", count: c._count.id }));
+
+    const completionRate = totalInRange > 0 ? Math.round((completedInRange / totalInRange) * 100) : null;
+
+    return {
+      totalTasks,
+      overdueTasks,
+      dueTodayTasks,
+      myTasks,
+      totalInRange,
+      completedInRange,
+      completionRate,
+      revenueAtRisk: Number(revenueAtRisk._sum.revenue_amount ?? 0),
+      assigneeData,
+      clientData,
+      completedAssigneeData,
+      completedClientData,
+      allActiveUsers,
+      kanbanTasks: kanbanTasks.map((t) => ({
+        id: t.id,
+        task_number: t.task_number,
+        title: t.title,
+        status: t.status,
+        priority: t.priority,
+        due_date: t.due_date.toISOString(),
+        assigned_to_id: t.assigned_to_id,
+        lead: t.lead,
+        client: t.client,
+      })),
+    };
+  },
+  ["task-dashboard"],
+  { tags: ["crm-dashboard", "task-dashboard"], revalidate: 300 },
+);
 
 type SearchParams = Promise<{ range?: string; from?: string; to?: string }>;
 
@@ -37,115 +196,20 @@ export default async function TaskDashboardPage({ searchParams }: { searchParams
   const todayEnd = endOfDay(today);
 
   const isScoped = session.user.role === "Sales" || session.user.role === "Operations";
-  const scopeFilter = isScoped ? { assigned_to_id: session.user.id } : {};
-  const rangeFilter = { due_date: { gte: rangeStart, lte: rangeEnd } };
 
-  const [
-    totalTasks,
-    overdueTasks,
-    dueTodayTasks,
-    myTasks,
-    totalInRange,
-    completedInRange,
-    // Active tasks charts
-    byAssignee,
-    revenueAtRisk,
-    byClient,
-    // Completed tasks charts
-    completedByAssignee,
-    completedByClient,
-    // Kanban by user
-    kanbanTasks,
-    allActiveUsers,
-  ] = await Promise.all([
-    prisma.task.count({ where: { deleted_at: null, ...scopeFilter, status: { notIn: ["Done", "Cancelled"] } } }),
-    prisma.task.count({
-      where: { deleted_at: null, ...scopeFilter, due_date: { lt: todayStart }, status: { notIn: ["Done", "Cancelled"] } },
-    }),
-    prisma.task.count({
-      where: { deleted_at: null, ...scopeFilter, due_date: { gte: todayStart, lte: todayEnd }, status: { notIn: ["Done", "Cancelled"] } },
-    }),
-    prisma.task.count({
-      where: { deleted_at: null, assigned_to_id: session.user.id, status: { notIn: ["Done", "Cancelled"] } },
-    }),
-    prisma.task.count({ where: { deleted_at: null, ...scopeFilter, ...rangeFilter } }),
-    prisma.task.count({ where: { deleted_at: null, ...scopeFilter, ...rangeFilter, status: "Done" } }),
-    // Active task charts (by range)
-    prisma.task.groupBy({
-      by: ["assigned_to_id"],
-      where: { deleted_at: null, ...scopeFilter, ...rangeFilter, status: { notIn: ["Done", "Cancelled"] } },
-      _count: { id: true },
-    }),
-    prisma.task.aggregate({
-      where: {
-        deleted_at: null, ...scopeFilter, revenue_tagged: true, revenue_amount: { not: null },
-        due_date: { lt: todayStart }, status: { notIn: ["Done", "Cancelled"] },
-      },
-      _sum: { revenue_amount: true },
-    }),
-    prisma.task.groupBy({
-      by: ["client_id"],
-      where: { deleted_at: null, ...scopeFilter, ...rangeFilter, status: { notIn: ["Done", "Cancelled"] }, client_id: { not: null } },
-      _count: { id: true },
-    }),
-    // Completed task charts (by range)
-    prisma.task.groupBy({
-      by: ["assigned_to_id"],
-      where: { deleted_at: null, ...scopeFilter, ...rangeFilter, status: "Done" },
-      _count: { id: true },
-    }),
-    prisma.task.groupBy({
-      by: ["client_id"],
-      where: { deleted_at: null, ...scopeFilter, ...rangeFilter, status: "Done", client_id: { not: null } },
-      _count: { id: true },
-    }),
-    // Kanban by user — all active (non-scoped only)
-    !isScoped ? prisma.task.findMany({
-      where: { deleted_at: { equals: null }, status: { in: ["Todo", "InProgress"] } },
-      select: {
-        id: true,
-        task_number: true,
-        title: true,
-        status: true,
-        priority: true,
-        due_date: true,
-        assigned_to_id: true,
-        lead: { select: { lead_number: true } },
-        client: { select: { name: true } },
-      },
-      orderBy: { due_date: "asc" },
-    }) : Promise.resolve([]),
-    !isScoped ? prisma.user.findMany({
-      where: { is_active: true },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }) : Promise.resolve([]),
-  ]);
-
-  // For Admin/Manager (!isScoped) we already fetched allActiveUsers in the main Promise.all.
-  // Reuse that to build the assignee name map — saves one DB round-trip.
-  const allClientIds = [...new Set([
-    ...byClient.map(c => c.client_id).filter(Boolean) as string[],
-    ...completedByClient.map(c => c.client_id).filter(Boolean) as string[],
-  ])];
-
-  const [clientRecords] = await Promise.all([
-    allClientIds.length > 0
-      ? prisma.client.findMany({ where: { id: { in: allClientIds } }, select: { id: true, name: true } })
-      : Promise.resolve([]),
-  ]);
-
-  const userMap = !isScoped
-    ? Object.fromEntries(allActiveUsers.map(u => [u.id, u.name]))
-    : { [session.user.id]: session.user.name ?? "" };
-  const clientMap = Object.fromEntries(clientRecords.map(c => [c.id, c.name]));
-
-  const assigneeData = byAssignee.map(a => ({ name: userMap[a.assigned_to_id] ?? "Unknown", count: a._count.id }));
-  const clientData = byClient.map(c => ({ name: clientMap[c.client_id!] ?? "Unknown", count: c._count.id }));
-  const completedAssigneeData = completedByAssignee.map(a => ({ name: userMap[a.assigned_to_id] ?? "Unknown", count: a._count.id }));
-  const completedClientData = completedByClient.map(c => ({ name: clientMap[c.client_id!] ?? "Unknown", count: c._count.id }));
-
-  const completionRate = totalInRange > 0 ? Math.round((completedInRange / totalInRange) * 100) : null;
+  const {
+    totalTasks, overdueTasks, dueTodayTasks, myTasks, totalInRange, completedInRange,
+    completionRate, revenueAtRisk, assigneeData, clientData,
+    completedAssigneeData, completedClientData, allActiveUsers, kanbanTasks,
+  } = await getTaskDashboardData(
+    session.user.id,
+    session.user.name ?? "",
+    isScoped,
+    rangeStart.toISOString(),
+    rangeEnd.toISOString(),
+    todayStart.toISOString(),
+    todayEnd.toISOString(),
+  );
 
   return (
     <div className="p-3 sm:p-6 space-y-6">
@@ -190,7 +254,7 @@ export default async function TaskDashboardPage({ searchParams }: { searchParams
         overdueTasks={overdueTasks}
         dueTodayTasks={dueTodayTasks}
         myTasks={myTasks}
-        revenueAtRisk={Number(revenueAtRisk._sum.revenue_amount ?? 0)}
+        revenueAtRisk={revenueAtRisk}
       />
 
       {/* Active tasks charts */}

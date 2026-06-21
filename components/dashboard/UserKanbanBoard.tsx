@@ -14,7 +14,7 @@ type ActiveTask = {
   title: string;
   status: string;
   priority: string;
-  due_date: Date;
+  due_date: string;
   assigned_to_id: string;
   lead: { lead_number: string } | null;
   client: { name: string } | null;
