@@ -75,6 +75,7 @@ const getCrmDashboardData = unstable_cache(
     const [
       totalLeads, hotLeads, activeLeads, wonLeads, lostLeads,
       newLeadsInRange, wonLeadsInRange,
+      siteVisitsInRange, bookedInRange,
       todayFollowUpsCount, overdueFollowUpsCount,
       stageDistribution, temperatureDistribution, sourceDistribution,
       pipelineAgg, todayLeadsList, overdueLeadsList, staleHotLeads,
@@ -89,6 +90,8 @@ const getCrmDashboardData = unstable_cache(
       prisma.lead.count({ where: leadWhere({ status: "Lost" }) }),
       prisma.lead.count({ where: leadWhereInRange() }),
       prisma.lead.count({ where: leadWhereInRange({ status: "Won" }) }),
+      prisma.leadStageHistory.count({ where: { to_stage: "SiteVisitCompleted", changed_at: { gte: rangeStart, lte: rangeEnd }, lead: leadScope ? { deleted_at: null, ...leadScope } : { deleted_at: null } } }),
+      prisma.leadStageHistory.count({ where: { to_stage: "Booked", changed_at: { gte: rangeStart, lte: rangeEnd }, lead: leadScope ? { deleted_at: null, ...leadScope } : { deleted_at: null } } }),
       prisma.lead.count({ where: leadWhere({ status: { notIn: ["Won", "Lost", "Recycle"] }, next_followup_date: { gte: todayStart, lte: todayEnd } }) }),
       prisma.lead.count({ where: leadWhere({ status: { notIn: ["Won", "Lost", "Recycle"] }, next_followup_date: { lt: todayStart } }) }),
       prisma.lead.groupBy({ by: ["status"], where: leadWhereInRange(), _count: { id: true }, _sum: { potential_lead_value: true } }),
@@ -176,6 +179,7 @@ const getCrmDashboardData = unstable_cache(
       kpis: {
         totalLeads, hotLeads, activeLeads, wonLeads, lostLeads,
         newLeadsInRange, wonLeadsInRange,
+        siteVisitsInRange, bookedInRange,
         todayFollowUps: todayFollowUpsCount,
         overdueFollowUps: overdueFollowUpsCount,
         noFollowUpCount,

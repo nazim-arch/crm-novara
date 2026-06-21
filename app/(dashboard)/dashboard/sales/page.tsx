@@ -129,6 +129,9 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
     hotLeadsBySource,
     // Won in period via stage history
     wonInPeriod,
+    // Site Visit & Booked milestones in period via stage history
+    siteVisitsInPeriod,
+    bookedInPeriod,
     // Live: active leads with no next follow-up scheduled
     noFollowUpCount,
   ] = await Promise.all([
@@ -279,6 +282,28 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
       },
     }),
 
+    // ── Site Visit reached in period via stage history ────────────────────
+    prisma.leadStageHistory.count({
+      where: {
+        to_stage: "SiteVisitCompleted",
+        changed_at: { gte: rangeStart, lte: rangeEnd },
+        lead: leadScope
+          ? { deleted_at: null, ...leadScope }
+          : { deleted_at: null },
+      },
+    }),
+
+    // ── Booked reached in period via stage history ────────────────────────
+    prisma.leadStageHistory.count({
+      where: {
+        to_stage: "Booked",
+        changed_at: { gte: rangeStart, lte: rangeEnd },
+        lead: leadScope
+          ? { deleted_at: null, ...leadScope }
+          : { deleted_at: null },
+      },
+    }),
+
     // ── Live: active leads with no next follow-up scheduled ───────────────
     prisma.lead.count({
       where: leadWhere({ ...activeFilter, next_followup_date: null }),
@@ -384,6 +409,8 @@ export default async function SalesDashboardPage({ searchParams }: { searchParam
         rangeLabel={rangeLabel}
         periodKpis={{
           received: leadsReceived,
+          siteVisitsInPeriod,
+          bookedInPeriod,
           actioned: leadsActioned,
           notActioned,
           responseRate,

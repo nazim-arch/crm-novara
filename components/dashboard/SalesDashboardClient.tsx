@@ -7,7 +7,7 @@ import {
   Users, Flame, CalendarClock, AlertTriangle,
   CheckCircle2, XCircle, Clock, Eye,
   Snowflake, Lightbulb, UserCheck, BarChart3, Zap, Thermometer,
-  TrendingUp, Trophy, BellOff,
+  TrendingUp, Trophy, BellOff, MapPin, Handshake,
 } from "lucide-react";
 import { LeadContactActions } from "@/components/shared/LeadContactActions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,6 +21,8 @@ import {
 
 export interface PeriodKpis {
   received: number;
+  siteVisitsInPeriod: number;
+  bookedInPeriod: number;
   actioned: number;
   notActioned: number;
   responseRate: number;
@@ -312,13 +314,46 @@ export function SalesDashboardClient({
           </h2>
           <span className="text-xs text-muted-foreground font-medium">{rangeLabel}</span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60 mb-2">
+          Conversion
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <KpiCard
             label="Leads Received"
             value={periodKpis.received}
             icon={Users}
             href={`/leads?filter=period&period=${currentPeriod}${currentFrom ? `&from=${currentFrom}` : ""}${currentTo ? `&to=${currentTo}` : ""}`}
           />
+          <KpiCard
+            label="Site Visits"
+            value={periodKpis.siteVisitsInPeriod}
+            sub="Reached this period"
+            icon={MapPin}
+            valueClass={periodKpis.siteVisitsInPeriod > 0 ? "text-sky-600" : ""}
+            href="/leads?status=SiteVisitCompleted"
+          />
+          <KpiCard
+            label="Booked"
+            value={periodKpis.bookedInPeriod}
+            sub="Reached this period"
+            icon={Handshake}
+            valueClass={periodKpis.bookedInPeriod > 0 ? "text-indigo-600" : ""}
+            href="/leads?status=Booked"
+          />
+          <KpiCard
+            label="Deals Won"
+            value={periodKpis.wonInPeriod}
+            sub="Won this period"
+            icon={Trophy}
+            valueClass={periodKpis.wonInPeriod > 0 ? "text-yellow-600" : ""}
+            href="/leads?status=Won"
+          />
+        </div>
+
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60 mt-5 mb-2">
+          Engagement
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <KpiCard
             label="Actioned"
             value={periodKpis.actioned}
@@ -342,14 +377,6 @@ export function SalesDashboardClient({
             sub={`${periodKpis.actioned} of ${periodKpis.received} actioned`}
             icon={TrendingUp}
             valueClass={rateColor}
-          />
-          <KpiCard
-            label="Deals Won"
-            value={periodKpis.wonInPeriod}
-            sub="Won this period"
-            icon={Trophy}
-            valueClass={periodKpis.wonInPeriod > 0 ? "text-yellow-600" : ""}
-            href="/leads?status=Won"
           />
         </div>
       </section>

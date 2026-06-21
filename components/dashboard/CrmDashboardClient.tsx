@@ -6,6 +6,7 @@ import {
   Users, Flame, Activity, Trophy, CalendarClock, AlertTriangle,
   TrendingUp, DollarSign, Wallet, PiggyBank, Target,
   CheckSquare, Clock, CheckCircle2, XCircle, Briefcase, BellOff,
+  MapPin, Handshake,
 } from "lucide-react";
 import { ClientBarChart } from "@/components/dashboard/ClientBarChart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,6 +26,8 @@ interface Kpis {
   lostLeads: number;
   newLeadsInRange: number;
   wonLeadsInRange: number;
+  siteVisitsInRange: number;
+  bookedInRange: number;
   todayFollowUps: number;
   overdueFollowUps: number;
   noFollowUpCount: number;
@@ -260,6 +263,12 @@ export function CrmDashboardClient({
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <KpiCard label="New Leads" value={kpis.newLeadsInRange} icon={Users} href="/leads" />
+          <KpiCard label="Site Visits" value={kpis.siteVisitsInRange} icon={MapPin}
+            iconClass="text-sky-500" valueClass={kpis.siteVisitsInRange > 0 ? "text-sky-600" : ""}
+            href="/leads?status=SiteVisitCompleted" />
+          <KpiCard label="Booked" value={kpis.bookedInRange} icon={Handshake}
+            iconClass="text-indigo-500" valueClass={kpis.bookedInRange > 0 ? "text-indigo-600" : ""}
+            href="/leads?status=Booked" />
           <KpiCard label="Deals Won" value={kpis.wonLeadsInRange} icon={Trophy} iconClass="text-yellow-500" valueClass="text-yellow-600" />
           <KpiCard label="Today's Follow-ups" value={kpis.todayFollowUps} icon={CalendarClock}
             iconClass={kpis.todayFollowUps > 0 ? "text-green-600" : "text-muted-foreground"}
