@@ -74,6 +74,7 @@ export async function proxy(req: NextRequest) {
     pathname.startsWith("/api/health") ||
     pathname.startsWith("/api/inngest") ||
     pathname.startsWith("/api/meta-leads") ||
+    pathname.startsWith("/api/mcp") ||
     pathname.startsWith("/_next") ||
     pathname.includes(".")
   ) {
