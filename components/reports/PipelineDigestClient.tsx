@@ -172,7 +172,7 @@ export function PipelineDigestClient({ users }: { users: { id: string; name: str
       {result?.ai_unavailable && (
         <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-          <p>AI narrative unavailable — Claude API key not configured. Showing data only. Ask an admin to add the key in Settings.</p>
+          <p>AI narrative unavailable — no Claude or OpenAI API key configured. Showing data only. Ask an admin to add a key in Settings → API Keys.</p>
         </div>
       )}
 

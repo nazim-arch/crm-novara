@@ -67,6 +67,40 @@ async function callClaude(apiKey: string, systemPrompt: string, userPrompt: stri
   }
 }
 
+async function callOpenAI(apiKey: string, systemPrompt: string, userPrompt: string): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30_000);
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        max_tokens: 600,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) {
+      console.error("OpenAI API error:", res.status, await res.text());
+      return null;
+    }
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content ?? null;
+  } catch (err) {
+    console.error("OpenAI call failed:", err);
+    return null;
+  }
+}
+
 // ── Route ─────────────────────────────────────────────────────────────────────
 
 export async function POST(request: Request) {
@@ -248,10 +282,18 @@ export async function POST(request: Request) {
       lost_reason_breakdown: lostReasonCounts,
     };
 
-    // ── Claude API key ────────────────────────────────────────────────────────
+    // ── AI provider — Claude preferred, OpenAI fallback ─────────────────────────
+    // Whichever key is configured drives the narrative. Only unavailable if neither exists.
 
-    const apiKey = await getApiKey("claude");
-    if (!apiKey) {
+    const [claudeKey, openaiKey] = await Promise.all([getApiKey("claude"), getApiKey("openai")]);
+    const callAI: ((system: string, user: string) => Promise<string | null>) | null =
+      claudeKey
+        ? (system, user) => callClaude(claudeKey, system, user)
+        : openaiKey
+          ? (system, user) => callOpenAI(openaiKey, system, user)
+          : null;
+
+    if (!callAI) {
       return NextResponse.json({
         stats,
         stale_leads: staleWithDays,
@@ -311,11 +353,11 @@ Return JSON:
   "re_engagement_candidates": ["lead names worth reconsidering if inventory changes"]
 }`;
 
-    // ── Two Claude calls in parallel ──────────────────────────────────────────
+    // ── Two AI calls in parallel ──────────────────────────────────────────────
 
     const [pipelineRaw, lostRaw] = await Promise.all([
-      callClaude(apiKey, SYSTEM, pipelinePrompt),
-      lostPrompt ? callClaude(apiKey, SYSTEM, lostPrompt) : Promise.resolve(null),
+      callAI(SYSTEM, pipelinePrompt),
+      lostPrompt ? callAI(SYSTEM, lostPrompt) : Promise.resolve(null),
     ]);
 
     let pipelineInsight: PipelineInsight | null = null;
