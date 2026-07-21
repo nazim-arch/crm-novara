@@ -49,7 +49,7 @@ export default function IntentRadarDashboard() {
           }}>
             🚀 Generate Leads
           </Link>
-          <Link href="/intentradar/settings" style={{
+          <Link href="/settings/api-keys" style={{
             padding: '14px 24px', borderRadius: 10, background: 'rgba(255,255,255,0.1)',
             color: '#a5b4fc', fontWeight: 600, fontSize: 14, textDecoration: 'none',
             border: '1px solid rgba(165,180,252,0.3)',
@@ -82,7 +82,7 @@ export default function IntentRadarDashboard() {
         {[
           { href: '/intentradar/generate', icon: '🎯', title: 'New Search', desc: 'Define criteria & scan sources' },
           { href: '/intentradar/leads', icon: '📋', title: 'All Leads', desc: 'View & manage captured leads' },
-          { href: '/intentradar/settings', icon: '🔑', title: 'API Settings', desc: 'Configure API keys & sources' },
+          { href: '/settings/api-keys', icon: '🔑', title: 'API Settings', desc: 'Configure API keys & sources' },
           { href: '/intentradar/instagram', icon: '📸', title: 'Instagram Miner', desc: 'Find buyers via Apify + Instagram comments' },
         ].map((link, i) => (
           <Link key={i} href={link.href} style={{

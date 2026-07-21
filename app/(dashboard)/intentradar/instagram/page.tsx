@@ -769,7 +769,7 @@ export default function InstagramMinerPage() {
             <div style={{ fontSize: 13, color: '#fca5a5', marginBottom: 16, lineHeight: 1.5 }}>{error}</div>
             <div style={{ display: 'flex', gap: 10 }}>
               {error.toLowerCase().includes('apify') && (
-                <Link href="/intentradar/settings" style={{ display: 'inline-block', padding: '9px 20px', borderRadius: 8, background: IG_GRADIENT, color: 'white', fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>⚙️ Settings →</Link>
+                <Link href="/settings/api-keys" style={{ display: 'inline-block', padding: '9px 20px', borderRadius: 8, background: IG_GRADIENT, color: 'white', fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>⚙️ Settings →</Link>
               )}
               <button type="button" onClick={handleMine} style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid rgba(239,68,68,0.4)', background: 'transparent', color: '#f87171', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>🔄 Retry</button>
             </div>
