@@ -2,6 +2,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { hasPermissionAsync } from "@/lib/rbac";
+import { NO_FOLLOWUP_STATUSES } from "@/lib/follow-ups";
 import ExcelJS from "exceljs";
 
 export async function GET(request: Request) {
@@ -18,7 +19,11 @@ export async function GET(request: Request) {
       : {};
 
     const followUps = await prisma.followUp.findMany({
-      where: scopeFilter,
+      where: {
+        ...scopeFilter,
+        status: "Active",
+        NOT: { lead: { status: { in: [...NO_FOLLOWUP_STATUSES] } } },
+      },
       include: {
         lead: { select: { lead_number: true, full_name: true } },
         opportunity: { select: { opp_number: true, name: true } },
@@ -34,7 +39,7 @@ export async function GET(request: Request) {
       "Priority": f.priority,
       "Scheduled At": f.scheduled_at.toISOString().split("T")[0],
       "Completed At": f.completed_at ? f.completed_at.toISOString().split("T")[0] : "",
-      "Status": f.completed_at ? "Completed" : "Pending",
+      "Status": f.status,
       "Lead": f.lead ? `${f.lead.lead_number} – ${f.lead.full_name}` : "",
       "Opportunity": f.opportunity ? `${f.opportunity.opp_number} – ${f.opportunity.name}` : "",
       "Assigned To": f.assigned_to?.name ?? "",

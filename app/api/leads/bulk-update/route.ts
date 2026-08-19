@@ -2,6 +2,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
+import { setActiveFollowUp, clearActiveFollowUp, isNoFollowUpStatus } from "@/lib/follow-ups";
 import { z } from "zod";
 import { revalidateTag } from "next/cache";
 
@@ -183,8 +184,7 @@ export async function POST(request: Request) {
 
       if (rawTemp)        updateData.temperature        = rawTemp;
       if (rawStatus)      updateData.status             = rawStatus;
-      if (fuDate !== undefined) updateData.next_followup_date = fuDate;
-      if (rawFuType)      updateData.followup_type      = rawFuType;
+      // next_followup_date / followup_type are owned by the follow-up service (handled below).
       if (leadValue)      updateData.potential_lead_value = leadValue;
       if (assigneeId)     updateData.assigned_to_id     = assigneeId;
       if (rawEmail)       updateData.email              = String(rawEmail);
@@ -196,7 +196,7 @@ export async function POST(request: Request) {
       if (rawTimeline)    updateData.timeline_to_buy    = String(rawTimeline);
 
       // Nothing to update?
-      if (Object.keys(updateData).length === 0 && !rawNotes) {
+      if (Object.keys(updateData).length === 0 && !rawNotes && fuDate === undefined) {
         result.skipped++;
         continue;
       }
@@ -235,34 +235,26 @@ export async function POST(request: Request) {
             });
           }
 
-          // Sync FollowUp record when next_followup_date is being set
-          if (fuDate) {
-            const finalAssigneeId = assigneeId ?? lead.assigned_to_id;
-            const existing = await tx.followUp.findFirst({
-              where: { lead_id: lead.id, completed_at: null },
-              orderBy: { scheduled_at: "asc" },
-              select: { id: true },
-            });
-            if (existing) {
-              await tx.followUp.update({
-                where: { id: existing.id },
-                data: {
-                  scheduled_at: fuDate,
-                  ...(finalAssigneeId && { assigned_to_id: finalAssigneeId }),
-                },
-              });
-            } else {
-              await tx.followUp.create({
-                data: {
-                  lead_id: lead.id,
-                  assigned_to_id: finalAssigneeId ?? null,
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  type: (rawFuType ?? "Call") as any,
-                  scheduled_at: fuDate,
-                  created_by_id: userId,
-                },
-              });
-            }
+          // Follow-up mirror via the single-active service (status is already updated above).
+          const newStatus = (rawStatus ?? lead.status) as string;
+          const finalAssigneeId = assigneeId ?? lead.assigned_to_id;
+          if (fuDate && !isNoFollowUpStatus(newStatus)) {
+            await setActiveFollowUp(
+              {
+                lead_id: lead.id,
+                scheduled_at: fuDate,
+                type: (rawFuType ?? "Call") as (typeof VALID_FU_TYPES)[number],
+                assigned_to_id: finalAssigneeId ?? null,
+                created_by_id: userId,
+                reason: "Updated via Excel bulk upload",
+              },
+              tx
+            );
+          } else if (statusChanged && isNoFollowUpStatus(newStatus)) {
+            await clearActiveFollowUp(
+              { lead_id: lead.id, reason: `Lead moved to ${newStatus} (bulk upload)`, actor_id: userId },
+              tx
+            );
           }
 
           // Activity log

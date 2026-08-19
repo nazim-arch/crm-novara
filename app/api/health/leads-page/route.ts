@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { startOfDay, endOfDay, subDays } from "date-fns";
+import { NO_FOLLOWUP_STATUSES } from "@/lib/follow-ups";
 
 export async function GET() {
   const results: Record<string, unknown> = {};
@@ -58,7 +59,7 @@ export async function GET() {
         deleted_at: null,
         updated_at: { lt: subDays(todayStart, 7) },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        status: { notIn: ["Won", "Lost", "InvalidLead", "Recycle"] as any },
+        status: { notIn: [...NO_FOLLOWUP_STATUSES] as any },
       },
     });
     results.stale_filter = "ok";
@@ -74,7 +75,7 @@ export async function GET() {
         deleted_at: null,
         next_followup_date: { lte: todayEnd },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        status: { notIn: ["Won", "Lost", "InvalidLead", "Recycle"] as any },
+        status: { notIn: [...NO_FOLLOWUP_STATUSES] as any },
       },
     });
     results.followup_filter = "ok";

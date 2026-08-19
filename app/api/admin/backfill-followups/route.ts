@@ -1,9 +1,10 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { getActiveFollowUp, setActiveFollowUp, isNoFollowUpStatus } from "@/lib/follow-ups";
 
-// One-time backfill: create FollowUp records for leads that have next_followup_date
-// but no pending FollowUp record linked to them.
+// Safety-net backfill: ensure every active-status lead with a next_followup_date has a matching
+// active FollowUp row. Routes through the single-active service so the invariant is preserved.
 export async function POST() {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -13,6 +14,7 @@ export async function POST() {
     where: { next_followup_date: { not: null }, deleted_at: null },
     select: {
       id: true,
+      status: true,
       next_followup_date: true,
       followup_type: true,
       assigned_to_id: true,
@@ -23,25 +25,23 @@ export async function POST() {
   let skipped = 0;
 
   for (const lead of leads) {
-    const existing = await prisma.followUp.findFirst({
-      where: { lead_id: lead.id, completed_at: null },
-      select: { id: true },
-    });
-
+    if (isNoFollowUpStatus(lead.status)) {
+      skipped++;
+      continue;
+    }
+    const existing = await getActiveFollowUp(lead.id);
     if (existing) {
       skipped++;
       continue;
     }
 
-    await prisma.followUp.create({
-      data: {
-        lead_id: lead.id,
-        assigned_to_id: lead.assigned_to_id,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        type: (lead.followup_type ?? "Call") as any,
-        scheduled_at: lead.next_followup_date!,
-        created_by_id: session.user.id,
-      },
+    await setActiveFollowUp({
+      lead_id: lead.id,
+      scheduled_at: lead.next_followup_date!,
+      type: lead.followup_type ?? "Call",
+      assigned_to_id: lead.assigned_to_id,
+      created_by_id: session.user.id,
+      reason: "Backfill: recreate active follow-up from lead mirror",
     });
     created++;
   }

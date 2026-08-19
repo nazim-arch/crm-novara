@@ -17,7 +17,7 @@ import {
   Phone, MessageCircle, Mail, CheckCircle, XCircle, RotateCcw, Calendar,
   ChevronLeft, ChevronRight, ExternalLink, Loader2, User, MapPin, Home,
   TrendingUp, Tag, Clock, AlertTriangle, Flame, Target, Zap,
-  CheckCircle2, PhoneOff, Coffee, BadgeCheck, List, CalendarPlus, MoreHorizontal,
+  CheckCircle2, PhoneOff, Coffee, BadgeCheck, List, MoreHorizontal,
 } from "lucide-react";
 import { getFollowUpCardTheme, getDueLabel } from "./focus-queue-theme";
 
@@ -135,12 +135,18 @@ function StatPill({ label, value, cls, Icon }: { label: string; value: number; c
 
 // ── Schedule Next Dialog ───────────────────────────────────────────────────────
 
+function fmtDay(d: string | Date): string {
+  return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
 function ScheduleNextDialog({
   item,
+  isMobile,
   onScheduled,
   onSkip,
 }: {
   item: FocusItem;
+  isMobile: boolean;
   onScheduled: () => void;
   onSkip: () => void;
 }) {
@@ -168,13 +174,15 @@ function ScheduleNextDialog({
           assigned_to_id: item.assigned_to?.id,
         }),
       });
-      if (!res.ok) { toast.error("Failed to schedule follow-up"); return; }
-      await fetch(`/api/leads/${item.lead_id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ next_followup_date: date + "T09:00:00", followup_type: type }),
-      });
-      toast.success("Next follow-up scheduled");
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) { toast.error(result.error ?? "Failed to schedule follow-up"); return; }
+      // POST /api/follow-ups routes through setActiveFollowUp, which mirrors onto the lead —
+      // no separate lead PATCH needed.
+      if (result.superseded?.scheduled_at) {
+        toast.success(`Follow-up moved ${fmtDay(result.superseded.scheduled_at)} → ${fmtDay(date + "T09:00:00")}`);
+      } else {
+        toast.success("Next follow-up scheduled");
+      }
       onScheduled();
     } catch {
       toast.error("Something went wrong");
@@ -184,18 +192,16 @@ function ScheduleNextDialog({
   }
 
   return (
-    <Dialog open onOpenChange={(o) => { if (!o) onSkip(); }}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <CalendarPlus className="h-4 w-4 text-primary" />
-            Schedule Next Follow-up?
-          </DialogTitle>
-        </DialogHeader>
+    <ActionModal open onOpenChange={(o) => { if (!o) onSkip(); }} title="Schedule Next Follow-up?" isMobile={isMobile}>
         <div className="space-y-3 pt-1">
           <p className="text-sm text-muted-foreground">
             Action logged for <span className="font-medium text-foreground">{item.lead?.full_name}</span>. When is the next follow-up?
           </p>
+          {item.lead?.next_followup_date && (
+            <div className="rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              Current active follow-up: <span className="font-medium text-foreground">{fmtDay(item.lead.next_followup_date)}</span>. Scheduling a new date will replace it.
+            </div>
+          )}
           <div className="flex gap-1.5 flex-wrap">
             {[{ label: "Tomorrow", days: 1 }, { label: "+3 Days", days: 3 }, { label: "+1 Week", days: 7 }].map((q) => (
               <button
@@ -233,8 +239,7 @@ function ScheduleNextDialog({
             </Button>
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
+    </ActionModal>
   );
 }
 
@@ -327,8 +332,11 @@ function FocusCard({
               <span className="text-[11px] font-mono text-foreground/50">{lead?.lead_number}</span>
               {lead?.status && <StageBadge stage={lead.status} />}
               {lead?._count && lead._count.followups > 0 && (
-                <span className="text-[10px] text-foreground/40 bg-black/5 dark:bg-white/10 px-1.5 py-0.5 rounded">
-                  {lead._count.followups} FUs
+                <span
+                  className="text-[10px] text-foreground/40 bg-black/5 dark:bg-white/10 px-1.5 py-0.5 rounded"
+                  title="Total follow-ups in this lead's history"
+                >
+                  {lead._count.followups} past follow-up{lead._count.followups === 1 ? "" : "s"}
                 </span>
               )}
             </div>
@@ -708,12 +716,19 @@ function ModalFormContent({
   onClose: () => void;
 }) {
   const { type, item } = modal;
+  const showsScheduler = type === "contacted" || type === "schedule_next" || type === "site_visit_done";
   return (
     <div className="space-y-3 pt-1">
       {item.lead && (
         <p className="text-sm text-muted-foreground">
           Lead: <span className="font-medium text-foreground">{item.lead.full_name} ({item.lead.lead_number})</span>
         </p>
+      )}
+      {showsScheduler && item.scheduled_at && (
+        <div className="rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          Current active follow-up: <span className="font-medium text-foreground">{fmtDay(item.scheduled_at)}</span> ({item.type}).
+          Scheduling a new date will replace it.
+        </div>
       )}
 
       {/* ── Contacted ── */}
@@ -1221,6 +1236,7 @@ export function SalesFocusQueue({
       {schedulePromptItem && (
         <ScheduleNextDialog
           item={schedulePromptItem}
+          isMobile={isMobile}
           onScheduled={() => { setSchedulePromptItem(null); void fetchData(); }}
           onSkip={() => setSchedulePromptItem(null)}
         />

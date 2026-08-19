@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { verifyMcpToken } from "@/lib/mcp-auth";
+import { NO_FOLLOWUP_STATUSES } from "@/lib/follow-ups";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
 export async function GET(request: Request) {
@@ -20,12 +21,16 @@ export async function GET(request: Request) {
     if (assigned_to) andConditions.push({ assigned_to_id: assigned_to });
 
     const now = new Date();
+    const activeLeadFilter: Prisma.FollowUpWhereInput = {
+      status: "Active",
+      NOT: { lead: { status: { in: [...NO_FOLLOWUP_STATUSES] } } },
+    };
     if (status === "overdue") {
-      andConditions.push({ scheduled_at: { lt: now }, completed_at: null });
+      andConditions.push({ ...activeLeadFilter, scheduled_at: { lt: now } });
     } else if (status === "completed") {
-      andConditions.push({ completed_at: { not: null } });
+      andConditions.push({ status: "Completed" });
     } else if (status === "pending") {
-      andConditions.push({ completed_at: null, scheduled_at: { gte: now } });
+      andConditions.push({ ...activeLeadFilter, scheduled_at: { gte: now } });
     }
 
     if (from || to) {

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { verifyMcpToken } from "@/lib/mcp-auth";
 import { sendStageEvent } from "@/lib/meta-capi";
 import { createLeadReviewEvent } from "@/lib/lead-review-events";
+import { clearActiveFollowUp, isNoFollowUpStatus } from "@/lib/follow-ups";
 import type { LeadStatus } from "@/lib/generated/prisma/client";
 
 type Params = Promise<{ id: string }>;
@@ -78,6 +79,11 @@ export async function POST(request: Request, { params }: { params: Params }) {
         },
       }),
     ]);
+
+    // Entering a no-follow-up status cancels the active follow-up and nulls the lead mirror.
+    if (isNoFollowUpStatus(stage)) {
+      await clearActiveFollowUp({ lead_id: lead.id, reason: `Lead moved to ${stage} (MCP)`, actor_id: userId });
+    }
 
     // Recalculate closed_revenue for all linked opportunities when Won
     if (stage === "Won" || lead.status === "Won") {

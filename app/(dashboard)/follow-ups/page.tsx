@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { FollowUpsClient } from "@/components/follow-ups/FollowUpsClient";
+import { NO_FOLLOWUP_STATUSES } from "@/lib/follow-ups";
 
 export default async function FollowUpsPage({
   searchParams,
@@ -41,7 +42,12 @@ export default async function FollowUpsPage({
 
   const [pendingFollowUps, users] = await Promise.all([
     prisma.followUp.findMany({
-      where: { ...scopeFilter, completed_at: null },
+      where: {
+        ...scopeFilter,
+        status: "Active",
+        // Keep opportunity/task follow-ups (null lead); drop only leads in a no-follow-up status.
+        NOT: { lead: { status: { in: [...NO_FOLLOWUP_STATUSES] } } },
+      },
       include: fuInclude,
       orderBy: { scheduled_at: "asc" },
       take: 200,

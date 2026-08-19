@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { setActiveFollowUp, FollowUpForbiddenError, NO_FOLLOWUP_STATUSES } from "@/lib/follow-ups";
 
 const FOLLOW_UP_TYPES = ["Call", "Email", "WhatsApp", "Visit", "Meeting", "Activity", "Internal"] as const;
 
@@ -49,13 +50,15 @@ export async function GET(request: Request) {
   if (assignedTo) where.assigned_to_id = assignedTo;
 
   if (status === "completed") {
-    where.completed_at = { not: null };
+    where.status = "Completed";
   } else if (status === "pending") {
-    where.completed_at = null;
+    where.status = "Active";
     where.scheduled_at = { gte: startOfToday };
+    where.NOT = { lead: { status: { in: [...NO_FOLLOWUP_STATUSES] } } };
   } else if (status === "overdue") {
-    where.completed_at = null;
+    where.status = "Active";
     where.scheduled_at = { lt: startOfToday };
+    where.NOT = { lead: { status: { in: [...NO_FOLLOWUP_STATUSES] } } };
   }
 
   const followUps = await prisma.followUp.findMany({
@@ -86,9 +89,50 @@ export async function POST(request: Request) {
 
   const { lead_id, opportunity_id, task_id, assigned_to_id, type, priority, scheduled_at, notes } = parsed.data;
 
+  const followUpInclude = {
+    lead: { select: { id: true, lead_number: true, full_name: true } },
+    opportunity: { select: { id: true, opp_number: true, name: true } },
+    assigned_to: { select: { id: true, name: true } },
+  };
+
+  // Lead-linked follow-ups funnel through the single-active service (newest scheduling wins,
+  // previous active row is superseded, lead mirror stays in sync).
+  if (lead_id) {
+    try {
+      const { created, superseded } = await setActiveFollowUp({
+        lead_id,
+        scheduled_at: new Date(scheduled_at),
+        type,
+        priority,
+        assigned_to_id: assigned_to_id ?? null,
+        created_by_id: session.user.id,
+        notes,
+        reason: "Scheduled by agent",
+      });
+      const followUp = await prisma.followUp.findUnique({
+        where: { id: created.id },
+        include: followUpInclude,
+      });
+      return NextResponse.json(
+        {
+          data: followUp,
+          superseded: superseded
+            ? { id: superseded.id, scheduled_at: superseded.scheduled_at, type: superseded.type }
+            : null,
+        },
+        { status: 201 }
+      );
+    } catch (err) {
+      if (err instanceof FollowUpForbiddenError) {
+        return NextResponse.json({ error: err.message }, { status: 409 });
+      }
+      throw err;
+    }
+  }
+
+  // Opportunity/task follow-ups are not subject to the single-active-per-lead rule.
   const followUp = await prisma.followUp.create({
     data: {
-      lead_id: lead_id ?? null,
       opportunity_id: opportunity_id ?? null,
       task_id: task_id ?? null,
       assigned_to_id: assigned_to_id ?? null,
@@ -97,28 +141,10 @@ export async function POST(request: Request) {
       scheduled_at: new Date(scheduled_at),
       notes,
       created_by_id: session.user.id,
+      status: "Active",
     },
-    include: {
-      lead: { select: { id: true, lead_number: true, full_name: true } },
-      opportunity: { select: { id: true, opp_number: true, name: true } },
-      assigned_to: { select: { id: true, name: true } },
-    },
+    include: followUpInclude,
   });
-
-  // Sync lead's next_followup_date if linked to a lead
-  if (lead_id) {
-    const lead = await prisma.lead.findUnique({ where: { id: lead_id } });
-    if (lead) {
-      const scheduledDate = new Date(scheduled_at);
-      if (!lead.next_followup_date || scheduledDate < lead.next_followup_date) {
-        await prisma.lead.update({
-          where: { id: lead_id },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          data: { next_followup_date: scheduledDate, followup_type: type as any },
-        });
-      }
-    }
-  }
 
   return NextResponse.json({ data: followUp }, { status: 201 });
 }

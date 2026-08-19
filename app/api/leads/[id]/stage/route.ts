@@ -6,6 +6,7 @@ import { hasPermissionAsync } from "@/lib/rbac";
 import { notifyLeadStageChanged, notifyLeadWon, notifyLeadLost } from "@/lib/email-notifications";
 import { createLeadReviewEvent } from "@/lib/lead-review-events";
 import { sendStageEvent } from "@/lib/meta-capi";
+import { setActiveFollowUp, clearActiveFollowUp, isNoFollowUpStatus, FollowUpForbiddenError } from "@/lib/follow-ups";
 
 type Params = Promise<{ id: string }>;
 
@@ -38,7 +39,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
       );
     }
 
-    const { to_stage, activity_stage, notes, lost_reason, lost_notes, settlement_value, deal_commission_percent } = parsed.data;
+    const { to_stage, activity_stage, notes, lost_reason, lost_notes, settlement_value, deal_commission_percent, next_followup_date, next_followup_type } = parsed.data;
     // Optional: target a specific lead-opportunity link for per-opportunity stage tracking
     const opportunity_link_id: string | null = body.opportunity_link_id ?? null;
 
@@ -50,8 +51,22 @@ export async function POST(request: Request, { params }: { params: Params }) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
 
+    // Follow-up lifecycle intent for this stage change.
+    const stageChanged = !!to_stage && to_stage !== lead.status;
+    const enteringNoFollowup = !!to_stage && isNoFollowUpStatus(to_stage);
+    const reactivating =
+      stageChanged && (lead.status === "OnHold" || lead.status === "Recycle") && !enteringNoFollowup;
+
+    // Reactivating a parked lead requires a fresh follow-up date (before any mutation).
+    if (reactivating && !next_followup_date) {
+      return NextResponse.json(
+        { error: "A follow-up date is required to move this lead back into the pipeline.", code: "FOLLOWUP_DATE_REQUIRED" },
+        { status: 422 }
+      );
+    }
+
     // If targeting a specific opportunity link, update it too
-    let link = opportunity_link_id
+    const link = opportunity_link_id
       ? await prisma.leadOpportunity.findUnique({ where: { id: opportunity_link_id } })
       : null;
 
@@ -164,6 +179,36 @@ export async function POST(request: Request, { params }: { params: Params }) {
           ]
         : []),
     ]);
+
+    // Apply the follow-up lifecycle for this stage change through the single-active service.
+    try {
+      if (enteringNoFollowup) {
+        await clearActiveFollowUp({ lead_id: id, reason: `Lead moved to ${to_stage}`, actor_id: session.user.id });
+      } else if (reactivating && next_followup_date) {
+        await setActiveFollowUp({
+          lead_id: id,
+          scheduled_at: next_followup_date,
+          type: next_followup_type ?? "Call",
+          created_by_id: session.user.id,
+          assigned_to_id: lead.assigned_to_id,
+          reason: `Reactivated from ${lead.status}`,
+        });
+      } else if (next_followup_date) {
+        await setActiveFollowUp({
+          lead_id: id,
+          scheduled_at: next_followup_date,
+          type: next_followup_type ?? "Call",
+          created_by_id: session.user.id,
+          assigned_to_id: lead.assigned_to_id,
+          reason: "Scheduled with stage change",
+        });
+      }
+    } catch (err) {
+      if (err instanceof FollowUpForbiddenError) {
+        return NextResponse.json({ error: err.message }, { status: 409 });
+      }
+      throw err;
+    }
 
     // Fire CAPI conversion events for Meta-sourced leads (fire-and-forget)
     if (to_stage && lead.meta_leads.length > 0) {

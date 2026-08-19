@@ -6,6 +6,12 @@ import { cache } from "react";
 import { revalidateTag } from "next/cache";
 import { createLeadReviewEvent } from "@/lib/lead-review-events";
 import { notifyLeadWon, notifyLeadLost, notifyLeadStageChanged } from "@/lib/email-notifications";
+import {
+  completeActiveFollowUp,
+  clearActiveFollowUp,
+  setActiveFollowUp,
+  isNoFollowUpStatus,
+} from "@/lib/follow-ups";
 
 // Memoized per-request — avoids re-fetching admins when multiple notifications fire in one request
 const getActiveAdmins = cache(() =>
@@ -60,6 +66,10 @@ const actionSchema = z.discriminatedUnion("action", [
     action: z.literal("update_stage"),
     to_stage: z.enum(PIPELINE_STAGES),
     notes: z.string().min(1),
+    // Required when reactivating a lead out of OnHold/Recycle back into the pipeline.
+    next_date: z.string().optional(),
+    next_time: z.string().optional(),
+    next_type: z.enum(FOLLOW_UP_TYPES).optional(),
   }),
 
   z.object({
@@ -144,73 +154,68 @@ export async function POST(request: Request, { params }: { params: Params }) {
 
     // ── contacted ─────────────────────────────────────────────────────────────
     if (data.action === "contacted") {
-      const fuUpdate = await prisma.followUp.update({
-        where: { id },
-        data: { completed_at: now, outcome: data.outcome, notes: data.notes ?? fu.notes, attempt_count: { increment: 1 } },
+      // Count this contact attempt on the actioned follow-up.
+      await prisma.followUp.update({ where: { id }, data: { attempt_count: { increment: 1 } } });
+
+      if (!leadId) {
+        const { completed } = await completeActiveFollowUp({
+          follow_up_id: id, outcome: data.outcome, notes: data.notes ?? fu.notes, actor_id: userId,
+        });
+        revalidateTag("crm-dashboard", "max");
+        return NextResponse.json({ data: completed, action: "contacted" });
+      }
+
+      const stageChanged = !!data.to_stage && data.to_stage !== fu.lead?.status;
+      const targetStatus = (data.to_stage ?? fu.lead?.status) as string;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const leadData: Record<string, any> = { last_contact_date: now, updated_at: now };
+      if (data.temperature) leadData.temperature = data.temperature;
+      if (stageChanged) leadData.status = data.to_stage;
+      await prisma.lead.update({ where: { id: leadId }, data: leadData });
+
+      if (stageChanged) {
+        await prisma.leadStageHistory.create({
+          data: { lead_id: leadId, from_stage: fu.lead!.status, to_stage: data.to_stage!, changed_by_id: userId, notes: data.notes },
+        });
+      }
+      await prisma.activity.create({
+        data: {
+          entity_type: "Lead", entity_id: leadId,
+          action: "followup_completed",
+          actor_id: userId,
+          metadata: { outcome: data.outcome, notes: data.notes ?? null, stage_change: data.to_stage ?? null },
+        },
       });
 
-      if (leadId) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const leadData: Record<string, any> = { last_contact_date: now, updated_at: now };
-        if (data.temperature) leadData.temperature = data.temperature;
-        if (data.to_stage && data.to_stage !== fu.lead?.status) {
-          leadData.status = data.to_stage;
-        }
-        await prisma.lead.update({ where: { id: leadId }, data: leadData });
-
-        if (data.to_stage && data.to_stage !== fu.lead?.status) {
-          await prisma.leadStageHistory.create({
-            data: { lead_id: leadId, from_stage: fu.lead!.status, to_stage: data.to_stage, changed_by_id: userId, notes: data.notes },
-          });
-        }
-        await prisma.activity.create({
-          data: {
-            entity_type: "Lead", entity_id: leadId,
-            action: "followup_completed",
-            actor_id: userId,
-            metadata: { outcome: data.outcome, notes: data.notes ?? null, stage_change: data.to_stage ?? null },
-          },
-        });
-
-        if (data.next_followup_date && data.next_followup_type) {
-          const nextDate = new Date(data.next_followup_date);
-          await prisma.followUp.create({
-            data: {
-              lead_id: leadId,
-              type: data.next_followup_type,
+      // Complete the actioned follow-up; schedule the next one unless the lead is now terminal.
+      const canScheduleNext =
+        !isNoFollowUpStatus(targetStatus) && !!data.next_followup_date && !!data.next_followup_type;
+      const { completed } = await completeActiveFollowUp({
+        follow_up_id: id,
+        outcome: data.outcome,
+        notes: data.notes ?? fu.notes,
+        actor_id: userId,
+        next: canScheduleNext
+          ? {
+              scheduled_at: new Date(data.next_followup_date!),
+              type: data.next_followup_type!,
               priority: fu.priority,
-              scheduled_at: nextDate,
-              created_by_id: userId,
               assigned_to_id: fu.assigned_to_id,
-            },
-          });
-          await prisma.lead.update({
-            where: { id: leadId },
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            data: { next_followup_date: nextDate, followup_type: data.next_followup_type as any },
-          });
-        } else {
-          const nextFu = await prisma.followUp.findFirst({
-            where: { lead_id: leadId, completed_at: null },
-            orderBy: { scheduled_at: "asc" },
-          });
-          await prisma.lead.update({
-            where: { id: leadId },
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            data: { next_followup_date: nextFu?.scheduled_at ?? null, followup_type: (nextFu?.type ?? null) as any },
-          });
-        }
+              reason: "Next follow-up after contact",
+            }
+          : undefined,
+      });
 
-        // Review event only when stage was changed
-        if (isAgentRole && data.to_stage && data.to_stage !== fu.lead?.status) {
-          createLeadReviewEvent({
-            lead_id: leadId, triggered_by_id: userId, trigger_type: "StageChange",
-            trigger_context: { outcome: data.outcome, stage_to: data.to_stage, temp_to: data.temperature ?? null },
-          });
-        }
+      // Review event only when stage was changed
+      if (isAgentRole && stageChanged) {
+        createLeadReviewEvent({
+          lead_id: leadId, triggered_by_id: userId, trigger_type: "StageChange",
+          trigger_context: { outcome: data.outcome, stage_to: data.to_stage, temp_to: data.temperature ?? null },
+        });
       }
       revalidateTag("crm-dashboard", "max");
-      return NextResponse.json({ data: fuUpdate, action: "contacted" });
+      return NextResponse.json({ data: completed, action: "contacted" });
     }
 
     // ── no_response ──────────────────────────────────────────────────────────
@@ -241,23 +246,25 @@ export async function POST(request: Request, { params }: { params: Params }) {
 
       if (data.sub_action === "schedule_next") {
         const nextDate = data.next_followup_date ? new Date(data.next_followup_date) : null;
-        const fuUpdate = await prisma.followUp.update({
+        // Count the no-response attempt before completing.
+        await prisma.followUp.update({
           where: { id },
-          data: { completed_at: now, outcome: "No Response", notes: data.notes, attempt_count: { increment: 1 }, no_response_count: { increment: 1 } },
+          data: { attempt_count: { increment: 1 }, no_response_count: { increment: 1 } },
         });
-        if (leadId && nextDate && data.next_followup_type) {
-          await prisma.followUp.create({
-            data: {
-              lead_id: leadId, type: data.next_followup_type, priority: fu.priority,
-              scheduled_at: nextDate, created_by_id: userId, assigned_to_id: fu.assigned_to_id,
-            },
-          });
-          await prisma.lead.update({
-            where: { id: leadId },
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            data: { next_followup_date: nextDate, followup_type: data.next_followup_type as any },
-          });
-        }
+        const canScheduleNext =
+          !!leadId && !!nextDate && !!data.next_followup_type && !isNoFollowUpStatus(fu.lead?.status);
+        const { completed } = await completeActiveFollowUp({
+          follow_up_id: id, outcome: "No Response", notes: data.notes, actor_id: userId,
+          next: canScheduleNext
+            ? {
+                scheduled_at: nextDate!,
+                type: data.next_followup_type!,
+                priority: fu.priority,
+                assigned_to_id: fu.assigned_to_id,
+                reason: "No response — rescheduled",
+              }
+            : undefined,
+        });
         if (leadId) {
           await prisma.activity.create({
             data: {
@@ -268,27 +275,21 @@ export async function POST(request: Request, { params }: { params: Params }) {
           });
         }
         revalidateTag("crm-dashboard", "max");
-        return NextResponse.json({ data: fuUpdate, action: "completed" });
+        return NextResponse.json({ data: completed, action: "completed" });
       }
 
-      // mark_unreachable — complete FU, sync next_followup_date, trigger review
-      const fuUpdate = await prisma.followUp.update({
+      // mark_unreachable — complete FU (nulls the mirror), mark lead Unreachable, trigger review
+      await prisma.followUp.update({
         where: { id },
-        data: { completed_at: now, outcome: "Not Reachable", notes: data.notes, attempt_count: { increment: 1 }, no_response_count: { increment: 1 } },
+        data: { attempt_count: { increment: 1 }, no_response_count: { increment: 1 } },
+      });
+      const { completed: fuUpdate } = await completeActiveFollowUp({
+        follow_up_id: id, outcome: "Not Reachable", notes: data.notes, actor_id: userId,
       });
       if (leadId) {
-        const nextFu = await prisma.followUp.findFirst({
-          where: { lead_id: leadId, completed_at: null },
-          orderBy: { scheduled_at: "asc" },
-        });
         await prisma.lead.update({
           where: { id: leadId },
-          data: {
-            activity_stage: "Unreachable",
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            next_followup_date: nextFu?.scheduled_at ?? null,
-            followup_type: (nextFu?.type ?? null) as any,
-          },
+          data: { activity_stage: "Unreachable" },
         });
         await prisma.activity.create({
           data: {
@@ -336,26 +337,28 @@ export async function POST(request: Request, { params }: { params: Params }) {
         : data.next_date + "T09:00:00";
       const nextDate = new Date(nextDateStr);
 
-      const fuUpdate = await prisma.followUp.update({
-        where: { id },
-        data: { completed_at: now, outcome: "Next Follow-up Scheduled", notes: data.notes ?? fu.notes },
-      });
-
-      if (leadId) {
-        await prisma.followUp.create({
-          data: {
-            lead_id: leadId, type: data.next_type, priority: fu.priority,
-            scheduled_at: nextDate, created_by_id: userId, assigned_to_id: fu.assigned_to_id,
-          },
-        });
-        await prisma.lead.update({
-          where: { id: leadId },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          data: { next_followup_date: nextDate, followup_type: data.next_type as any },
-        });
-        // No review event — scheduling is logistics, not a stage/note change
+      if (leadId && isNoFollowUpStatus(fu.lead?.status)) {
+        return NextResponse.json({ error: "Cannot schedule a follow-up for a lead in this status" }, { status: 409 });
       }
-      return NextResponse.json({ data: fuUpdate, action: "completed" });
+
+      // Complete the current follow-up and make the new date the single active one.
+      const { completed } = await completeActiveFollowUp({
+        follow_up_id: id,
+        outcome: "Next Follow-up Scheduled",
+        notes: data.notes ?? fu.notes,
+        actor_id: userId,
+        next: leadId
+          ? {
+              scheduled_at: nextDate,
+              type: data.next_type,
+              priority: fu.priority,
+              assigned_to_id: fu.assigned_to_id,
+              reason: "Rescheduled by agent",
+            }
+          : undefined,
+      });
+      // No review event — scheduling is logistics, not a stage/note change
+      return NextResponse.json({ data: completed, action: "completed" });
     }
 
     // ── update_notes ──────────────────────────────────────────────────────────
@@ -382,22 +385,50 @@ export async function POST(request: Request, { params }: { params: Params }) {
     if (data.action === "update_stage") {
       if (!fu.lead) return NextResponse.json({ error: "No linked lead" }, { status: 400 });
       const fromStage = fu.lead.status;
+      const toStage = data.to_stage;
+      const enteringNoFollowup = isNoFollowUpStatus(toStage);
+      const reactivating = (fromStage === "OnHold" || fromStage === "Recycle") && !enteringNoFollowup;
+
+      // Reactivating a parked lead requires a fresh follow-up date.
+      if (reactivating && !data.next_date) {
+        return NextResponse.json(
+          { error: "A follow-up date is required to move this lead back into the pipeline.", code: "FOLLOWUP_DATE_REQUIRED" },
+          { status: 422 }
+        );
+      }
+
       await prisma.$transaction([
-        prisma.lead.update({ where: { id: leadId! }, data: { status: data.to_stage, updated_at: now } }),
+        prisma.lead.update({ where: { id: leadId! }, data: { status: toStage, updated_at: now } }),
         prisma.leadStageHistory.create({
-          data: { lead_id: leadId!, from_stage: fromStage, to_stage: data.to_stage, changed_by_id: userId, notes: data.notes },
+          data: { lead_id: leadId!, from_stage: fromStage, to_stage: toStage, changed_by_id: userId, notes: data.notes },
         }),
         prisma.activity.create({
           data: {
             entity_type: "Lead", entity_id: leadId!,
             action: "stage_changed", actor_id: userId,
-            metadata: { pipeline_from: fromStage, pipeline_to: data.to_stage, notes: data.notes },
+            metadata: { pipeline_from: fromStage, pipeline_to: toStage, notes: data.notes },
           },
         }),
       ]);
       const fuUpdate = await prisma.followUp.update({
-        where: { id }, data: { outcome: `Stage: ${data.to_stage}`, notes: data.notes },
+        where: { id }, data: { outcome: `Stage: ${toStage}`, notes: data.notes },
       });
+
+      // Follow-up lifecycle for the stage change.
+      if (enteringNoFollowup) {
+        await clearActiveFollowUp({ lead_id: leadId!, reason: `Lead moved to ${toStage}`, actor_id: userId });
+      } else if (reactivating) {
+        const nextDateStr = data.next_time ? `${data.next_date}T${data.next_time}` : `${data.next_date}T09:00:00`;
+        await setActiveFollowUp({
+          lead_id: leadId!,
+          scheduled_at: new Date(nextDateStr),
+          type: data.next_type ?? "Call",
+          created_by_id: userId,
+          assigned_to_id: fu.lead.assigned_to_id,
+          reason: `Reactivated from ${fromStage}`,
+        });
+      }
+
       notifyLeadStageChanged({
         assignedToId: fu.lead.assigned_to_id, leadId: leadId!, leadName: fu.lead.full_name,
         leadNumber: fu.lead.lead_number, fromStage, toStage: data.to_stage,
@@ -432,8 +463,8 @@ export async function POST(request: Request, { params }: { params: Params }) {
           },
         }),
       ]);
-      const fuUpdate = await prisma.followUp.update({
-        where: { id }, data: { completed_at: now, outcome: "Lost", notes: data.notes },
+      const { completed: fuUpdate } = await completeActiveFollowUp({
+        follow_up_id: id, outcome: "Lost", notes: data.notes, actor_id: userId,
       });
       notifyLeadLost({
         assignedToId: fu.lead.assigned_to_id, leadId: leadId!, leadName: fu.lead.full_name,
@@ -490,8 +521,8 @@ export async function POST(request: Request, { params }: { params: Params }) {
         closedByName: session.user.name ?? session.user.email ?? "Agent",
       });
 
-      const fuUpdate = await prisma.followUp.update({
-        where: { id }, data: { completed_at: now, outcome: "Won", notes: data.notes },
+      const { completed: fuUpdate } = await completeActiveFollowUp({
+        follow_up_id: id, outcome: "Won", notes: data.notes, actor_id: userId,
       });
       if (isAgentRole) {
         createLeadReviewEvent({
@@ -519,35 +550,22 @@ export async function POST(request: Request, { params }: { params: Params }) {
         }),
       ]);
 
-      const fuUpdate = await prisma.followUp.update({
-        where: { id }, data: { completed_at: now, outcome: "Site Visit Done", notes: data.notes },
+      const hasNext = !!leadId && !!data.next_followup_date && !!data.next_followup_type;
+      const { completed: fuUpdate } = await completeActiveFollowUp({
+        follow_up_id: id,
+        outcome: "Site Visit Done",
+        notes: data.notes,
+        actor_id: userId,
+        next: hasNext
+          ? {
+              scheduled_at: new Date(data.next_followup_date!),
+              type: data.next_followup_type!,
+              priority: "High",
+              assigned_to_id: fu.assigned_to_id,
+              reason: "Next follow-up after site visit",
+            }
+          : undefined,
       });
-
-      if (leadId && data.next_followup_date && data.next_followup_type) {
-        const nextDate = new Date(data.next_followup_date);
-        await prisma.followUp.create({
-          data: {
-            lead_id: leadId, type: data.next_followup_type, priority: "High",
-            scheduled_at: nextDate, created_by_id: userId, assigned_to_id: fu.assigned_to_id,
-          },
-        });
-        await prisma.lead.update({
-          where: { id: leadId },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          data: { next_followup_date: nextDate, followup_type: data.next_followup_type as any },
-        });
-      } else if (leadId) {
-        // No next date provided — recalculate from remaining pending FUs
-        const nextFu = await prisma.followUp.findFirst({
-          where: { lead_id: leadId, completed_at: null },
-          orderBy: { scheduled_at: "asc" },
-        });
-        await prisma.lead.update({
-          where: { id: leadId },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          data: { next_followup_date: nextFu?.scheduled_at ?? null, followup_type: (nextFu?.type ?? null) as any },
-        });
-      }
 
       if (isAgentRole) {
         createLeadReviewEvent({

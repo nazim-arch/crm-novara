@@ -112,4 +112,33 @@ test.describe("Follow-up creation via API", () => {
     const id = json.data?.id ?? json.id;
     if (id) await request.delete(`/api/follow-ups/${id}`);
   });
+
+  test("scheduling twice leaves exactly one active follow-up", async ({ request }) => {
+    const leadsRes = await request.get("/api/leads?limit=1");
+    if (!leadsRes.ok()) { test.skip(); return; }
+    const leadsJson = await leadsRes.json();
+    const leads = leadsJson.data ?? leadsJson.leads ?? [];
+    if (leads.length === 0) { test.skip(); return; }
+    const leadId = leads[0].id;
+
+    const first = new Date(futureDate(4) + "T10:00:00").toISOString();
+    const second = new Date(futureDate(7) + "T10:00:00").toISOString();
+
+    const r1 = await request.post("/api/follow-ups", { data: { lead_id: leadId, type: "Call", scheduled_at: first } });
+    if (r1.status() === 409) { test.skip(); return; } // lead is in a no-follow-up status
+    expect(r1.ok()).toBeTruthy();
+
+    // Newest scheduling action wins and supersedes the previous active follow-up.
+    const r2 = await request.post("/api/follow-ups", { data: { lead_id: leadId, type: "Call", scheduled_at: second } });
+    expect(r2.ok()).toBeTruthy();
+    const j2 = await r2.json();
+    expect(j2.superseded).toBeTruthy();
+
+    // Exactly one Active follow-up remains for the lead.
+    const listRes = await request.get(`/api/follow-ups?lead_id=${leadId}&status=pending`);
+    expect(listRes.ok()).toBeTruthy();
+    const list = (await listRes.json()).data ?? [];
+    const active = list.filter((f: { status?: string }) => f.status === "Active");
+    expect(active.length).toBe(1);
+  });
 });

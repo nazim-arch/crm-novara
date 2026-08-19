@@ -433,8 +433,26 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
           {/* Follow-ups */}
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <CardTitle className="text-sm font-medium">Follow-ups</CardTitle>
+                {(() => {
+                  const active = lead.followups.find((f) => f.status === "Active");
+                  if (!active) {
+                    return <span className="text-xs text-muted-foreground">No active follow-up</span>;
+                  }
+                  const overdue = new Date(active.scheduled_at) < new Date(new Date().setHours(0, 0, 0, 0));
+                  return (
+                    <span
+                      className={`text-xs font-medium rounded-full px-2 py-0.5 ${
+                        overdue
+                          ? "bg-destructive/10 text-destructive"
+                          : "bg-primary/10 text-primary"
+                      }`}
+                    >
+                      Active: {formatDate(active.scheduled_at)} · {active.type}
+                    </span>
+                  );
+                })()}
               </div>
             </CardHeader>
             <CardContent>

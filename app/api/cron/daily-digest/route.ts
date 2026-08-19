@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { startOfDay, endOfDay, subDays } from "date-fns";
+import { NO_FOLLOWUP_STATUSES } from "@/lib/follow-ups";
 import {
   notifyFollowUpDueToday,
   notifyFollowUpOverdue,
@@ -26,6 +27,7 @@ export async function GET(request: Request) {
     where: {
       deleted_at: null,
       next_followup_date: { gte: todayStart, lte: todayEnd },
+      status: { notIn: [...NO_FOLLOWUP_STATUSES] },
     },
     select: { id: true, full_name: true, lead_number: true, assigned_to_id: true },
   });
@@ -60,7 +62,7 @@ export async function GET(request: Request) {
     where: {
       deleted_at: null,
       next_followup_date: { lt: todayStart },
-      status: { notIn: ["Won", "Lost", "OnHold"] },
+      status: { notIn: [...NO_FOLLOWUP_STATUSES] },
     },
     select: { id: true, full_name: true, lead_number: true, assigned_to_id: true },
     take: 50,
@@ -138,7 +140,7 @@ export async function GET(request: Request) {
         { last_contact_date: null },
         { last_contact_date: { lt: subDays(today, 2) } },
       ],
-      status: { notIn: ["Won", "Lost", "OnHold"] },
+      status: { notIn: [...NO_FOLLOWUP_STATUSES] },
     },
     select: { id: true, full_name: true, lead_number: true, assigned_to_id: true },
     take: 20,

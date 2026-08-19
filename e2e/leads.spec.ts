@@ -137,6 +137,9 @@ test.describe("Create lead", () => {
     await page.locator('button[type="submit"]').click();
     await page.waitForURL(/\/leads\/[a-z0-9]+/, { timeout: 15_000 });
     await expect(page.getByText(`${PREFIX} Followup`)).toBeVisible({ timeout: 8_000 });
+
+    // The lead now has a single active follow-up mirrored in the card header badge.
+    await expect(page.getByText(/Active:/).first()).toBeVisible({ timeout: 8_000 });
   });
 });
 

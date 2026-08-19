@@ -74,6 +74,12 @@ export const changeStageSchema = z
     lost_notes: z.string().optional().or(z.literal("")),
     settlement_value: z.coerce.number().positive("Settlement value must be a positive number").optional(),
     deal_commission_percent: z.coerce.number().min(0).max(100).optional(),
+    // Follow-up to (re)schedule alongside the stage change. Required when reactivating a lead
+    // out of OnHold/Recycle back into the pipeline.
+    next_followup_date: z.coerce.date().refine((d) => !isNaN(d.getTime()), "Invalid date").optional(),
+    next_followup_type: z
+      .enum(["Call", "Email", "WhatsApp", "Visit", "Meeting", "Activity", "Internal"])
+      .optional(),
   })
   .refine(
     (data) => !!data.to_stage || !!data.activity_stage,

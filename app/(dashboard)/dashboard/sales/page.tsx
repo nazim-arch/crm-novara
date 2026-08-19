@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { unstable_cache } from "next/cache";
 import { redirect } from "next/navigation";
 import { leadScopeFilter } from "@/lib/rbac";
+import { NO_FOLLOWUP_STATUSES } from "@/lib/follow-ups";
 import { startOfDay, endOfDay, subDays, differenceInCalendarDays } from "date-fns";
 import { SalesDashboardClient } from "@/components/dashboard/SalesDashboardClient";
 
@@ -89,7 +90,7 @@ const getSalesDashboardData = unstable_cache(
       return { deleted_at: null as null, OR: ors, ...extra };
     };
 
-    const closedStatuses = ["Won", "Lost", "InvalidLead", "Recycle"];
+    const closedStatuses = [...NO_FOLLOWUP_STATUSES];
     const activeFilter = { status: { notIn: closedStatuses } };
     const periodFilter = { created_at: { gte: rangeStart, lte: rangeEnd } };
 

@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { hasPermissionAsync } from "@/lib/rbac";
+import { NO_FOLLOWUP_STATUSES } from "@/lib/follow-ups";
 import { startOfDay, endOfDay } from "date-fns";
 
 export async function GET() {
@@ -35,13 +36,14 @@ export async function GET() {
       where: {
         deleted_at: null,
         next_followup_date: { gte: todayStart, lte: todayEnd },
+        status: { notIn: [...NO_FOLLOWUP_STATUSES] },
       },
     }),
     prisma.lead.count({
       where: {
         deleted_at: null,
         next_followup_date: { lt: todayStart },
-        status: { notIn: ["Won", "Lost", "OnHold"] },
+        status: { notIn: [...NO_FOLLOWUP_STATUSES] },
       },
     }),
     // LeadOpportunity is the pipeline unit — count per-link stages

@@ -22,7 +22,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const initials = getInitials(user.name ?? user.email ?? "U");
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen h-dvh overflow-hidden">
       <Suspense fallback={<div className="hidden md:flex w-56 shrink-0 border-r bg-card" />}>
         <Sidebar role={user.role} />
       </Suspense>
@@ -58,7 +58,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           </div>
         </header>
         <ErrorBoundary>
-          <main className="flex-1 overflow-auto bg-muted/30">{children}</main>
+          <main className="flex-1 overflow-auto bg-muted/30 pb-[env(safe-area-inset-bottom)]">{children}</main>
           {user.role !== "Sales" && <QuickAddModal currentUserId={user.id} role={user.role} />}
         </ErrorBoundary>
       </div>

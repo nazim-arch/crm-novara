@@ -9,9 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
-} from "@/components/ui/dialog";
+import { ActionModal } from "@/components/ui/action-modal";
 import { PriorityBadge } from "@/components/shared/LeadStatusBadge";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { differenceInCalendarDays, startOfDay } from "date-fns";
@@ -28,6 +26,7 @@ type FollowUp = {
   id: string;
   type: string;
   priority: string;
+  status: string;
   scheduled_at: Date;
   completed_at: Date | null;
   notes: string | null;
@@ -74,6 +73,7 @@ function AddFollowUpForm({
   entityId,
   users,
   currentUserId,
+  activeFollowUp,
   onCreated,
   onClose,
 }: {
@@ -81,28 +81,33 @@ function AddFollowUpForm({
   entityId: string;
   users: { id: string; name: string }[];
   currentUserId: string;
+  activeFollowUp: FollowUp | null;
   onCreated: (fu: FollowUp) => void;
   onClose: () => void;
 }) {
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const defaultDate = `${tomorrow.toISOString().slice(0, 10)}T09:00`;
+  const defaultDate = tomorrow.toISOString().slice(0, 10);
 
   const [type, setType] = useState<string>("Call");
   const [priority, setPriority] = useState<string>("Medium");
-  const [scheduledAt, setScheduledAt] = useState(defaultDate);
+  const [date, setDate] = useState(defaultDate);
+  const [time, setTime] = useState("09:00");
   const [notes, setNotes] = useState("");
   const [assignedTo, setAssignedTo] = useState(currentUserId);
   const [loading, setLoading] = useState(false);
 
   const assigneeName = users.find((u) => u.id === assignedTo)?.name ?? "Select assignee";
+  // ≥44px hit area on mobile, keeping the compact desktop density.
+  const controlCls = "h-11 sm:h-8 text-xs";
 
   async function handleSubmit() {
-    if (!scheduledAt) { toast.error("Date is required"); return; }
+    if (!date) { toast.error("Date is required"); return; }
     setLoading(true);
     try {
+      const scheduled_at = `${date}T${time || "09:00"}:00`;
       const body: Record<string, unknown> = {
-        type, priority, scheduled_at: scheduledAt,
+        type, priority, scheduled_at,
         assigned_to_id: assignedTo || undefined,
         notes: notes || undefined,
       };
@@ -116,7 +121,11 @@ function AddFollowUpForm({
       });
       const result = await res.json();
       if (!res.ok) { toast.error(result.error ?? "Failed"); return; }
-      toast.success("Follow-up scheduled");
+      if (result.superseded?.scheduled_at) {
+        toast.success(`Follow-up moved ${formatDate(new Date(result.superseded.scheduled_at))} → ${formatDate(new Date(scheduled_at))}`);
+      } else {
+        toast.success("Follow-up scheduled");
+      }
       onCreated(result.data);
       onClose();
     } catch {
@@ -128,11 +137,17 @@ function AddFollowUpForm({
 
   return (
     <div className="space-y-3">
+      {entityType === "lead" && activeFollowUp && (
+        <div className="rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          Current active follow-up: <span className="font-medium text-foreground">{formatDate(new Date(activeFollowUp.scheduled_at))}</span> ({activeFollowUp.type}).
+          Scheduling a new date will replace it.
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label className="text-xs">Type</Label>
           <Select value={type} onValueChange={(v) => v && setType(v)}>
-            <SelectTrigger className="h-8 text-xs"><SelectValue>{type}</SelectValue></SelectTrigger>
+            <SelectTrigger className={controlCls}><SelectValue>{type}</SelectValue></SelectTrigger>
             <SelectContent>
               {FOLLOW_UP_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
             </SelectContent>
@@ -141,7 +156,7 @@ function AddFollowUpForm({
         <div className="space-y-1.5">
           <Label className="text-xs">Priority</Label>
           <Select value={priority} onValueChange={(v) => v && setPriority(v)}>
-            <SelectTrigger className="h-8 text-xs"><SelectValue>{priority}</SelectValue></SelectTrigger>
+            <SelectTrigger className={controlCls}><SelectValue>{priority}</SelectValue></SelectTrigger>
             <SelectContent>
               <SelectItem value="High">High</SelectItem>
               <SelectItem value="Medium">Medium</SelectItem>
@@ -150,15 +165,21 @@ function AddFollowUpForm({
           </Select>
         </div>
       </div>
-      <div className="space-y-1.5">
-        <Label className="text-xs">Date &amp; Time *</Label>
-        <Input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className="h-8 text-xs" />
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Date *</Label>
+          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={controlCls} />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Time</Label>
+          <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={controlCls} />
+        </div>
       </div>
       {users.length > 0 && (
         <div className="space-y-1.5">
           <Label className="text-xs">Assign To</Label>
           <Select value={assignedTo} onValueChange={(v) => v && setAssignedTo(v)}>
-            <SelectTrigger className="h-8 text-xs"><SelectValue>{assigneeName}</SelectValue></SelectTrigger>
+            <SelectTrigger className={controlCls}><SelectValue>{assigneeName}</SelectValue></SelectTrigger>
             <SelectContent>
               {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
             </SelectContent>
@@ -169,9 +190,9 @@ function AddFollowUpForm({
         <Label className="text-xs">Notes</Label>
         <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes…" className="text-xs resize-none h-16" />
       </div>
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={onClose} className="flex-1">Cancel</Button>
-        <Button size="sm" onClick={handleSubmit} disabled={loading} className="flex-1">
+      <div className="flex gap-2 pt-1">
+        <Button variant="outline" onClick={onClose} className="flex-1 min-h-11 sm:min-h-0 sm:h-9">Cancel</Button>
+        <Button onClick={handleSubmit} disabled={loading} className="flex-1 min-h-11 sm:min-h-0 sm:h-9">
           {loading && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
           Schedule
         </Button>
@@ -197,12 +218,15 @@ export function FollowUpSection({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [addNextFor, setAddNextFor] = useState<FollowUp | null>(null);
 
+  // "Active" is the single live follow-up; superseded/cancelled rows are history and hidden here.
   const pending = followUps
-    .filter((f) => !f.completed_at)
+    .filter((f) => f.status === "Active")
     .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
 
+  const activeFollowUp = pending[0] ?? null;
+
   const completed = followUps
-    .filter((f) => !!f.completed_at)
+    .filter((f) => f.status === "Completed")
     .sort((a, b) => new Date(b.completed_at!).getTime() - new Date(a.completed_at!).getTime());
 
   async function handleMarkComplete(fu: FollowUp, andAddNext = false) {
@@ -214,7 +238,7 @@ export function FollowUpSection({
         body: JSON.stringify({ completed_at: new Date().toISOString() }),
       });
       if (!res.ok) { toast.error("Failed to mark complete"); return; }
-      setFollowUps((prev) => prev.map((f) => f.id === fu.id ? { ...f, completed_at: new Date() } : f));
+      setFollowUps((prev) => prev.map((f) => f.id === fu.id ? { ...f, status: "Completed", completed_at: new Date() } : f));
       toast.success("Marked complete");
       if (andAddNext) setAddNextFor(fu);
     } catch {
@@ -239,9 +263,14 @@ export function FollowUpSection({
   }
 
   function handleCreated(fu: FollowUp) {
-    setFollowUps((prev) => [...prev, fu].sort(
-      (a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
-    ));
+    // The server superseded any previous active row — reflect that locally so only the new
+    // follow-up shows as active.
+    setFollowUps((prev) =>
+      [
+        ...prev.map((f) => (f.status === "Active" ? { ...f, status: "Superseded" } : f)),
+        fu,
+      ].sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime())
+    );
   }
 
   return (
@@ -293,7 +322,7 @@ export function FollowUpSection({
                     <button
                       onClick={() => handleMarkComplete(fu)}
                       disabled={completingId === fu.id}
-                      className="flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition-colors disabled:opacity-50"
+                      className="flex items-center gap-1 text-xs px-3 min-h-11 sm:min-h-0 sm:px-2 sm:py-0.5 rounded bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition-colors disabled:opacity-50"
                     >
                       {completingId === fu.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
                       Done
@@ -301,7 +330,7 @@ export function FollowUpSection({
                     <button
                       onClick={() => handleMarkComplete(fu, true)}
                       disabled={completingId === fu.id}
-                      className="flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors disabled:opacity-50"
+                      className="flex items-center gap-1 text-xs px-3 min-h-11 sm:min-h-0 sm:px-2 sm:py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors disabled:opacity-50"
                     >
                       <Check className="h-3 w-3" /><Plus className="h-2.5 w-2.5" />
                       Done + Next
@@ -310,7 +339,7 @@ export function FollowUpSection({
                       <button
                         onClick={() => handleDelete(fu.id)}
                         disabled={deletingId === fu.id}
-                        className="ml-auto p-0.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                        className="ml-auto min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 flex items-center justify-center p-0.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                       >
                         {deletingId === fu.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                       </button>
@@ -358,38 +387,34 @@ export function FollowUpSection({
         </div>
       )}
 
-      {/* Add follow-up button */}
+      {/* Add follow-up button (controlled — Sheet on mobile, Dialog on desktop) */}
       {canManage && (
-        <Dialog open={showAddDialog || !!addNextFor} onOpenChange={(o) => { setShowAddDialog(o); if (!o) setAddNextFor(null); }}>
-          <DialogTrigger
-            className="w-full mt-1"
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full text-xs min-h-11 sm:min-h-0 sm:h-8 mt-1"
             onClick={() => setShowAddDialog(true)}
           >
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full text-xs h-8"
-            >
-              <Plus className="h-3.5 w-3.5 mr-1" />
-              Schedule Follow-up
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-sm">
-            <DialogHeader>
-              <DialogTitle>
-                {addNextFor ? "Schedule Next Follow-up" : "Schedule Follow-up"}
-              </DialogTitle>
-            </DialogHeader>
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            Schedule Follow-up
+          </Button>
+          <ActionModal
+            open={showAddDialog || !!addNextFor}
+            onOpenChange={(o) => { setShowAddDialog(o); if (!o) setAddNextFor(null); }}
+            title={addNextFor ? "Schedule Next Follow-up" : "Schedule Follow-up"}
+          >
             <AddFollowUpForm
               entityType={entityType}
               entityId={entityId}
               users={users}
               currentUserId={currentUserId}
+              activeFollowUp={activeFollowUp}
               onCreated={handleCreated}
               onClose={() => { setShowAddDialog(false); setAddNextFor(null); }}
             />
-          </DialogContent>
-        </Dialog>
+          </ActionModal>
+        </>
       )}
 
       {/* Link to full follow-ups page */}

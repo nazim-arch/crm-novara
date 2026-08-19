@@ -5,6 +5,7 @@ import { generateId } from "@/lib/id-generator";
 import { createLeadSchema } from "@/lib/validations/lead";
 import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
 import type { Prisma } from "@/lib/generated/prisma/client";
+import { setActiveFollowUp } from "@/lib/follow-ups";
 import { notifyLeadAssigned, notifyLeadCreatedAdmins } from "@/lib/email-notifications";
 import { revalidateTag } from "next/cache";
 
@@ -153,7 +154,7 @@ export async function POST(request: Request) {
     const {
       email, whatsapp, campaign_source, referral_source, unit_type,
       location_preference, timeline_to_buy, reason_for_interest,
-      next_followup_date, notes: _notes, financing_required, city, ...rest
+      next_followup_date, followup_type, notes: _notes, financing_required, city, ...rest
     } = parsed.data;
 
     // Hard duplicate stop — phone or email must be unique among active leads
@@ -179,10 +180,22 @@ export async function POST(request: Request) {
         unit_type: unit_type || null, location_preference: location_preference || null,
         timeline_to_buy: timeline_to_buy || null, reason_for_interest: reason_for_interest || null,
         city: city || null,
-        next_followup_date: next_followup_date ?? null, financing_required: financing_required ?? null,
+        financing_required: financing_required ?? null,
         created_by_id: session.user.id,
       },
     });
+
+    // The follow-up mirror is owned by the service — create the active follow-up if a date was given.
+    if (next_followup_date) {
+      await setActiveFollowUp({
+        lead_id: lead.id,
+        scheduled_at: next_followup_date,
+        type: followup_type ?? "Call",
+        assigned_to_id: lead.assigned_to_id,
+        created_by_id: session.user.id,
+        reason: "Scheduled on lead creation",
+      });
+    }
 
     await prisma.activity.create({
       data: {

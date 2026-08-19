@@ -6,8 +6,11 @@ import { startOfDay, endOfDay, differenceInCalendarDays } from "date-fns";
 import { CrmDashboardClient } from "@/components/dashboard/CrmDashboardClient";
 import { DashboardFilters } from "@/components/podcast-studio/DashboardFilters";
 import { resolveDateRange, type DashboardRange } from "@/lib/date-range";
+import { NO_FOLLOWUP_STATUSES } from "@/lib/follow-ups";
 import { Suspense } from "react";
 import { unstable_cache } from "next/cache";
+
+const NO_FU = [...NO_FOLLOWUP_STATUSES];
 
 function todayIST() {
   return new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -84,34 +87,34 @@ const getCrmDashboardData = unstable_cache(
       noFollowUpCount,
     ] = await Promise.all([
       prisma.lead.count({ where: leadWhere() }),
-      prisma.lead.count({ where: leadWhere({ temperature: "Hot", status: { notIn: ["Won", "Lost", "Recycle"] } }) }),
-      prisma.lead.count({ where: leadWhere({ status: { notIn: ["Won", "Lost", "Recycle"] } }) }),
+      prisma.lead.count({ where: leadWhere({ temperature: "Hot", status: { notIn: NO_FU } }) }),
+      prisma.lead.count({ where: leadWhere({ status: { notIn: NO_FU } }) }),
       prisma.lead.count({ where: leadWhere({ status: "Won" }) }),
       prisma.lead.count({ where: leadWhere({ status: "Lost" }) }),
       prisma.lead.count({ where: leadWhereInRange() }),
       prisma.lead.count({ where: leadWhereInRange({ status: "Won" }) }),
       prisma.leadStageHistory.count({ where: { to_stage: "SiteVisitCompleted", changed_at: { gte: rangeStart, lte: rangeEnd }, lead: leadScope ? { deleted_at: null, ...leadScope } : { deleted_at: null } } }),
       prisma.leadStageHistory.count({ where: { to_stage: "Booked", changed_at: { gte: rangeStart, lte: rangeEnd }, lead: leadScope ? { deleted_at: null, ...leadScope } : { deleted_at: null } } }),
-      prisma.lead.count({ where: leadWhere({ status: { notIn: ["Won", "Lost", "Recycle"] }, next_followup_date: { gte: todayStart, lte: todayEnd } }) }),
-      prisma.lead.count({ where: leadWhere({ status: { notIn: ["Won", "Lost", "Recycle"] }, next_followup_date: { lt: todayStart } }) }),
+      prisma.lead.count({ where: leadWhere({ status: { notIn: NO_FU }, next_followup_date: { gte: todayStart, lte: todayEnd } }) }),
+      prisma.lead.count({ where: leadWhere({ status: { notIn: NO_FU }, next_followup_date: { lt: todayStart } }) }),
       prisma.lead.groupBy({ by: ["status"], where: leadWhereInRange(), _count: { id: true }, _sum: { potential_lead_value: true } }),
-      prisma.lead.groupBy({ by: ["temperature"], where: leadWhereInRange({ status: { notIn: ["Won", "Lost", "Recycle"] } }), _count: { id: true } }),
+      prisma.lead.groupBy({ by: ["temperature"], where: leadWhereInRange({ status: { notIn: NO_FU } }), _count: { id: true } }),
       prisma.lead.groupBy({ by: ["lead_source"], where: leadWhereInRange(), _count: { id: true }, orderBy: { _count: { id: "desc" } }, take: 8 }),
       prisma.lead.aggregate({ where: leadWhere({ status: { notIn: ["Lost", "Recycle"] } }), _sum: { potential_lead_value: true } }),
       prisma.lead.findMany({
-        where: leadWhere({ status: { notIn: ["Won", "Lost", "Recycle"] }, next_followup_date: { gte: todayStart, lte: todayEnd } }),
+        where: leadWhere({ status: { notIn: NO_FU }, next_followup_date: { gte: todayStart, lte: todayEnd } }),
         select: { id: true, full_name: true, lead_number: true, phone: true, temperature: true, status: true, potential_lead_value: true, next_followup_date: true, followup_type: true, assigned_to: { select: { name: true } } },
         orderBy: { potential_lead_value: { sort: "desc", nulls: "last" } },
         take: 10,
       }),
       prisma.lead.findMany({
-        where: leadWhere({ status: { notIn: ["Won", "Lost", "Recycle"] }, next_followup_date: { lt: todayStart } }),
+        where: leadWhere({ status: { notIn: NO_FU }, next_followup_date: { lt: todayStart } }),
         select: { id: true, full_name: true, lead_number: true, temperature: true, status: true, potential_lead_value: true, next_followup_date: true, assigned_to: { select: { name: true } } },
         orderBy: { potential_lead_value: { sort: "desc", nulls: "last" } },
         take: 8,
       }),
       prisma.lead.findMany({
-        where: leadWhere({ temperature: "Hot", status: { notIn: ["Won", "Lost", "Recycle"] }, OR: [{ next_followup_date: null }, { next_followup_date: { lt: todayStart } }] }),
+        where: leadWhere({ temperature: "Hot", status: { notIn: NO_FU }, OR: [{ next_followup_date: null }, { next_followup_date: { lt: todayStart } }] }),
         select: { id: true, full_name: true, lead_number: true, potential_lead_value: true, next_followup_date: true, assigned_to: { select: { name: true } } },
         orderBy: { potential_lead_value: { sort: "desc", nulls: "last" } },
         take: 5,
@@ -144,7 +147,7 @@ const getCrmDashboardData = unstable_cache(
       prisma.task.groupBy({ by: ["status"], where: { deleted_at: null, ...(role === "Sales" || role === "Operations" ? { assigned_to_id: userId } : {}) }, _count: { id: true } }),
       prisma.task.count({ where: { deleted_at: null, status: { notIn: ["Done", "Cancelled"] }, due_date: { lt: todayStart }, ...(role === "Sales" || role === "Operations" ? { assigned_to_id: userId } : {}) } }),
       prisma.task.groupBy({ by: ["client_id"], where: { deleted_at: null, client_id: { not: null }, ...(role === "Sales" || role === "Operations" ? { assigned_to_id: userId } : {}) }, _count: { id: true } }),
-      prisma.lead.count({ where: leadWhere({ status: { notIn: ["Won", "Lost", "InvalidLead", "Recycle"] }, next_followup_date: null }) }),
+      prisma.lead.count({ where: leadWhere({ status: { notIn: NO_FU }, next_followup_date: null }) }),
     ]);
 
     const clientIds = (taskByClient as Array<{ client_id: string | null }>).map((c) => c.client_id).filter(Boolean) as string[];

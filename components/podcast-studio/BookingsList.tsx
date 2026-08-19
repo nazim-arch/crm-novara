@@ -356,11 +356,12 @@ export function BookingsList() {
                     <TableCell><StatusBadge status={b.status} /></TableCell>
                     <TableCell>
                       <DropdownMenu>
-                        <DropdownMenuTrigger>
+                        <DropdownMenuTrigger render={
                           <Button variant="ghost" size="icon-sm">
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
-                        </DropdownMenuTrigger>
+                        } />
+
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => setViewBooking(b)}>
                             <Eye className="h-4 w-4 mr-2" /> View

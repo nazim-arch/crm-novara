@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { verifyMcpToken } from "@/lib/mcp-auth";
+import { setActiveFollowUp, clearActiveFollowUp, FollowUpForbiddenError } from "@/lib/follow-ups";
+import type { FollowUpType } from "@/lib/generated/prisma/client";
 
 type Params = Promise<{ id: string }>;
 
@@ -31,7 +33,7 @@ export async function GET(request: Request, { params }: { params: Params }) {
           },
         },
         followups: {
-          where: { completed_at: null },
+          where: { status: "Active" },
           orderBy: { scheduled_at: "asc" },
           take: 5,
         },
@@ -85,10 +87,11 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
 
+    // next_followup_date / followup_type are owned by the follow-up service (handled below).
     const allowedFields = [
       "temperature", "activity_stage", "email", "whatsapp", "city",
       "lead_source", "budget_min", "budget_max", "location_preference",
-      "timeline_to_buy", "purpose", "property_type", "next_followup_date",
+      "timeline_to_buy", "purpose", "property_type",
       "financing_required", "assigned_to_id",
     ];
 
@@ -97,7 +100,8 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
       if (field in body) data[field] = body[field];
     }
 
-    if (Object.keys(data).length <= 1) {
+    const wantsFollowup = "next_followup_date" in body;
+    if (Object.keys(data).length <= 1 && !wantsFollowup) {
       return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
     }
 
@@ -109,9 +113,36 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
         entity_id: lead.id,
         action: "lead_updated",
         actor_id: userId,
-        metadata: { fields: Object.keys(data).filter((k) => k !== "updated_at"), source: "mcp" },
+        metadata: {
+          fields: [...Object.keys(data).filter((k) => k !== "updated_at"), ...(wantsFollowup ? ["next_followup_date"] : [])],
+          source: "mcp",
+        },
       },
     });
+
+    // Apply the follow-up change through the single-active service.
+    if (wantsFollowup) {
+      const raw = body.next_followup_date;
+      try {
+        if (raw === null || raw === "") {
+          await clearActiveFollowUp({ lead_id: lead.id, reason: "Follow-up cleared via MCP", actor_id: userId });
+        } else {
+          await setActiveFollowUp({
+            lead_id: lead.id,
+            scheduled_at: new Date(raw),
+            type: (body.followup_type as FollowUpType | undefined) ?? "Call",
+            created_by_id: userId,
+            assigned_to_id: updated.assigned_to_id,
+            reason: "Scheduled via MCP",
+          });
+        }
+      } catch (err) {
+        if (err instanceof FollowUpForbiddenError) {
+          return NextResponse.json({ error: err.message }, { status: 409 });
+        }
+        throw err;
+      }
+    }
 
     return NextResponse.json({ data: updated });
   } catch (error) {

@@ -19,6 +19,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ColumnPicker } from "@/components/shared/ColumnPicker";
 import { getVisibleColumns, type ColumnDef } from "@/lib/column-prefs";
 import type { Prisma, PropertyType } from "@/lib/generated/prisma/client";
+import { NO_FOLLOWUP_STATUSES } from "@/lib/follow-ups";
 import { LeadFilters } from "@/components/leads/LeadFilters";
 import { LeadImportModal } from "@/components/leads/LeadImportModal";
 import { LeadUpdateModal } from "@/components/leads/LeadUpdateModal";
@@ -280,12 +281,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     where.followups = { none: {} };
   } else if (sp.filter === "stale") {
     where.updated_at = { lt: subDays(todayStart, staleDays) };
-    where.status = { notIn: ["Won", "Lost", "InvalidLead", "Recycle"] };
+    where.status = { notIn: [...NO_FOLLOWUP_STATUSES] };
   } else if (sp.filter === "overdue_followup") {
     where.next_followup_date = { lt: todayStart };
-    where.status = { notIn: ["Won", "Lost", "InvalidLead", "Recycle"] };
+    where.status = { notIn: [...NO_FOLLOWUP_STATUSES] };
   } else if (sp.filter === "to_action_today") {
-    where.status = { notIn: ["Won", "Lost", "InvalidLead", "Recycle"] };
+    where.status = { notIn: [...NO_FOLLOWUP_STATUSES] };
     where.next_followup_date = { lte: todayEnd };
   } else if (sp.filter === "actioned") {
     if (periodRange) where.created_at = periodRange;
@@ -295,7 +296,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     ];
   } else if (sp.filter === "no_followup") {
     where.next_followup_date = null;
-    where.status = { notIn: ["Won", "Lost", "InvalidLead", "Recycle"] };
+    where.status = { notIn: [...NO_FOLLOWUP_STATUSES] };
   }
 
   const baseOrder = SORT_MAP[sortCol] ?? { updated_at: "asc" };

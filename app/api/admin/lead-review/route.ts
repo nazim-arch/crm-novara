@@ -86,7 +86,7 @@ export async function GET(request: Request) {
               deleted_at: true,
               alternate_requirement: true,
               assigned_to: { select: { id: true, name: true } },
-              _count: { select: { followups: { where: { completed_at: null } } } },
+              _count: { select: { followups: { where: { status: "Active" } } } },
             },
           },
           opportunity: { select: { id: true, opp_number: true, name: true } },

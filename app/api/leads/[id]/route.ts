@@ -5,6 +5,8 @@ import { updateLeadSchema } from "@/lib/validations/lead";
 import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
 import { CommissionRecordStatus } from "@/lib/commission-utils";
 import { notifyLeadReassigned } from "@/lib/email-notifications";
+import { setActiveFollowUp, clearActiveFollowUp, FollowUpForbiddenError } from "@/lib/follow-ups";
+import type { FollowUpType } from "@/lib/generated/prisma/client";
 import { revalidateTag } from "next/cache";
 
 type Params = Promise<{ id: string }>;
@@ -87,6 +89,13 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
     if (notes !== undefined) cleanData.alternate_requirement = notes === "" ? null : notes;
     if (financing_required !== undefined) cleanData.financing_required = financing_required;
 
+    // The follow-up mirror (next_followup_date / followup_type) is owned by the follow-up
+    // service — strip it from the direct lead write and apply it through the service below.
+    const nextFollowupDate = cleanData.next_followup_date as Date | null | undefined;
+    const followupType = cleanData.followup_type as FollowUpType | null | undefined;
+    delete cleanData.next_followup_date;
+    delete cleanData.followup_type;
+
     // Detect reassignment before update
     const existingLead = await prisma.lead.findUnique({
       where: { id, deleted_at: null },
@@ -105,48 +114,25 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
       },
     });
 
-    // Sync FollowUp record when next_followup_date is set on the lead
-    if (lead.next_followup_date) {
-      const existing = await prisma.followUp.findFirst({
-        where: { lead_id: id, completed_at: null },
-        orderBy: { scheduled_at: "asc" },
-        select: { id: true },
-      });
-      if (existing) {
-        await prisma.followUp.update({
-          where: { id: existing.id },
-          data: {
-            scheduled_at: lead.next_followup_date,
-            ...(lead.assigned_to_id && { assigned_to_id: lead.assigned_to_id }),
-          },
+    // Apply the follow-up change through the single-active service.
+    try {
+      if (nextFollowupDate instanceof Date) {
+        await setActiveFollowUp({
+          lead_id: id,
+          scheduled_at: nextFollowupDate,
+          type: followupType ?? "Call",
+          created_by_id: session.user.id,
+          assigned_to_id: lead.assigned_to_id,
+          reason: "Scheduled via lead edit",
         });
-      } else {
-        await prisma.followUp.create({
-          data: {
-            lead_id: id,
-            assigned_to_id: lead.assigned_to_id,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            type: (lead.followup_type ?? "Call") as any,
-            scheduled_at: lead.next_followup_date,
-            created_by_id: session.user.id,
-          },
-        });
+      } else if (nextFollowupDate === null) {
+        await clearActiveFollowUp({ lead_id: id, reason: "Follow-up cleared via lead edit", actor_id: session.user.id });
       }
-    } else if (cleanData.next_followup_date === null) {
-      // When next_followup_date is explicitly cleared, recalculate from pending FUs
-      // (prevents stale null when FUs still exist)
-      const nextFu = await prisma.followUp.findFirst({
-        where: { lead_id: id, completed_at: null },
-        orderBy: { scheduled_at: "asc" },
-        select: { scheduled_at: true, type: true },
-      });
-      if (nextFu) {
-        await prisma.lead.update({
-          where: { id },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          data: { next_followup_date: nextFu.scheduled_at, followup_type: nextFu.type as any },
-        });
+    } catch (err) {
+      if (err instanceof FollowUpForbiddenError) {
+        return NextResponse.json({ error: err.message }, { status: 409 });
       }
+      throw err;
     }
 
     // Email new assignee if reassigned

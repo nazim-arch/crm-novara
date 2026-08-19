@@ -131,6 +131,13 @@ enum FollowUpPriority {
   Low
 }
 
+enum FollowUpStatus {
+  Active     // the one live follow-up for the lead
+  Completed  // actioned by an agent
+  Superseded // replaced by a newer follow-up
+  Cancelled  // killed by a status change (Lost/Won/OnHold/Recycle/InvalidLead) or delete
+}
+
 enum EntityType {
   Lead
   Opportunity
@@ -662,6 +669,11 @@ model FollowUp {
   notes          String?
   outcome        String?
   created_by_id  String
+  // Lifecycle: `status` is the single truth for "is this actionable".
+  status           FollowUpStatus @default(Active)
+  superseded_at    DateTime?      // set when replaced by a newer follow-up
+  superseded_by_id String?        // the FollowUp that replaced this one
+  closed_reason    String?        // e.g. "Rescheduled by agent", "Lead marked Lost"
   // Focus Queue fields
   callback_at       DateTime?         // resurface time when "Callback Again Today" is chosen
   attempt_count     Int       @default(0)
@@ -686,6 +698,9 @@ model FollowUp {
   @@index([scheduled_at, assigned_to_id, completed_at])
   @@index([callback_at, assigned_to_id, completed_at])
   @@index([completed_at, assigned_to_id])
+  // Single-active-follow-up lifecycle indexes
+  @@index([lead_id, status])
+  @@index([status, scheduled_at, assigned_to_id])
   @@map("follow_ups")
 }
 

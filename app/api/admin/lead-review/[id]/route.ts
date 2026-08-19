@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { setActiveFollowUp, FollowUpForbiddenError } from "@/lib/follow-ups";
 
 type Params = Promise<{ id: string }>;
 
@@ -89,31 +90,22 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
       if (data.quality_score) updateData.quality_score = data.quality_score;
       if (data.review_notes) updateData.review_notes = data.review_notes;
 
-      // Create a follow-up record
-      await prisma.followUp.create({
-        data: {
+      // Set the lead's single active follow-up (supersedes any existing one, syncs the mirror).
+      try {
+        await setActiveFollowUp({
           lead_id: event.lead_id,
-          opportunity_id: event.opportunity_id ?? null,
+          scheduled_at: new Date(data.followup_scheduled_at),
           type: data.followup_type,
           priority: "High",
-          scheduled_at: new Date(data.followup_scheduled_at),
           notes: data.review_notes ?? null,
           created_by_id: session.user.id,
-        },
-      });
-
-      // Sync lead's next_followup_date
-      const scheduledDate = new Date(data.followup_scheduled_at);
-      const lead = await prisma.lead.findUnique({
-        where: { id: event.lead_id },
-        select: { next_followup_date: true },
-      });
-      if (lead && (!lead.next_followup_date || scheduledDate < lead.next_followup_date)) {
-        await prisma.lead.update({
-          where: { id: event.lead_id },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          data: { next_followup_date: scheduledDate, followup_type: data.followup_type as any },
+          reason: "Scheduled from admin lead review",
         });
+      } catch (err) {
+        if (err instanceof FollowUpForbiddenError) {
+          return NextResponse.json({ error: err.message }, { status: 409 });
+        }
+        throw err;
       }
     } else if (data.action === "escalate") {
       updateData.review_status = "Escalated";

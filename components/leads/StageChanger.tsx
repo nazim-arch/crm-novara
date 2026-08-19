@@ -53,6 +53,11 @@ const ACTIVITY_STAGES = [
   { value: "Junk", label: "Junk" },
 ] as const;
 
+const FOLLOW_UP_TYPES = ["Call", "Email", "WhatsApp", "Visit", "Meeting", "Activity", "Internal"] as const;
+
+// Statuses that carry no active follow-up (mirror of NO_FOLLOWUP_STATUSES).
+const NO_FOLLOWUP_STAGES = ["Lost", "Won", "InvalidLead", "OnHold", "Recycle"];
+
 const LOST_REASONS = [
   { value: "Budget", label: "Budget" },
   { value: "Location", label: "Location" },
@@ -64,7 +69,13 @@ const LOST_REASONS = [
   { value: "Other", label: "Other" },
 ] as const;
 
-type DialogMode = "lost" | "won" | "invalidLead" | null;
+type DialogMode = "lost" | "won" | "invalidLead" | "reactivate" | null;
+
+function defaultFollowupDate() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
 
 interface StageChangerProps {
   leadId: string;
@@ -99,6 +110,10 @@ export function StageChanger({ leadId, currentStage, currentActivityStage = "New
   // Invalid Lead note
   const [invalidNotes, setInvalidNotes] = useState("");
 
+  // Reactivation (OnHold/Recycle → active pipeline) requires a new follow-up
+  const [reactivateDate, setReactivateDate] = useState(defaultFollowupDate);
+  const [reactivateType, setReactivateType] = useState<string>("Call");
+
   const reset = () => {
     setPendingPipeline(null);
     setPendingActivity(null);
@@ -108,6 +123,8 @@ export function StageChanger({ leadId, currentStage, currentActivityStage = "New
     setSettlementValue("");
     setDealCommissionPercent("");
     setInvalidNotes("");
+    setReactivateDate(defaultFollowupDate());
+    setReactivateType("Call");
   };
 
   const submitChange = async (payload: Record<string, unknown>) => {
@@ -155,9 +172,22 @@ export function StageChanger({ leadId, currentStage, currentActivityStage = "New
     } else if (stage === "InvalidLead") {
       setPendingPipeline(stage);
       setDialogMode("invalidLead");
+    } else if ((currentStage === "OnHold" || currentStage === "Recycle") && !NO_FOLLOWUP_STAGES.includes(stage)) {
+      // Reactivating a parked lead — require a fresh follow-up date.
+      setPendingPipeline(stage);
+      setDialogMode("reactivate");
     } else {
       submitChange({ to_stage: stage });
     }
+  };
+
+  const confirmReactivate = async () => {
+    if (!reactivateDate) { toast.error("Please pick a follow-up date"); return; }
+    await submitChange({
+      to_stage: pendingPipeline,
+      next_followup_date: `${reactivateDate}T09:00:00`,
+      next_followup_type: reactivateType,
+    });
   };
 
   // Activity stage change handler
@@ -369,6 +399,40 @@ export function StageChanger({ leadId, currentStage, currentActivityStage = "New
           <DialogFooter>
             <Button variant="outline" onClick={reset}>Cancel</Button>
             <Button onClick={confirmInvalidLead} disabled={loading}>
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reactivate Dialog — moving a parked lead back into the pipeline needs a follow-up */}
+      <Dialog open={dialogMode === "reactivate"} onOpenChange={reset}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Schedule a Follow-up</DialogTitle>
+            <DialogDescription>
+              Moving this lead from {currentStage} to {pendingPipeline} — set the next follow-up so it re-enters the queue.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Follow-up Date <span className="text-destructive">*</span></Label>
+              <Input type="date" value={reactivateDate} onChange={(e) => setReactivateDate(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Type</Label>
+              <Select value={reactivateType} onValueChange={(v) => v && setReactivateType(v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {FOLLOW_UP_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={reset}>Cancel</Button>
+            <Button onClick={confirmReactivate} disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Confirm
             </Button>

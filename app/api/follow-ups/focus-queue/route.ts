@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { startOfDay, endOfDay } from "date-fns";
+import { NO_FOLLOWUP_STATUSES } from "@/lib/follow-ups";
 
 const LEAD_SELECT = {
   id: true, lead_number: true, full_name: true,
@@ -47,11 +48,12 @@ export async function GET(request: Request) {
     const todayStart = startOfDay(now);
     const todayEnd = endOfDay(now);
 
-    // Base filter for pending follow-ups on non-deleted leads
-    // Main queue filter: pending, due today or overdue, NOT currently parked for a future callback
+    // Base filter for active follow-ups on non-deleted, actionable leads
+    // Main queue filter: active, due today or overdue, NOT currently parked for a future callback
+    const leadActionable = { deleted_at: null, status: { notIn: [...NO_FOLLOWUP_STATUSES] } };
     const queueWhere = {
-      completed_at: null,
-      lead: { deleted_at: null },
+      status: "Active" as const,
+      lead: leadActionable,
       scheduled_at: { lte: todayEnd },
       // Exclude items the agent deliberately parked for a specific callback time (still future)
       OR: [
@@ -72,8 +74,8 @@ export async function GET(request: Request) {
       // Callback tab: items the agent has parked for a specific future time today
       prisma.followUp.findMany({
         where: {
-          completed_at: null,
-          lead: { deleted_at: null },
+          status: "Active",
+          lead: leadActionable,
           callback_at: { gt: now },
           ...assignedFilter,
         },
@@ -99,7 +101,7 @@ export async function GET(request: Request) {
         where: { ...queueWhere, scheduled_at: { gte: todayStart, lte: todayEnd } },
       }),
       prisma.followUp.count({
-        where: { ...queueWhere, lead: { temperature: "Hot", deleted_at: null } },
+        where: { ...queueWhere, lead: { ...leadActionable, temperature: "Hot" } },
       }),
     ]);
 

@@ -2,6 +2,12 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import {
+  setActiveFollowUp,
+  completeActiveFollowUp,
+  clearActiveFollowUp,
+  FollowUpForbiddenError,
+} from "@/lib/follow-ups";
 
 const FOLLOW_UP_TYPES = ["Call", "Email", "WhatsApp", "Visit", "Meeting", "Activity", "Internal"] as const;
 
@@ -17,6 +23,12 @@ const patchSchema = z.object({
 
 type Params = Promise<{ id: string }>;
 
+const followUpInclude = {
+  lead: { select: { id: true, lead_number: true, full_name: true } },
+  opportunity: { select: { id: true, opp_number: true, name: true } },
+  assigned_to: { select: { id: true, name: true } },
+} as const;
+
 export async function PATCH(request: Request, { params }: { params: Params }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -31,60 +43,56 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
   const existing = await prisma.followUp.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const data: Record<string, any> = {};
-  if (parsed.data.completed_at !== undefined) {
-    data.completed_at = parsed.data.completed_at ? new Date(parsed.data.completed_at) : null;
+  const p = parsed.data;
+
+  try {
+    // Completing the follow-up → funnel through the service (nulls the lead mirror).
+    if (p.completed_at) {
+      await completeActiveFollowUp({
+        follow_up_id: id,
+        outcome: p.outcome ?? existing.outcome ?? "Completed",
+        notes: p.notes,
+        actor_id: session.user.id,
+      });
+      const followUp = await prisma.followUp.findUnique({ where: { id }, include: followUpInclude });
+      return NextResponse.json({ data: followUp });
+    }
+
+    // Rescheduling an active, lead-linked follow-up → supersede + create new active (newest wins).
+    if (p.scheduled_at && existing.status === "Active" && existing.lead_id) {
+      const { created } = await setActiveFollowUp({
+        lead_id: existing.lead_id,
+        scheduled_at: new Date(p.scheduled_at),
+        type: p.type ?? existing.type,
+        priority: p.priority ?? existing.priority,
+        assigned_to_id: p.assigned_to_id !== undefined ? p.assigned_to_id : existing.assigned_to_id,
+        created_by_id: session.user.id,
+        notes: p.notes ?? existing.notes,
+        reason: "Rescheduled by agent",
+      });
+      const followUp = await prisma.followUp.findUnique({ where: { id: created.id }, include: followUpInclude });
+      return NextResponse.json({ data: followUp });
+    }
+
+    // Otherwise: in-place edit of non-date fields (or non-active/non-lead rows).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data: Record<string, any> = {};
+    if (p.completed_at === null) { data.completed_at = null; }
+    if (p.outcome !== undefined) data.outcome = p.outcome;
+    if (p.notes !== undefined) data.notes = p.notes;
+    if (p.type !== undefined) data.type = p.type;
+    if (p.priority !== undefined) data.priority = p.priority;
+    if (p.scheduled_at !== undefined) data.scheduled_at = new Date(p.scheduled_at);
+    if (p.assigned_to_id !== undefined) data.assigned_to_id = p.assigned_to_id;
+
+    const followUp = await prisma.followUp.update({ where: { id }, data, include: followUpInclude });
+    return NextResponse.json({ data: followUp });
+  } catch (err) {
+    if (err instanceof FollowUpForbiddenError) {
+      return NextResponse.json({ error: err.message }, { status: 409 });
+    }
+    throw err;
   }
-  if (parsed.data.outcome !== undefined) data.outcome = parsed.data.outcome;
-  if (parsed.data.notes !== undefined) data.notes = parsed.data.notes;
-  if (parsed.data.type !== undefined) data.type = parsed.data.type;
-  if (parsed.data.priority !== undefined) data.priority = parsed.data.priority;
-  if (parsed.data.scheduled_at !== undefined) data.scheduled_at = new Date(parsed.data.scheduled_at);
-  if (parsed.data.assigned_to_id !== undefined) data.assigned_to_id = parsed.data.assigned_to_id;
-
-  const followUp = await prisma.followUp.update({
-    where: { id },
-    data,
-    include: {
-      lead: { select: { id: true, lead_number: true, full_name: true } },
-      opportunity: { select: { id: true, opp_number: true, name: true } },
-      assigned_to: { select: { id: true, name: true } },
-    },
-  });
-
-  // When marking as complete on a lead-linked follow-up, sync lead's next_followup_date + last_contact_date
-  if (data.completed_at && followUp.lead_id) {
-    const nextFu = await prisma.followUp.findFirst({
-      where: { lead_id: followUp.lead_id, completed_at: null },
-      orderBy: { scheduled_at: "asc" },
-    });
-    await prisma.lead.update({
-      where: { id: followUp.lead_id },
-      data: {
-        next_followup_date: nextFu?.scheduled_at ?? null,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        followup_type: (nextFu?.type ?? null) as any,
-        last_contact_date: data.completed_at,
-      },
-    });
-  } else if (data.scheduled_at && !followUp.completed_at && followUp.lead_id) {
-    // When rescheduling a pending FU, recalculate lead's next_followup_date from all pending FUs
-    const nextFu = await prisma.followUp.findFirst({
-      where: { lead_id: followUp.lead_id, completed_at: null },
-      orderBy: { scheduled_at: "asc" },
-    });
-    await prisma.lead.update({
-      where: { id: followUp.lead_id },
-      data: {
-        next_followup_date: nextFu?.scheduled_at ?? null,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        followup_type: (nextFu?.type ?? null) as any,
-      },
-    });
-  }
-
-  return NextResponse.json({ data: followUp });
 }
 
 export async function DELETE(_request: Request, { params }: { params: Params }) {
@@ -100,25 +108,17 @@ export async function DELETE(_request: Request, { params }: { params: Params }) 
   const existing = await prisma.followUp.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // If it was linked to a lead, re-sync lead's next follow-up
-  const leadId = existing.lead_id;
-
-  await prisma.followUp.delete({ where: { id } });
-
-  if (leadId && !existing.completed_at) {
-    const nextFu = await prisma.followUp.findFirst({
-      where: { lead_id: leadId, completed_at: null },
-      orderBy: { scheduled_at: "asc" },
+  // Deleting the active row cancels it (retained as history) and nulls the lead mirror.
+  if (existing.status === "Active" && existing.lead_id) {
+    await clearActiveFollowUp({
+      lead_id: existing.lead_id,
+      reason: "Deleted by admin",
+      actor_id: session.user.id,
     });
-    await prisma.lead.update({
-      where: { id: leadId },
-      data: {
-        next_followup_date: nextFu?.scheduled_at ?? null,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        followup_type: (nextFu?.type ?? null) as any,
-      },
-    });
+    return NextResponse.json({ success: true });
   }
 
+  // Non-active rows (completed / superseded / cancelled) may be hard-removed by an admin.
+  await prisma.followUp.delete({ where: { id } });
   return NextResponse.json({ success: true });
 }

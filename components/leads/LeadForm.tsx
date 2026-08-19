@@ -189,22 +189,8 @@ export function LeadForm({
         });
       }
 
-      // Auto-create follow-up if next_followup_date + followup_type are set (new leads only)
-      if (!isEditing && data.next_followup_date && data.followup_type && result.data?.id) {
-        try {
-          await fetch("/api/follow-ups", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              lead_id: result.data.id,
-              scheduled_at: new Date(data.next_followup_date as unknown as string).toISOString(),
-              type: data.followup_type,
-            }),
-          });
-        } catch {
-          // Follow-up creation is non-critical — lead already saved
-        }
-      }
+      // The follow-up is created server-side (POST /api/leads → setActiveFollowUp) from
+      // next_followup_date + followup_type, so no separate client call is needed.
 
       router.push(`/leads/${result.data.id}`);
       startTransition(() => router.refresh());
