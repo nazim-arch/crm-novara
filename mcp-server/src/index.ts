@@ -8,15 +8,6 @@ import { registerAnalyticsTools } from "./tools/analytics.js";
 import { getToken } from "./auth.js";
 
 async function main() {
-  // Validate credentials and get initial token at startup
-  try {
-    await getToken();
-    console.error("[DealStackHQ MCP] Authentication successful");
-  } catch (err) {
-    console.error("[DealStackHQ MCP] Startup auth failed:", err);
-    process.exit(1);
-  }
-
   const server = new McpServer({
     name: "dealstackhq",
     version: "1.0.0",
@@ -28,9 +19,20 @@ async function main() {
   registerFollowUpTools(server);
   registerAnalyticsTools(server);
 
+  // Connect to stdio FIRST so the MCP handshake with the client is not
+  // blocked by the network round-trip to authenticate. Tools call
+  // getToken() on demand, so auth is not required before connecting.
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("[DealStackHQ MCP] Server running on stdio");
+
+  // Warm up the token in the background. A failure here is non-fatal:
+  // the first tool call will surface any auth error to the client.
+  getToken()
+    .then(() => console.error("[DealStackHQ MCP] Authentication successful"))
+    .catch((err) =>
+      console.error("[DealStackHQ MCP] Background auth warm-up failed:", err)
+    );
 }
 
 main().catch((err) => {

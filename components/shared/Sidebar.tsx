@@ -10,6 +10,7 @@ import {
   BarChart3, Users, Building2, CheckSquare, CalendarClock,
   Settings, LayoutDashboard, Radar, Menu, Briefcase, Mic2, SlidersHorizontal,
   TrendingUp, FileText, ShieldCheck, Target, ClipboardCheck, CalendarDays, History, Activity, BrainCircuit, KeyRound,
+  Columns3,
 } from "lucide-react";
 
 type NavChild = { href: string; label: string; tab: string; roles: string[] };
@@ -22,6 +23,7 @@ const NAV_CONFIG: NavSection[] = [
     items: [
       { href: "/dashboard/sales", label: "Sales Dashboard", icon: Users, roles: ["Admin", "Manager", "TeamLead", "Sales", "Viewer"] },
       { href: "/dashboard/crm", label: "CRM Overview", icon: LayoutDashboard, roles: ["Admin", "Manager", "Viewer"] },
+      { href: "/dashboard/pipeline", label: "Pipeline Board", icon: Columns3, roles: ["Admin", "Manager", "TeamLead", "Sales", "Viewer"] },
       { href: "/dashboard/tasks", label: "Task Overview", icon: BarChart3, roles: ["Admin", "Manager", "TeamLead", "Sales", "Operations", "Viewer"] },
       { href: "/dashboard/activity", label: "Activity Calendar", icon: CalendarDays, roles: ["Admin", "Manager", "TeamLead", "Sales"] },
       { href: "/follow-ups?tab=focus_queue", tab: "focus_queue", label: "Focus Queue", icon: Target, roles: ["Admin", "Manager", "TeamLead", "Sales"] },
