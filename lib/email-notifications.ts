@@ -330,6 +330,43 @@ export function notifyTaskOverdue(params: {
   })());
 }
 
+// Escalate an overdue high-priority task to a set of oversight recipients
+// (typically the assignee's manager + admins). Sends to each unique email once.
+export function notifyTaskEscalated(params: {
+  recipientIds: string[];
+  taskId: string;
+  taskTitle: string;
+  taskNumber: string;
+  priority: string;
+  dueDate: Date;
+  daysOverdue: number;
+  assigneeName: string;
+}) {
+  fire((async () => {
+    const uniqueIds = [...new Set(params.recipientIds)];
+    const users = await prisma.user.findMany({
+      where: { id: { in: uniqueIds }, is_active: true },
+      select: { email: true, name: true },
+    });
+    const seen = new Set<string>();
+    await Promise.all(users.map((u) => {
+      if (seen.has(u.email)) return Promise.resolve();
+      seen.add(u.email);
+      const tpl = T.taskEscalated({
+        recipientName: u.name,
+        taskTitle: params.taskTitle,
+        taskNumber: params.taskNumber,
+        taskId: params.taskId,
+        priority: params.priority,
+        dueDate: params.dueDate,
+        daysOverdue: params.daysOverdue,
+        assigneeName: params.assigneeName,
+      });
+      return sendEmail({ to: u.email, ...tpl });
+    }));
+  })());
+}
+
 // ── Follow-ups ────────────────────────────────────────────────────────────────
 
 export function notifyFollowUpScheduled(params: {

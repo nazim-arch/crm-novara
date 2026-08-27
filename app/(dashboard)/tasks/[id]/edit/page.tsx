@@ -58,7 +58,6 @@ export default async function EditTaskPage({ params }: { params: Params }) {
         taskId={task.id}
         defaultLeadId={task.lead_id ?? undefined}
         defaultOpportunityId={task.opportunity_id ?? undefined}
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         defaultValues={{
           title: task.title,
           description: task.description ?? undefined,
@@ -67,6 +66,10 @@ export default async function EditTaskPage({ params }: { params: Params }) {
           start_date: task.start_date?.toISOString().split("T")[0] as unknown as Date | undefined,
           sector: task.sector ?? undefined,
           recurrence: task.recurrence,
+          recurrence_interval: task.recurrence_interval,
+          recurrence_end_date: task.recurrence_end_date?.toISOString().split("T")[0] as unknown as Date | undefined,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          checklist: (task.checklist as any) ?? undefined,
           revenue_tagged: task.revenue_tagged,
           revenue_amount: task.revenue_amount ? Number(task.revenue_amount) : undefined,
           notes: task.notes ?? undefined,

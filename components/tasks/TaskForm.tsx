@@ -1,15 +1,17 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { createTaskSchema, type CreateTaskInput } from "@/lib/validations/task";
+import { parseChecklist, type ChecklistItem } from "@/lib/checklist";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -19,7 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { Loader2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 
 type User = { id: string; name: string };
 type Lead = { id: string; lead_number: string; full_name: string };
@@ -53,6 +55,8 @@ export function TaskForm({
   const [, startTransition] = useTransition();
   const [loading, setLoading] = useState(false);
   const [revenueTagged, setRevenueTagged] = useState(defaultValues?.revenue_tagged ?? false);
+  const [recurrence, setRecurrence] = useState<CreateTaskInput["recurrence"]>(defaultValues?.recurrence ?? "None");
+  const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>(() => parseChecklist(defaultValues?.checklist));
   const [assignedToId, setAssignedToId] = useState(defaultValues?.assigned_to_id ?? currentUserId);
   const [selectedLeadId, setSelectedLeadId] = useState(defaultLeadId ?? defaultValues?.lead_id ?? "none");
   const [selectedOppId, setSelectedOppId] = useState(defaultOpportunityId ?? defaultValues?.opportunity_id ?? "none");
@@ -79,6 +83,17 @@ export function TaskForm({
       ...defaultValues,
     },
   });
+
+  // Keep the RHF checklist value in sync with the local editor (drop blank rows).
+  useEffect(() => {
+    setValue("checklist", checklistItems.filter((i) => i.text.trim() !== ""));
+  }, [checklistItems, setValue]);
+
+  const addChecklistItem = () => setChecklistItems((prev) => [...prev, { text: "", done: false }]);
+  const updateChecklistItem = (idx: number, patch: Partial<ChecklistItem>) =>
+    setChecklistItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+  const removeChecklistItem = (idx: number) =>
+    setChecklistItems((prev) => prev.filter((_, i) => i !== idx));
 
   const onSubmit = async (data: CreateTaskInput) => {
     setLoading(true);
@@ -190,8 +205,12 @@ export function TaskForm({
             <div className="space-y-1.5">
               <Label>Recurrence</Label>
               <Select
-                defaultValue="None"
-                onValueChange={(v) => v && setValue("recurrence", v as CreateTaskInput["recurrence"])}
+                value={recurrence}
+                onValueChange={(v) => {
+                  if (!v) return;
+                  setRecurrence(v as CreateTaskInput["recurrence"]);
+                  setValue("recurrence", v as CreateTaskInput["recurrence"]);
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -205,6 +224,34 @@ export function TaskForm({
               </Select>
             </div>
           </div>
+
+          {/* Recurrence options — shown only when a recurrence is selected */}
+          {recurrence !== "None" && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-lg border bg-muted/30 p-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="recurrence_interval">
+                  Repeat every (
+                  {recurrence === "Daily" ? "days" : recurrence === "Weekly" ? "weeks" : "months"})
+                </Label>
+                <Input
+                  id="recurrence_interval"
+                  type="number"
+                  min={1}
+                  max={365}
+                  defaultValue={defaultValues?.recurrence_interval ?? 1}
+                  {...register("recurrence_interval")}
+                />
+                {errors.recurrence_interval && (
+                  <p className="text-xs text-destructive">{errors.recurrence_interval.message}</p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="recurrence_end_date">End date (optional)</Label>
+                <Input id="recurrence_end_date" type="date" {...register("recurrence_end_date")} />
+                <p className="text-[11px] text-muted-foreground">No new instances are created after this date.</p>
+              </div>
+            </div>
+          )}
 
           {/* Link to Lead or Opportunity */}
           <div className="space-y-1.5">
@@ -312,6 +359,46 @@ export function TaskForm({
           {errors.revenue_amount && (
             <p className="text-xs text-destructive">{errors.revenue_amount.message}</p>
           )}
+
+          {/* Checklist */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Checklist</Label>
+              <Button type="button" variant="outline" size="xs" onClick={addChecklistItem}>
+                <Plus className="h-3.5 w-3.5" /> Add item
+              </Button>
+            </div>
+            {checklistItems.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No checklist items. Add sub-steps to track progress.</p>
+            ) : (
+              <div className="space-y-2">
+                {checklistItems.map((item, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <Checkbox
+                      checked={item.done}
+                      onCheckedChange={(checked) => updateChecklistItem(idx, { done: checked === true })}
+                      aria-label="Toggle checklist item"
+                    />
+                    <Input
+                      value={item.text}
+                      placeholder={`Step ${idx + 1}`}
+                      onChange={(e) => updateChecklistItem(idx, { text: e.target.value })}
+                      className="h-8 flex-1 text-sm"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => removeChecklistItem(idx)}
+                      aria-label="Remove item"
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="notes">Notes</Label>

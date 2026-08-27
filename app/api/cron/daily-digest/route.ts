@@ -1,11 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { startOfDay, endOfDay, subDays } from "date-fns";
+import { startOfDay, endOfDay, subDays, differenceInCalendarDays } from "date-fns";
 import { NO_FOLLOWUP_STATUSES } from "@/lib/follow-ups";
 import {
   notifyFollowUpDueToday,
   notifyFollowUpOverdue,
   notifyTaskOverdue,
+  notifyTaskEscalated,
   notifyHotLeadStale,
 } from "@/lib/email-notifications";
 
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
   const todayStart = startOfDay(today);
   const todayEnd = endOfDay(today);
 
-  const results = { followUpsDue: 0, followUpsOverdue: 0, tasksOverdue: 0, hotLeadsStale: 0 };
+  const results = { followUpsDue: 0, followUpsOverdue: 0, tasksOverdue: 0, tasksEscalated: 0, hotLeadsStale: 0 };
 
   // ── Follow-ups due today ─────────────────────────────────────────────────────
 
@@ -128,6 +129,74 @@ export async function GET(request: Request) {
       )
     );
     results.tasksOverdue = overdueTasks.length;
+  }
+
+  // ── Escalate High/Critical tasks overdue 2+ days to managers + admins ────────
+
+  const escalationCutoff = startOfDay(subDays(today, 2)); // due before this ⇒ ≥2 days overdue
+  const escalationTasks = await prisma.task.findMany({
+    where: {
+      deleted_at: null,
+      due_date: { lt: escalationCutoff },
+      priority: { in: ["High", "Critical"] },
+      status: { notIn: ["Done", "Cancelled"] },
+    },
+    select: {
+      id: true, title: true, task_number: true, priority: true, due_date: true,
+      assigned_to: { select: { id: true, name: true, manager_id: true } },
+    },
+    take: 50,
+  });
+
+  if (escalationTasks.length > 0) {
+    const admins = await prisma.user.findMany({
+      where: { role: "Admin", is_active: true },
+      select: { id: true },
+    });
+    const adminIds = admins.map((a) => a.id);
+
+    const notifications: {
+      user_id: string;
+      type: "TaskEscalated";
+      message: string;
+      entity_type: "Task";
+      entity_id: string;
+    }[] = [];
+
+    for (const task of escalationTasks) {
+      const daysOverdue = differenceInCalendarDays(todayStart, startOfDay(task.due_date));
+      const managerId = task.assigned_to.manager_id;
+      const recipientIds = [
+        ...new Set([...adminIds, ...(managerId ? [managerId] : [])]),
+      ].filter((id) => id !== task.assigned_to.id);
+      if (recipientIds.length === 0) continue;
+
+      for (const rid of recipientIds) {
+        notifications.push({
+          user_id: rid,
+          type: "TaskEscalated",
+          message: `Escalated (${daysOverdue}d overdue): ${task.title} — ${task.assigned_to.name}`,
+          entity_type: "Task",
+          entity_id: task.id,
+        });
+      }
+
+      notifyTaskEscalated({
+        recipientIds,
+        taskId: task.id,
+        taskTitle: task.title,
+        taskNumber: task.task_number,
+        priority: task.priority,
+        dueDate: task.due_date,
+        daysOverdue,
+        assigneeName: task.assigned_to.name,
+      });
+    }
+
+    if (notifications.length > 0) {
+      await prisma.notification.createMany({ data: notifications, skipDuplicates: true });
+    }
+    results.tasksEscalated = escalationTasks.length;
   }
 
   // ── Hot leads stale for 2+ days ──────────────────────────────────────────────

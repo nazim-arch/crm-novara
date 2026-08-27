@@ -13,6 +13,7 @@ export const TASK_COLUMNS: TaskColumnDef[] = [
   { id: "assigned_to", label: "Assigned To" },
   { id: "created_by", label: "Created By", defaultHidden: true },
   { id: "days", label: "Days" },
+  { id: "checklist", label: "Checklist" },
   { id: "client", label: "Client" },
   { id: "linked", label: "Linked To" },
   { id: "sector", label: "Sector", defaultHidden: true },

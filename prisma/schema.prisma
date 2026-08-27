@@ -151,6 +151,7 @@ enum NotificationType {
   FollowUpDue
   FollowUpOverdue
   TaskOverdue
+  TaskEscalated
   HotLeadStale
   StageChanged
   NoteAdded
@@ -202,6 +203,8 @@ model User {
   leads_created        Lead[]               @relation("LeadCreator")
   tasks_assigned       Task[]               @relation("TaskAssignee")
   tasks_created        Task[]               @relation("TaskCreator")
+  task_templates_created  TaskTemplate[]    @relation("TemplateCreator")
+  task_templates_default  TaskTemplate[]    @relation("TemplateDefaultAssignee")
   opps_created         Opportunity[]        @relation("OppCreator")
   activities           Activity[]
   notes                Note[]
@@ -497,7 +500,8 @@ model Client {
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
 
-  tasks Task[]
+  tasks          Task[]
+  task_templates TaskTemplate[]
 
   @@index([is_active])
   @@map("clients")
@@ -522,7 +526,10 @@ model Task {
   revenue_amount  Decimal?       @db.Decimal(12, 2)
   notes           String?
   checklist       Json?
-  recurrence      RecurrenceType @default(None)
+  recurrence          RecurrenceType @default(None)
+  recurrence_interval Int            @default(1) // every N days/weeks/months
+  recurrence_end_date DateTime?                  // stop generating instances after this date
+  recurrence_spawned_at DateTime?                // set once this task's successor has been created (idempotency)
   deleted_at      DateTime?
 
   assigned_to_id String
@@ -548,7 +555,41 @@ model Task {
   @@index([opportunity_id])
   @@index([client_id])
   @@index([deleted_at])
+  // Recurrence sweep: find overdue, un-spawned recurring tasks quickly
+  @@index([recurrence, recurrence_spawned_at, due_date])
   @@map("tasks")
+}
+
+// ─────────────────────────────────────────────
+// TASK TEMPLATE (reusable task presets)
+// ─────────────────────────────────────────────
+
+model TaskTemplate {
+  id                  String         @id @default(cuid())
+  name                String         // template name shown in the picker
+  title               String         // default task title
+  description         String?
+  priority            TaskPriority   @default(Medium)
+  sector              String?
+  checklist           Json?
+  due_in_days         Int?           // due_date = today + due_in_days when instantiated
+  recurrence          RecurrenceType @default(None)
+  recurrence_interval Int            @default(1)
+  revenue_tagged      Boolean        @default(false)
+  revenue_amount      Decimal?       @db.Decimal(12, 2)
+  default_assignee_id String?
+  client_id           String?
+  is_active           Boolean        @default(true)
+  created_by_id       String
+  created_at          DateTime       @default(now())
+  updated_at          DateTime       @updatedAt
+
+  default_assignee User?   @relation("TemplateDefaultAssignee", fields: [default_assignee_id], references: [id], onDelete: SetNull)
+  client           Client? @relation(fields: [client_id], references: [id], onDelete: SetNull)
+  created_by       User    @relation("TemplateCreator", fields: [created_by_id], references: [id])
+
+  @@index([is_active])
+  @@map("task_templates")
 }
 
 // ─────────────────────────────────────────────

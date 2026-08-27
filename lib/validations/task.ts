@@ -20,6 +20,11 @@ const taskBaseSchema = z.object({
   recurrence: z
     .enum(["None", "Daily", "Weekly", "Monthly"])
     .default("None"),
+  recurrence_interval: z.coerce.number().int().min(1).max(365).default(1),
+  recurrence_end_date: z.coerce
+    .date()
+    .refine((d) => !isNaN(d.getTime()), "Invalid date")
+    .optional(),
 });
 
 export const createTaskSchema = taskBaseSchema

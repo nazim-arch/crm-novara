@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { TaskStatusBadge, PriorityBadge } from "@/components/shared/LeadStatusBadge";
 import { formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { checklistProgress } from "@/lib/checklist";
+import { ListChecks } from "lucide-react";
 
 type Task = {
   id: string;
@@ -15,43 +17,100 @@ type Task = {
   status: string;
   priority: string;
   due_date: Date;
+  checklist?: unknown;
   assigned_to: { id: string; name: string };
   lead: { id: string; lead_number: string; full_name: string } | null;
 };
 
-const COLUMNS = [
+type User = { id: string; name: string };
+
+type GroupBy = "status" | "assignee" | "priority";
+
+const STATUS_COLUMNS = [
   { id: "Todo", label: "To Do" },
   { id: "InProgress", label: "In Progress" },
   { id: "Done", label: "Done" },
   { id: "Cancelled", label: "Cancelled" },
-] as const;
+];
 
-export function KanbanBoard({ tasks }: { tasks: Task[] }) {
+const PRIORITY_COLUMNS = [
+  { id: "Critical", label: "Critical" },
+  { id: "High", label: "High" },
+  { id: "Medium", label: "Medium" },
+  { id: "Low", label: "Low" },
+];
+
+// Which task field each grouping drives, and the PATCH payload key.
+const FIELD: Record<GroupBy, keyof Task> = {
+  status: "status",
+  assignee: "assigned_to",
+  priority: "priority",
+};
+
+export function KanbanBoard({
+  tasks,
+  users = [],
+  canUpdate = true,
+}: {
+  tasks: Task[];
+  users?: User[];
+  canUpdate?: boolean;
+}) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [dragging, setDragging] = useState<string | null>(null);
   const [localTasks, setLocalTasks] = useState(tasks);
+  const [groupBy, setGroupBy] = useState<GroupBy>("status");
 
-  const getColumnTasks = (status: string) =>
-    localTasks.filter((t) => t.status === status);
+  const columns = useMemo(() => {
+    if (groupBy === "assignee") {
+      const source = users.length > 0
+        ? users
+        : [...new Map(localTasks.map((t) => [t.assigned_to.id, t.assigned_to])).values()];
+      return source.map((u) => ({ id: u.id, label: u.name }));
+    }
+    if (groupBy === "priority") return PRIORITY_COLUMNS;
+    return STATUS_COLUMNS;
+  }, [groupBy, users, localTasks]);
 
-  const handleDrop = async (taskId: string, newStatus: string) => {
+  const groupValue = (t: Task): string =>
+    groupBy === "assignee" ? t.assigned_to.id : (t[FIELD[groupBy]] as string);
+
+  const getColumnTasks = (colId: string) => localTasks.filter((t) => groupValue(t) === colId);
+
+  const handleDrop = async (taskId: string, colId: string) => {
     const task = localTasks.find((t) => t.id === taskId);
-    if (!task || task.status === newStatus) return;
+    if (!task || groupValue(task) === colId) return;
+
+    if (!canUpdate) {
+      toast.error("You don't have permission to change tasks");
+      return;
+    }
 
     // Optimistic update
-    setLocalTasks((prev) =>
-      prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t))
-    );
+    const applyLocal = (t: Task): Task => {
+      if (t.id !== taskId) return t;
+      if (groupBy === "assignee") {
+        const u = columns.find((c) => c.id === colId);
+        return { ...t, assigned_to: { id: colId, name: u?.label ?? t.assigned_to.name } };
+      }
+      if (groupBy === "priority") return { ...t, priority: colId };
+      return { ...t, status: colId };
+    };
+    setLocalTasks((prev) => prev.map(applyLocal));
+
+    const payload =
+      groupBy === "assignee" ? { assigned_to_id: colId }
+      : groupBy === "priority" ? { priority: colId }
+      : { status: colId };
 
     try {
       const res = await fetch(`/api/tasks/${taskId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        // Revert
         setLocalTasks(tasks);
         toast.error("Failed to update task");
       } else {
@@ -64,82 +123,121 @@ export function KanbanBoard({ tasks }: { tasks: Task[] }) {
   };
 
   return (
-    <div className="flex gap-4 overflow-x-auto pb-4">
-      {COLUMNS.map((col) => {
-        const colTasks = getColumnTasks(col.id);
-        return (
-          <div
-            key={col.id}
-            className="flex-1 min-w-64"
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              const taskId = e.dataTransfer.getData("taskId");
-              handleDrop(taskId, col.id);
-            }}
-          >
-            {/* Column header */}
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <TaskStatusBadge status={col.id} />
-                <span className="text-sm text-muted-foreground">
-                  {colTasks.length}
-                </span>
+    <div className="space-y-3">
+      {/* Group-by switcher */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium text-muted-foreground">Group by</span>
+        <div className="flex border rounded-lg overflow-hidden" role="group" aria-label="Group by">
+          {(["status", "assignee", "priority"] as const).map((g) => (
+            <button
+              key={g}
+              onClick={() => setGroupBy(g)}
+              className={cn(
+                "px-2.5 py-1 text-xs capitalize transition-colors",
+                groupBy === g ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              {g}
+            </button>
+          ))}
+        </div>
+        {canUpdate && (
+          <span className="text-xs text-muted-foreground hidden sm:inline">
+            Drag a card to change {groupBy === "assignee" ? "assignee" : groupBy}.
+          </span>
+        )}
+      </div>
+
+      <div className="flex gap-4 overflow-x-auto pb-4">
+        {columns.map((col) => {
+          const colTasks = getColumnTasks(col.id);
+          return (
+            <div
+              key={col.id}
+              className="flex-1 min-w-64"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const taskId = e.dataTransfer.getData("taskId");
+                handleDrop(taskId, col.id);
+              }}
+            >
+              {/* Column header */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  {groupBy === "status" ? (
+                    <TaskStatusBadge status={col.id} />
+                  ) : groupBy === "priority" ? (
+                    <PriorityBadge priority={col.id} />
+                  ) : (
+                    <span className="text-sm font-medium">{col.label}</span>
+                  )}
+                  <span className="text-sm text-muted-foreground">{colTasks.length}</span>
+                </div>
+              </div>
+
+              {/* Cards */}
+              <div className="space-y-2 min-h-32">
+                {colTasks.map((task) => {
+                  const isOverdue =
+                    new Date(task.due_date) < new Date() &&
+                    !["Done", "Cancelled"].includes(task.status);
+                  const progress = checklistProgress(task.checklist);
+                  return (
+                    <div
+                      key={task.id}
+                      draggable={canUpdate}
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("taskId", task.id);
+                        setDragging(task.id);
+                      }}
+                      onDragEnd={() => setDragging(null)}
+                      className={cn(
+                        "bg-card border rounded-lg p-3 transition-shadow",
+                        canUpdate ? "cursor-grab active:cursor-grabbing" : "cursor-default",
+                        dragging === task.id && "opacity-50 shadow-lg",
+                        "hover:shadow-sm"
+                      )}
+                    >
+                      <Link href={`/tasks/${task.id}`} className="block">
+                        <p className="font-medium text-sm leading-snug">{task.title}</p>
+                        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                          {groupBy !== "priority" && <PriorityBadge priority={task.priority} />}
+                          {groupBy !== "status" && <TaskStatusBadge status={task.status} />}
+                          <span
+                            className={cn(
+                              "text-xs text-muted-foreground",
+                              isOverdue && "text-destructive font-medium"
+                            )}
+                          >
+                            {formatDate(task.due_date)}
+                          </span>
+                          {progress && (
+                            <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground">
+                              <ListChecks className={cn("h-3 w-3", progress.done === progress.total && "text-emerald-600")} />
+                              {progress.done}/{progress.total}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between mt-2">
+                          {groupBy !== "assignee" && (
+                            <span className="text-xs text-muted-foreground">{task.assigned_to.name}</span>
+                          )}
+                          {task.lead && (
+                            <span className="text-xs text-muted-foreground font-mono ml-auto">
+                              {task.lead.lead_number}
+                            </span>
+                          )}
+                        </div>
+                      </Link>
+                    </div>
+                  );
+                })}
               </div>
             </div>
-
-            {/* Cards */}
-            <div className="space-y-2 min-h-32">
-              {colTasks.map((task) => {
-                const isOverdue =
-                  new Date(task.due_date) < new Date() &&
-                  !["Done", "Cancelled"].includes(task.status);
-                return (
-                  <div
-                    key={task.id}
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData("taskId", task.id);
-                      setDragging(task.id);
-                    }}
-                    onDragEnd={() => setDragging(null)}
-                    className={cn(
-                      "bg-card border rounded-lg p-3 cursor-grab active:cursor-grabbing transition-shadow",
-                      dragging === task.id && "opacity-50 shadow-lg",
-                      "hover:shadow-sm"
-                    )}
-                  >
-                    <Link href={`/tasks/${task.id}`} className="block">
-                      <p className="font-medium text-sm leading-snug">{task.title}</p>
-                      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                        <PriorityBadge priority={task.priority} />
-                        <span
-                          className={cn(
-                            "text-xs text-muted-foreground",
-                            isOverdue && "text-destructive font-medium"
-                          )}
-                        >
-                          {formatDate(task.due_date)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="text-xs text-muted-foreground">
-                          {task.assigned_to.name}
-                        </span>
-                        {task.lead && (
-                          <span className="text-xs text-muted-foreground font-mono">
-                            {task.lead.lead_number}
-                          </span>
-                        )}
-                      </div>
-                    </Link>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }

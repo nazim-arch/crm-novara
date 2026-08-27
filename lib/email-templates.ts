@@ -303,6 +303,33 @@ export function taskOverdue(params: {
   };
 }
 
+export function taskEscalated(params: {
+  recipientName: string;
+  taskTitle: string;
+  taskNumber: string;
+  taskId: string;
+  priority: string;
+  dueDate: Date;
+  daysOverdue: number;
+  assigneeName: string;
+}) {
+  const due = params.dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  return {
+    subject: `Escalation: ${params.priority} task overdue ${params.daysOverdue}d — ${params.taskTitle} (${params.taskNumber})`,
+    html: base(
+      'Task Escalation',
+      `Hi ${params.recipientName},<br><br>
+      A <strong>${params.priority}</strong>-priority task assigned to <strong>${params.assigneeName}</strong> has been overdue for <strong>${params.daysOverdue} day${params.daysOverdue === 1 ? '' : 's'}</strong> and needs your attention.<br><br>
+      <strong>Task:</strong> ${params.taskTitle}<br>
+      <strong>Task #:</strong> ${params.taskNumber}<br>
+      <strong>Assigned to:</strong> ${params.assigneeName}<br>
+      <strong>Was due:</strong> ${due}`,
+      'View Task',
+      `${APP_URL}/tasks/${params.taskId}`,
+    ),
+  };
+}
+
 // ── Follow-ups ────────────────────────────────────────────────────────────────
 
 export function followUpScheduled(params: {

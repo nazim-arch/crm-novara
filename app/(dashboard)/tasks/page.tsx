@@ -4,7 +4,8 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { TaskTable } from "@/components/tasks/TaskTable";
 import { KanbanBoard } from "@/components/tasks/KanbanBoard";
-import { Plus, List, LayoutGrid } from "lucide-react";
+import { TaskCalendar } from "@/components/tasks/TaskCalendar";
+import { Plus, List, LayoutGrid, CalendarDays } from "lucide-react";
 import { hasPermissionAsync, taskScopeFilter } from "@/lib/rbac";
 import { ExportButton } from "@/components/shared/ExportButton";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -52,7 +53,13 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
     }),
   ]);
 
-  const canCreate = session?.user && await hasPermissionAsync(session.user.role, "task:create");
+  const [canCreate, canUpdate, canDelete] = session?.user
+    ? await Promise.all([
+        hasPermissionAsync(session.user.role, "task:create"),
+        hasPermissionAsync(session.user.role, "task:update"),
+        hasPermissionAsync(session.user.role, "task:delete"),
+      ])
+    : [false, false, false];
   const isScoped = !!scope;
 
   const visibleTaskCols = session?.user
@@ -81,6 +88,13 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
               >
                 <LayoutGrid className="h-4 w-4" />
               </Link>
+              <Link
+                href="/tasks?view=calendar"
+                aria-label="Calendar view"
+                className={`p-2 transition-colors ${view === "calendar" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+              >
+                <CalendarDays className="h-4 w-4" />
+              </Link>
             </div>
             {canExport && <ExportButton href="/api/tasks/export" filename="tasks.xlsx" />}
             {canCreate && (
@@ -94,9 +108,11 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
       />
 
       {view === "kanban" ? (
-        <KanbanBoard tasks={tasks} />
+        <KanbanBoard tasks={tasks} users={isScoped ? [] : users} canUpdate={canUpdate} />
+      ) : view === "calendar" ? (
+        <TaskCalendar tasks={tasks} />
       ) : (
-        <TaskTable tasks={tasks} users={isScoped ? [] : users} clients={clients} currentParams={{}} initialColumns={[...visibleTaskCols]} />
+        <TaskTable tasks={tasks} users={isScoped ? [] : users} clients={clients} currentParams={{}} initialColumns={[...visibleTaskCols]} canUpdate={canUpdate} canDelete={canDelete} />
       )}
     </div>
   );

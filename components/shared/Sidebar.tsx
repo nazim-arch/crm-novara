@@ -10,7 +10,7 @@ import {
   BarChart3, Users, Building2, CheckSquare, CalendarClock,
   Settings, LayoutDashboard, Radar, Menu, Briefcase, Mic2, SlidersHorizontal,
   TrendingUp, FileText, ShieldCheck, Target, ClipboardCheck, CalendarDays, History, Activity, BrainCircuit, KeyRound,
-  Columns3,
+  Columns3, Sun,
 } from "lucide-react";
 
 type NavChild = { href: string; label: string; tab: string; roles: string[] };
@@ -43,7 +43,9 @@ const NAV_CONFIG: NavSection[] = [
   {
     label: "Tasks",
     items: [
+      { href: "/tasks/my-day", label: "My Day", icon: Sun, roles: ["Admin", "Manager", "TeamLead", "Sales", "Operations"] },
       { href: "/tasks", label: "Tasks", icon: CheckSquare, roles: ["Admin", "Manager", "TeamLead", "Sales", "Operations", "Viewer"] },
+      { href: "/settings/task-templates", label: "Task Templates", icon: ClipboardCheck, roles: ["Admin", "Manager"] },
     ],
   },
   {

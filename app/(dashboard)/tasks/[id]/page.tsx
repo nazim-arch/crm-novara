@@ -4,13 +4,12 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { TaskStatusBadge, PriorityBadge } from "@/components/shared/LeadStatusBadge";
 import { ActivityTimeline } from "@/components/shared/ActivityTimeline";
 import { formatDate, formatDateTime, formatCurrency } from "@/lib/utils";
 import { hasPermissionAsync } from "@/lib/rbac";
 import { TaskStatusChanger } from "@/components/tasks/TaskStatusChanger";
+import { TaskChecklistCard } from "@/components/tasks/TaskChecklistCard";
 import { NoteForm } from "@/components/leads/NoteForm";
 import { DeleteConfirmButton } from "@/components/shared/DeleteConfirmButton";
 import {
@@ -117,6 +116,9 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
               </CardContent>
             </Card>
           )}
+
+          {/* Checklist */}
+          <TaskChecklistCard taskId={task.id} initial={task.checklist} canEdit={!!canEdit} />
 
           {/* Notes */}
           <Card>
@@ -255,7 +257,14 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
                   <RefreshCw className="h-4 w-4 text-muted-foreground shrink-0" />
                   <div>
                     <p className="text-xs text-muted-foreground">Recurrence</p>
-                    <p>{task.recurrence}</p>
+                    <p>
+                      {task.recurrence_interval > 1
+                        ? `Every ${task.recurrence_interval} ${task.recurrence === "Daily" ? "days" : task.recurrence === "Weekly" ? "weeks" : "months"}`
+                        : task.recurrence}
+                    </p>
+                    {task.recurrence_end_date && (
+                      <p className="text-xs text-muted-foreground">Until {formatDate(task.recurrence_end_date)}</p>
+                    )}
                   </div>
                 </div>
               )}

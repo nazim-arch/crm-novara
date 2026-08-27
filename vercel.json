@@ -8,6 +8,10 @@
     {
       "path": "/api/cron/meta-reconcile",
       "schedule": "30 18 * * *"
+    },
+    {
+      "path": "/api/cron/task-recurrence-sweep",
+      "schedule": "0 3 * * *"
     }
   ]
 }
