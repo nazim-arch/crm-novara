@@ -13,7 +13,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, UserCheck, UserX, AlertTriangle, Loader2, Pencil, Trash2, Send } from "lucide-react";
+import { Plus, UserCheck, UserX, AlertTriangle, Loader2, Pencil, Trash2, Send, SlidersHorizontal } from "lucide-react";
 
 type User = {
   id: string;
@@ -61,9 +61,10 @@ const EMPTY_FORM = { short_name: "", name: "", email: "", role: "Sales", phone: 
 
 interface UserManagementClientProps {
   users: User[];
+  canManageCommission?: boolean;
 }
 
-export function UserManagementClient({ users: initialUsers }: UserManagementClientProps) {
+export function UserManagementClient({ users: initialUsers, canManageCommission = false }: UserManagementClientProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
 
@@ -507,6 +508,19 @@ export function UserManagementClient({ users: initialUsers }: UserManagementClie
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_COLORS[user.role] ?? ROLE_COLORS["Viewer"]}`}>
                     {roleLabel(user.role)}
                   </span>
+
+                  {/* Commission slabs */}
+                  {canManageCommission && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => router.push(`/settings/users/${user.id}/commission`)}
+                      className="text-muted-foreground hover:text-foreground"
+                      title="Commission slabs"
+                    >
+                      <SlidersHorizontal className="h-4 w-4" />
+                    </Button>
+                  )}
 
                   {/* Edit */}
                   <Button

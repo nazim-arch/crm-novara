@@ -10,7 +10,7 @@ import {
   BarChart3, Users, Building2, CheckSquare, CalendarClock,
   Settings, LayoutDashboard, Radar, Menu, Briefcase, Mic2, SlidersHorizontal,
   TrendingUp, FileText, ShieldCheck, Target, ClipboardCheck, CalendarDays, History, Activity, BrainCircuit, KeyRound,
-  Columns3, Sun,
+  Columns3, Sun, Receipt,
 } from "lucide-react";
 
 type NavChild = { href: string; label: string; tab: string; roles: string[] };
@@ -64,6 +64,7 @@ const NAV_CONFIG: NavSection[] = [
       { href: "/sales-commission", label: "Commission Overview", icon: TrendingUp, roles: ["Admin"] },
       { href: "/sales-commission/targets", label: "Set Targets", icon: BarChart3, roles: ["Admin"] },
       { href: "/sales-commission/report", label: "Commission Report", icon: BarChart3, roles: ["Admin"] },
+      { href: "/deal-closures", label: "Deal Closures", icon: Receipt, roles: ["Admin"] },
     ],
   },
   {

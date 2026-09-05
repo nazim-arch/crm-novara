@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { updateLeadSchema } from "@/lib/validations/lead";
 import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
-import { CommissionRecordStatus } from "@/lib/commission-utils";
+import { recalculateOpportunityRevenue, recomputeCommissionRecord, istYearMonth } from "@/lib/deal-closures";
 import { notifyLeadReassigned } from "@/lib/email-notifications";
 import { setActiveFollowUp, clearActiveFollowUp, FollowUpForbiddenError } from "@/lib/follow-ups";
 import type { FollowUpType } from "@/lib/generated/prisma/client";
@@ -217,98 +217,16 @@ export async function DELETE(_request: Request, { params }: { params: Params }) 
       ]);
     }
 
-    // Recalculate closed_revenue for all affected opportunities in a single batch query.
-    // Works for both delete paths: soft-deleted leads have deleted_at set (excluded by filter);
-    // hard-deleted leads have no LeadOpportunity row remaining (excluded by absence).
+    // Recompute affected opportunities' closed_revenue and the agent's monthly commission record
+    // from reconciled DealClosure data. Both helpers exclude soft-deleted leads (lead.deleted_at
+    // filter); hard-deleted leads have their DealClosure cascade-removed, so they drop out too.
     if (oppIds.length > 0) {
-      const allLinkedLeads = await prisma.leadOpportunity.findMany({
-        where: { opportunity_id: { in: oppIds } },
-        select: {
-          opportunity_id: true,
-          lead: {
-            select: {
-              status: true,
-              settlement_value: true,
-              deal_commission_percent: true,
-              deleted_at: true,
-            },
-          },
-        },
-      });
-
-      // Aggregate revenue per opportunity in JS (one pass)
-      const revenueByOpp = new Map<string, number>(oppIds.map((oid) => [oid, 0]));
-      for (const lo of allLinkedLeads) {
-        if (
-          lo.lead.deleted_at === null &&
-          lo.lead.status === "Won" &&
-          lo.lead.settlement_value !== null &&
-          lo.lead.deal_commission_percent !== null
-        ) {
-          const prev = revenueByOpp.get(lo.opportunity_id) ?? 0;
-          revenueByOpp.set(
-            lo.opportunity_id,
-            prev + lo.lead.settlement_value.mul(lo.lead.deal_commission_percent).div(100).toNumber(),
-          );
-        }
-      }
-
-      // Fire all opportunity updates in parallel (not sequentially)
-      await Promise.all(
-        Array.from(revenueByOpp.entries()).map(([oid, closedRevenue]) =>
-          prisma.opportunity.update({
-            where: { id: oid },
-            data: { closed_revenue: closedRevenue },
-          }),
-        ),
-      );
+      await Promise.all(oppIds.map((oid) => recalculateOpportunityRevenue(oid)));
     }
 
-    // Recalculate commission record if this was a Won lead (uses pre-read wonHistory).
     if (lead.status === "Won" && wonHistory) {
-      const wonDate = wonHistory.changed_at;
-      const year = wonDate.getFullYear();
-      const month = wonDate.getMonth() + 1;
-
-      const record = await prisma.salesCommissionRecord.findUnique({
-        where: { user_id_year_month: { user_id: lead.assigned_to_id, year, month } },
-        select: { rec_status: true },
-      });
-
-      // Only recalculate Live records; Finalized records are locked
-      if (record && record.rec_status === CommissionRecordStatus.LIVE) {
-        const { calcMonthlyRevenue, getActiveSlabs, calcCommission } = await import("@/lib/sales-commission");
-        const { calcAchievementPct } = await import("@/lib/commission-utils");
-
-        const [revenue, slabs, target] = await Promise.all([
-          calcMonthlyRevenue(lead.assigned_to_id, year, month),
-          getActiveSlabs(lead.assigned_to_id, year, month),
-          prisma.salesMonthlyTarget.findUnique({
-            where: { user_id_year_month: { user_id: lead.assigned_to_id, year, month } },
-            select: { target_amount: true },
-          }),
-        ]);
-
-        const commission = calcCommission(revenue.closed_revenue, slabs);
-        const targetAmount = target ? Number(target.target_amount) : null;
-        const achievementPct = calcAchievementPct(revenue.closed_revenue, targetAmount);
-
-        await prisma.salesCommissionRecord.update({
-          where: { user_id_year_month: { user_id: lead.assigned_to_id, year, month } },
-          data: {
-            closed_revenue: revenue.closed_revenue,
-            leads_won: revenue.leads_won,
-            leads_won_no_value: revenue.leads_won_no_value,
-            target_amount: targetAmount,
-            achievement_pct: achievementPct,
-            slab_from: commission.slab_from,
-            slab_to: commission.slab_to,
-            slab_pct: commission.slab_pct,
-            commission_amount: commission.commission_amount,
-            updated_at: now,
-          },
-        });
-      }
+      const { year, month } = istYearMonth(wonHistory.changed_at);
+      await recomputeCommissionRecord(lead.assigned_to_id, year, month);
     }
 
     revalidateTag("crm-dashboard", "max");

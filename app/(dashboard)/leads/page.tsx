@@ -150,7 +150,6 @@ const LEAD_COLUMNS: ColumnDef[] = [
   { id: "last_contact", label: "Last Contact" },
   { id: "value", label: "Pipeline Value" },
   { id: "deal_value", label: "Deal Value", defaultHidden: true },
-  { id: "commission_estimate", label: "Commission Est.", defaultHidden: true },
   { id: "settlement_value", label: "Settlement Value", defaultHidden: true },
   { id: "financing_required", label: "Financing Required", defaultHidden: true },
   { id: "created_at", label: "Created Date", defaultHidden: true },
@@ -335,7 +334,6 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
         followup_type: true,
         first_contact_date: true,
         deal_value: true,
-        commission_estimate: true,
         settlement_value: true,
         financing_required: true,
         created_at: true,
@@ -430,7 +428,6 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     contact: "w-24",
     value: "text-right",
     deal_value: "text-right",
-    commission_estimate: "text-right",
     settlement_value: "text-right",
     budget: "text-right",
     closing_probability: "text-right",
@@ -515,7 +512,6 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
         );
       case "value": return row.link_potential_value ? formatCurrency(Number(row.link_potential_value)) : "—";
       case "deal_value": return fmtMoney(row.deal_value);
-      case "commission_estimate": return fmtMoney(row.commission_estimate);
       case "settlement_value": return fmtMoney(row.settlement_value);
       case "financing_required": return row.financing_required == null ? dash : row.financing_required ? "Yes" : "No";
       case "created_at": return formatDate(row.created_at);

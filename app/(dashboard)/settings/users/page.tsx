@@ -10,6 +10,8 @@ export default async function UsersSettingsPage() {
     redirect("/dashboard/crm");
   }
 
+  const canManageCommission = await hasPermissionAsync(session.user.role, "commission:manage");
+
   const users = await prisma.user.findMany({
     select: {
       id: true,
@@ -31,7 +33,7 @@ export default async function UsersSettingsPage() {
         <h1 className="text-xl font-semibold">User Management</h1>
         <p className="text-sm text-muted-foreground">Manage team members and their access</p>
       </div>
-      <UserManagementClient users={users} />
+      <UserManagementClient users={users} canManageCommission={canManageCommission} />
     </div>
   );
 }

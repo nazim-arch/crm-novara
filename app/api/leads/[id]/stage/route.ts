@@ -7,6 +7,7 @@ import { notifyLeadStageChanged, notifyLeadWon, notifyLeadLost } from "@/lib/ema
 import { createLeadReviewEvent } from "@/lib/lead-review-events";
 import { sendStageEvent } from "@/lib/meta-capi";
 import { setActiveFollowUp, clearActiveFollowUp, isNoFollowUpStatus, FollowUpForbiddenError } from "@/lib/follow-ups";
+import { createDealClosure, cancelActiveDealClosureForLead } from "@/lib/deal-closures";
 
 type Params = Promise<{ id: string }>;
 
@@ -112,13 +113,8 @@ export async function POST(request: Request, { params }: { params: Params }) {
         linkUpdateData.status = to_stage;
         if (lost_reason) linkUpdateData.lost_reason = lost_reason;
         if (lost_notes) linkUpdateData.lost_notes = lost_notes;
-        if (to_stage === "Won" && settlement_value !== undefined) linkUpdateData.settlement_value = settlement_value;
-        if (to_stage === "Won" && deal_commission_percent !== undefined) linkUpdateData.deal_commission_percent = deal_commission_percent;
-        if (to_stage !== "Won") {
-          // Clear settlement on non-Won transition
-          linkUpdateData.settlement_value = null;
-          linkUpdateData.deal_commission_percent = null;
-        }
+        // Settlement/commission are no longer mirrored onto LeadOpportunity — a Won deal's
+        // money now lives solely on the Lead (planned estimate) and its DealClosure.
       }
       if (activity_stage) linkUpdateData.activity_stage = activity_stage;
     }
@@ -160,12 +156,6 @@ export async function POST(request: Request, { params }: { params: Params }) {
                 status: to_stage,
                 ...(lost_reason ? { lost_reason } : {}),
                 ...(lost_notes  ? { lost_notes }  : {}),
-                ...(to_stage === "Won" && settlement_value !== undefined
-                  ? { settlement_value }
-                  : { settlement_value: null }),
-                ...(to_stage === "Won" && deal_commission_percent !== undefined
-                  ? { deal_commission_percent }
-                  : { deal_commission_percent: null }),
               },
             }),
           ]
@@ -240,52 +230,19 @@ export async function POST(request: Request, { params }: { params: Params }) {
       },
     });
 
-    // Recalculate closed_revenue when Won state changes
-    // Uses per-opportunity link fields (settlement_value, deal_commission_percent on LeadOpportunity)
+    // Won-state side effects. Opportunity.closed_revenue is NO LONGER written here — it is
+    // derived from reconciled DealClosure data (recalculateOpportunityRevenue, called from the
+    // reconcile/cancel service). A freshly-Won deal is Pending and contributes nothing until an
+    // Admin reconciles it.
     if (to_stage === "Won" || lead.status === "Won") {
-      // Determine which opportunity IDs to recalculate
-      const oppIdsToRecalc: string[] = [];
-      if (link) {
-        oppIdsToRecalc.push(link.opportunity_id);
-      } else {
-        const linkedOpps = await prisma.leadOpportunity.findMany({
+      // Resolve the opportunity to denormalize onto the deal closure.
+      let closureOpportunityId: string | null = link?.opportunity_id ?? null;
+      if (!closureOpportunityId) {
+        const firstLink = await prisma.leadOpportunity.findFirst({
           where: { lead_id: id },
           select: { opportunity_id: true },
         });
-        oppIdsToRecalc.push(...linkedOpps.map((lo) => lo.opportunity_id));
-      }
-
-      if (oppIdsToRecalc.length > 0) {
-        // For each opportunity, sum all Won links' settlement × commission from LeadOpportunity
-        const wonLinks = await prisma.leadOpportunity.findMany({
-          where: {
-            opportunity_id: { in: oppIdsToRecalc },
-            status: "Won",
-            lead: { deleted_at: null },
-          },
-          select: {
-            opportunity_id: true,
-            settlement_value: true,
-            deal_commission_percent: true,
-          },
-        });
-
-        const revenueByOpp = new Map<string, number>(oppIdsToRecalc.map((oid) => [oid, 0]));
-        for (const lo of wonLinks) {
-          if (lo.settlement_value !== null && lo.deal_commission_percent !== null) {
-            const prev = revenueByOpp.get(lo.opportunity_id) ?? 0;
-            revenueByOpp.set(
-              lo.opportunity_id,
-              prev + Number(lo.settlement_value) * Number(lo.deal_commission_percent) / 100,
-            );
-          }
-        }
-
-        await Promise.all(
-          Array.from(revenueByOpp.entries()).map(([oid, closedRevenue]) =>
-            prisma.opportunity.update({ where: { id: oid }, data: { closed_revenue: closedRevenue } }),
-          ),
-        );
+        closureOpportunityId = firstLink?.opportunity_id ?? null;
       }
 
       if (to_stage === "Won" && settlement_value !== undefined && deal_commission_percent !== undefined) {
@@ -314,6 +271,34 @@ export async function POST(request: Request, { params }: { params: Params }) {
           commissionPercent: Number(deal_commission_percent),
           closedByName: session.user.name ?? session.user.email ?? "Someone",
         });
+
+        // Additive: drop the deal into the Deal Closures reconciliation queue.
+        // Captures the agent's estimate as a frozen "planned" baseline; the payable
+        // commission is set later by an Admin during reconciliation. Best-effort — a
+        // failure here must not roll back the (already-committed) stage change; the
+        // backfill script can recover any missing closure.
+        try {
+          await createDealClosure({
+            lead_id: id,
+            opportunity_id: closureOpportunityId,
+            assigned_to_id: lead.assigned_to_id,
+            planned_settlement_value: Number(settlement_value),
+            planned_commission_percent: Number(deal_commission_percent),
+            planned_by_id: session.user.id,
+            won_at: new Date(),
+          });
+        } catch (err) {
+          console.error("[deal-closure create]", id, err);
+        }
+      }
+    }
+
+    // Reverting a lead out of Won voids its deal closure (retained as Cancelled, never deleted).
+    if (to_stage && to_stage !== "Won" && lead.status === "Won") {
+      try {
+        await cancelActiveDealClosureForLead(id, session.user.id, `Lead reverted from Won to ${to_stage}`);
+      } catch (err) {
+        console.error("[deal-closure cancel]", id, err);
       }
     }
 

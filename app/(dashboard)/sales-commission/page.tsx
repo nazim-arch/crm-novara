@@ -33,6 +33,8 @@ export default async function SalesCommissionPage({ searchParams }: { searchPara
   // Admin: load commission records for all months in range
   let salesUsers: { id: string; name: string; short_name: string }[] = [];
   let initialRows: Parameters<typeof AdminCommissionDashboard>[0]["initialRows"] = [];
+  let pendingEstimate = 0;
+  let pendingDeals = 0;
 
   if (canManage) {
     salesUsers = await prisma.user.findMany({
@@ -65,6 +67,18 @@ export default async function SalesCommissionPage({ searchParams }: { searchPara
       rec_status: r.rec_status,
       user: r.user,
     }));
+
+    // Pending (Won-but-unreconciled) deals bucketed into the selected months.
+    const pendingClosures = await prisma.dealClosure.findMany({
+      where: {
+        status: "Pending",
+        OR: months.map(({ year, month }) => ({ won_year: year, won_month: month })),
+        lead: { deleted_at: null },
+      },
+      select: { planned_commission_amount: true },
+    });
+    pendingEstimate = pendingClosures.reduce((s, c) => s + Number(c.planned_commission_amount), 0);
+    pendingDeals = pendingClosures.length;
   }
 
   // Sales user: derive single month from range (use start date's month)
@@ -96,6 +110,8 @@ export default async function SalesCommissionPage({ searchParams }: { searchPara
           initialRows={initialRows}
           rangeLabel={rangeLabel}
           multiMonth={multiMonth}
+          pendingEstimate={pendingEstimate}
+          pendingDeals={pendingDeals}
         />
       ) : (
         <SalesCommissionDashboard

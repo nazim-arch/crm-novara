@@ -4,6 +4,7 @@ import { verifyMcpToken } from "@/lib/mcp-auth";
 import { sendStageEvent } from "@/lib/meta-capi";
 import { createLeadReviewEvent } from "@/lib/lead-review-events";
 import { clearActiveFollowUp, isNoFollowUpStatus } from "@/lib/follow-ups";
+import { createDealClosure, cancelActiveDealClosureForLead } from "@/lib/deal-closures";
 import type { LeadStatus } from "@/lib/generated/prisma/client";
 
 type Params = Promise<{ id: string }>;
@@ -85,33 +86,32 @@ export async function POST(request: Request, { params }: { params: Params }) {
       await clearActiveFollowUp({ lead_id: lead.id, reason: `Lead moved to ${stage} (MCP)`, actor_id: userId });
     }
 
-    // Recalculate closed_revenue for all linked opportunities when Won
-    if (stage === "Won" || lead.status === "Won") {
-      const linkedOpps = await prisma.leadOpportunity.findMany({
+    // Deal-closure lifecycle (mirrors the main stage route; additive, best-effort). Opportunity
+    // revenue is derived from reconciled closures, not written here.
+    if (stage === "Won" && settlement_value !== undefined && deal_commission_percent !== undefined) {
+      const firstLink = await prisma.leadOpportunity.findFirst({
         where: { lead_id: lead.id },
         select: { opportunity_id: true },
       });
-      const oppIds = linkedOpps.map((lo) => lo.opportunity_id);
-      if (oppIds.length > 0) {
-        const wonLinks = await prisma.leadOpportunity.findMany({
-          where: { opportunity_id: { in: oppIds }, status: "Won", lead: { deleted_at: null } },
-          select: { opportunity_id: true, settlement_value: true, deal_commission_percent: true },
+      try {
+        await createDealClosure({
+          lead_id: lead.id,
+          opportunity_id: firstLink?.opportunity_id ?? null,
+          assigned_to_id: lead.assigned_to_id,
+          planned_settlement_value: Number(settlement_value),
+          planned_commission_percent: Number(deal_commission_percent),
+          planned_by_id: userId,
+          won_at: new Date(),
         });
-        const revenueByOpp = new Map<string, number>(oppIds.map((oid) => [oid, 0]));
-        for (const lo of wonLinks) {
-          if (lo.settlement_value !== null && lo.deal_commission_percent !== null) {
-            revenueByOpp.set(
-              lo.opportunity_id,
-              (revenueByOpp.get(lo.opportunity_id) ?? 0) +
-                (Number(lo.settlement_value) * Number(lo.deal_commission_percent)) / 100
-            );
-          }
-        }
-        await Promise.all(
-          Array.from(revenueByOpp.entries()).map(([oid, closedRevenue]) =>
-            prisma.opportunity.update({ where: { id: oid }, data: { closed_revenue: closedRevenue } })
-          )
-        );
+      } catch (err) {
+        console.error("[mcp deal-closure create]", lead.id, err);
+      }
+    }
+    if (stage !== "Won" && lead.status === "Won") {
+      try {
+        await cancelActiveDealClosureForLead(lead.id, userId, `Lead reverted from Won to ${stage} (MCP)`);
+      } catch (err) {
+        console.error("[mcp deal-closure cancel]", lead.id, err);
       }
     }
 

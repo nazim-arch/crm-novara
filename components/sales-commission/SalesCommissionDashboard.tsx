@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2, TrendingUp, Target, IndianRupee, Trophy } from "lucide-react";
+import { Loader2, TrendingUp, Target, IndianRupee, Trophy, Clock } from "lucide-react";
 import { CommissionStatusBadge } from "./CommissionStatusBadge";
 import { commissionStatus } from "@/lib/commission-utils";
 import { cn } from "@/lib/utils";
@@ -41,13 +41,14 @@ export function SalesCommissionDashboard({ userId, userName, initialYear, initia
   const [year, setYear] = useState(initialYear ?? now.getFullYear());
   const [month, setMonth] = useState(initialMonth ?? now.getMonth() + 1);
   const [record, setRecord] = useState<CommissionRecord | null>(null);
+  const [pending, setPending] = useState<{ estimate: number; deals: number }>({ estimate: 0, deals: 0 });
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
     fetch(`/api/sales/commission/calculate?user_id=${userId}&year=${year}&month=${month}`)
       .then(r => r.json())
-      .then(({ data }) => {
+      .then(({ data, pending_estimate, pending_deals }) => {
         if (data) {
           setRecord({
             ...data,
@@ -58,6 +59,7 @@ export function SalesCommissionDashboard({ userId, userName, initialYear, initia
             slab_pct: data.slab_pct != null ? Number(data.slab_pct) : null,
           });
         }
+        setPending({ estimate: Number(pending_estimate ?? 0), deals: Number(pending_deals ?? 0) });
       })
       .finally(() => setLoading(false));
   }, [userId, year, month]);
@@ -121,6 +123,23 @@ export function SalesCommissionDashboard({ userId, userName, initialYear, initia
           color="amber"
         />
       </div>
+
+      {/* Pending reconciliation — Won deals awaiting Finance sign-off */}
+      {pending.deals > 0 && (
+        <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-600">
+            <Clock className="h-4 w-4" />
+          </div>
+          <div>
+            <div className="text-sm font-semibold text-amber-900">
+              Pending Reconciliation: {fmt(pending.estimate)} across {pending.deals} deal{pending.deals !== 1 ? "s" : ""}
+            </div>
+            <div className="text-xs text-amber-700">
+              Estimated commission on Won deals not yet confirmed by Finance — separate from your confirmed total above.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Achievement bar */}
       {achPct != null && (
