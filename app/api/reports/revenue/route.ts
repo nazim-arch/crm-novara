@@ -2,10 +2,12 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
-// Revenue report — sourced entirely from reconciled DealClosure data (the single source of truth),
-// so it agrees with the commission dashboard and net-profit report by construction. Each row is one
-// AGENT'S share of a reconciled deal (a 3-agent deal produces 3 rows). Won-but-unreconciled deals
-// are returned separately as `pending` (estimates), never blended into the confirmed totals.
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+// Revenue report — one row per reconciled deal (DealClosure). Shows the company's revenue
+// (settlement × commission %) and net profit (revenue − all agent commission + incentive), with the
+// per-agent payout breakdown. Sourced entirely from reconciled closures so it agrees with the
+// commission engine. Won-but-unreconciled deals are returned separately as `pending` estimates.
 export async function GET(request: Request) {
   try {
     const session = await auth();
@@ -18,7 +20,6 @@ export async function GET(request: Request) {
     const to = searchParams.get("to");
     const userId = searchParams.get("user_id");
 
-    // Filter by the lead's Won transition date, matching the report's "Won Date" semantics.
     const wonDateFilter =
       from && to
         ? {
@@ -31,11 +32,7 @@ export async function GET(request: Request) {
           }
         : {};
 
-    const leadFilter = {
-      deleted_at: null,
-      ...(userId ? { assigned_to_id: userId } : {}),
-      ...wonDateFilter,
-    };
+    const leadFilter = { deleted_at: null, ...(userId ? { assigned_to_id: userId } : {}), ...wonDateFilter };
 
     const wonDateSelect = {
       stage_history: {
@@ -46,51 +43,61 @@ export async function GET(request: Request) {
       },
     };
 
-    // Confirmed: one row per agent share on a Reconciled closure.
-    const shares = await prisma.dealClosureAgentShare.findMany({
-      where: {
-        ...(userId ? { agent_id: userId } : {}),
-        deal_closure: { status: "Reconciled", lead: leadFilter },
-      },
+    const shareSelect = {
       select: {
-        id: true,
         role: true,
         actual_commission_amount: true,
         incentive_amount: true,
-        agent: { select: { id: true, name: true } },
-        deal_closure: {
-          select: {
-            actual_settlement_value: true,
-            planned_settlement_value: true,
-            opportunity: { select: { name: true, opp_number: true } },
-            lead: { select: { lead_number: true, full_name: true, ...wonDateSelect } },
-          },
-        },
+        agent: { select: { name: true } },
       },
+    };
+
+    // Confirmed: one row per reconciled deal.
+    const closures = await prisma.dealClosure.findMany({
+      where: {
+        status: "Reconciled",
+        lead: leadFilter,
+        ...(userId ? { agent_shares: { some: { agent_id: userId } } } : {}),
+      },
+      select: {
+        id: true,
+        actual_settlement_value: true,
+        planned_settlement_value: true,
+        planned_commission_percent: true,
+        opportunity: { select: { name: true, opp_number: true } },
+        lead: { select: { lead_number: true, full_name: true, ...wonDateSelect } },
+        agent_shares: shareSelect,
+      },
+      orderBy: { won_year: "desc" },
     });
 
-    const rows = shares.map((s) => {
-      const commission = Number(s.actual_commission_amount ?? 0);
-      const incentive = Number(s.incentive_amount ?? 0);
-      const c = s.deal_closure;
+    const rows = closures.map((c) => {
+      const settlement = Number(c.actual_settlement_value ?? c.planned_settlement_value ?? 0);
+      const pct = Number(c.planned_commission_percent);
+      const our_revenue = round2((settlement * pct) / 100);
+      const agent_payout = round2(
+        c.agent_shares.reduce((s, sh) => s + Number(sh.actual_commission_amount ?? 0) + Number(sh.incentive_amount ?? 0), 0),
+      );
       return {
-        id: s.id,
+        id: c.id,
         lead_number: c.lead.lead_number,
         full_name: c.lead.full_name,
         opp_names: c.opportunity?.name ?? "—",
-        opp_numbers: c.opportunity?.opp_number ?? "—",
         won_date: c.lead.stage_history[0]?.changed_at?.toISOString() ?? null,
-        settlement_value: Number(c.actual_settlement_value ?? c.planned_settlement_value ?? 0),
-        agent_id: s.agent.id,
-        agent_name: s.agent.name,
-        role: s.role ?? "—",
-        commission_amount: commission,
-        incentive_amount: incentive,
-        net_commission: commission + incentive,
+        settlement,
+        commission_pct: pct,
+        our_revenue,
+        agent_payout,
+        net_profit: round2(our_revenue - agent_payout),
+        agents: c.agent_shares.map((sh) => ({
+          name: sh.agent.name,
+          role: sh.role ?? "—",
+          amount: round2(Number(sh.actual_commission_amount ?? 0) + Number(sh.incentive_amount ?? 0)),
+        })),
       };
     });
 
-    // Pending (unreconciled) — estimates only, surfaced separately.
+    // Pending (unreconciled) — estimates only.
     const pendingClosures = await prisma.dealClosure.findMany({
       where: {
         status: "Pending",
@@ -101,7 +108,7 @@ export async function GET(request: Request) {
         id: true,
         planned_settlement_value: true,
         planned_commission_amount: true,
-        opportunity: { select: { name: true, opp_number: true } },
+        opportunity: { select: { name: true } },
         planned_by: { select: { name: true } },
         lead: { select: { lead_number: true, full_name: true, ...wonDateSelect } },
       },
@@ -115,7 +122,7 @@ export async function GET(request: Request) {
       opp_names: c.opportunity?.name ?? "—",
       won_date: c.lead.stage_history[0]?.changed_at?.toISOString() ?? null,
       planned_settlement: Number(c.planned_settlement_value),
-      planned_commission: Number(c.planned_commission_amount),
+      planned_revenue: Number(c.planned_commission_amount), // settlement × % estimated at Won
       agent_name: c.planned_by?.name ?? "—",
     }));
 

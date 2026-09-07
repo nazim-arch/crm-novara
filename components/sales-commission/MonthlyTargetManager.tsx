@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Save } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Target {
   id: string;
@@ -148,22 +149,25 @@ export function MonthlyTargetManager({ salesUsers, existingTargets }: Props) {
         Save target
       </Button>
 
-      {/* Year summary for selected user */}
+      {/* Year summary for selected user — full amounts, roomy cells, set months highlighted */}
       {userTargets.length > 0 && (
         <div>
-          <p className="text-xs font-medium text-gray-600 mb-2">{year} targets</p>
-          <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-12">
+          <p className="text-xs font-medium text-gray-600 mb-2">{year} targets for {userName(selectedUser)}</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
             {MONTHS.map((m, i) => {
               const t = userTargets.find(x => x.month === i + 1);
               return (
                 <div
                   key={i}
-                  className="rounded border p-2 text-center cursor-pointer hover:bg-gray-50"
+                  className={cn(
+                    "rounded-md border p-2 cursor-pointer hover:bg-gray-50",
+                    t ? "border-blue-200 bg-blue-50/40" : "border-dashed",
+                  )}
                   onClick={() => setMonth(i + 1)}
                 >
-                  <div className="text-xs text-gray-500">{m}</div>
-                  <div className="text-xs font-medium mt-0.5">
-                    {t ? `₹${(t.target_amount / 100000).toFixed(1)}L` : "—"}
+                  <div className="text-xs text-gray-500">{m} {year}</div>
+                  <div className="text-sm font-semibold mt-0.5 text-gray-900">
+                    {t ? `₹${t.target_amount.toLocaleString("en-IN")}` : "—"}
                   </div>
                 </div>
               );
