@@ -12,6 +12,7 @@ interface Target {
   year: number;
   month: number;
   target_amount: number;
+  user_name?: string;
 }
 
 interface User {
@@ -193,7 +194,7 @@ export function MonthlyTargetManager({ salesUsers, existingTargets }: Props) {
                       className="cursor-pointer hover:bg-gray-50"
                       onClick={() => { setSelectedUser(t.user_id); setYear(t.year); setMonth(t.month); }}
                     >
-                      <td className="px-3 py-2">{userName(t.user_id)}</td>
+                      <td className="px-3 py-2">{t.user_name ?? userName(t.user_id)}</td>
                       <td className="px-3 py-2 text-center text-gray-500">{MONTHS[t.month - 1]} {t.year}</td>
                       <td className="px-3 py-2 text-right tabular-nums">₹{t.target_amount.toLocaleString("en-IN")}</td>
                     </tr>

@@ -265,7 +265,7 @@ export interface ReconcileDealClosureInput {
 }
 
 export async function reconcileDealClosure(input: ReconcileDealClosureInput) {
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const closure = await tx.dealClosure.findUnique({
       where: { id: input.deal_closure_id },
       include: { agent_shares: true },
@@ -373,16 +373,6 @@ export async function reconcileDealClosure(input: ReconcileDealClosureInput) {
       include: { agent_shares: true },
     });
 
-    // Recompute records for every agent touched (old ∪ new) so removed agents drop too.
-    const affectedAgents = new Set<string>([
-      ...closure.agent_shares.map((s) => s.agent_id),
-      ...input.shares.map((s) => s.agent_id),
-    ]);
-    for (const agentId of affectedAgents) {
-      await recomputeCommissionRecord(agentId, closure.won_year, closure.won_month, tx);
-    }
-    if (closure.opportunity_id) await recalculateOpportunityRevenue(closure.opportunity_id, tx);
-
     await tx.activity.create({
       data: {
         entity_type: "DealClosure",
@@ -401,8 +391,24 @@ export async function reconcileDealClosure(input: ReconcileDealClosureInput) {
       },
     });
 
-    return updated;
+    // Every agent touched (old ∪ new) so removed agents' records drop too.
+    const affectedAgents = [
+      ...new Set<string>([
+        ...closure.agent_shares.map((s) => s.agent_id),
+        ...input.shares.map((s) => s.agent_id),
+      ]),
+    ];
+    return { updated, affectedAgents, opportunity_id: closure.opportunity_id, won_year: closure.won_year, won_month: closure.won_month };
   });
+
+  // Recompute AFTER commit — avoids long interactive transactions and global-client reads inside a
+  // tx (the Neon adapter errors on those). Reads the just-committed shares.
+  for (const agentId of result.affectedAgents) {
+    await recomputeCommissionRecord(agentId, result.won_year, result.won_month);
+  }
+  if (result.opportunity_id) await recalculateOpportunityRevenue(result.opportunity_id);
+
+  return result.updated;
 }
 
 // ─── Cancel (called when a lead is reverted out of Won) ───────────────────────
@@ -412,23 +418,18 @@ export async function cancelDealClosure(input: {
   reason?: string | null;
   actor_id: string;
 }) {
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const closure = await tx.dealClosure.findUnique({
       where: { id: input.deal_closure_id },
       include: { agent_shares: true },
     });
     if (!closure) return null;
-    if (closure.status === "Cancelled") return closure;
+    if (closure.status === "Cancelled") return { updated: closure, agentIds: [] as string[], opportunity_id: null as string | null, won_year: 0, won_month: 0, skip: true };
 
     const updated = await tx.dealClosure.update({
       where: { id: closure.id },
       data: { status: "Cancelled", notes: input.reason ?? closure.notes },
     });
-
-    for (const agentId of new Set(closure.agent_shares.map((s) => s.agent_id))) {
-      await recomputeCommissionRecord(agentId, closure.won_year, closure.won_month, tx);
-    }
-    if (closure.opportunity_id) await recalculateOpportunityRevenue(closure.opportunity_id, tx);
 
     await tx.activity.create({
       data: {
@@ -440,8 +441,24 @@ export async function cancelDealClosure(input: {
       },
     });
 
-    return updated;
+    return {
+      updated,
+      agentIds: [...new Set(closure.agent_shares.map((s) => s.agent_id))],
+      opportunity_id: closure.opportunity_id,
+      won_year: closure.won_year,
+      won_month: closure.won_month,
+      skip: false,
+    };
   });
+
+  if (!result) return null;
+  if (!result.skip) {
+    for (const agentId of result.agentIds) {
+      await recomputeCommissionRecord(agentId, result.won_year, result.won_month);
+    }
+    if (result.opportunity_id) await recalculateOpportunityRevenue(result.opportunity_id);
+  }
+  return result.updated;
 }
 
 /** Convenience for the stage-change revert path: cancel a lead's active closure, if any. */

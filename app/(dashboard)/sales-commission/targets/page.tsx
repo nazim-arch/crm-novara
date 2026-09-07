@@ -11,14 +11,17 @@ export default async function CommissionTargetsPage() {
   if (!session?.user) redirect("/login");
   if (!(await hasPermissionAsync(session.user.role, "commission:manage"))) redirect("/");
 
+  // Commission applies to anyone who can be an agent on a deal (incl. Admins acting as agents),
+  // not just role=Sales.
   const salesUsers = await prisma.user.findMany({
-    where: { role: "Sales", is_active: true },
+    where: { is_active: true, role: { in: ["Admin", "Manager", "TeamLead", "Sales"] } },
     select: { id: true, name: true, short_name: true },
     orderBy: { name: "asc" },
   });
 
   const existingTargets = await prisma.salesMonthlyTarget.findMany({
     orderBy: [{ year: "desc" }, { month: "desc" }],
+    include: { user: { select: { name: true } } },
   });
 
   const firstUser = salesUsers[0];
@@ -59,8 +62,12 @@ export default async function CommissionTargetsPage() {
   }
 
   const serializedTargets = existingTargets.map(t => ({
-    ...t,
+    id: t.id,
+    user_id: t.user_id,
+    year: t.year,
+    month: t.month,
     target_amount: Number(t.target_amount),
+    user_name: t.user?.name ?? t.user_id,
   }));
 
   return (
@@ -93,6 +100,7 @@ export default async function CommissionTargetsPage() {
             <CommissionSlabEditor
               userId={firstUser.id}
               existingBatches={existingSlabs}
+              users={salesUsers}
             />
           ) : (
             <p className="text-sm text-gray-400">No active Sales users found.</p>

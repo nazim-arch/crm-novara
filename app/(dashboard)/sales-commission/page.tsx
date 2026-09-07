@@ -38,7 +38,7 @@ export default async function SalesCommissionPage({ searchParams }: { searchPara
 
   if (canManage) {
     salesUsers = await prisma.user.findMany({
-      where: { role: "Sales", is_active: true },
+      where: { is_active: true, role: { in: ["Admin", "Manager", "TeamLead", "Sales"] } },
       select: { id: true, name: true, short_name: true },
       orderBy: { name: "asc" },
     });
