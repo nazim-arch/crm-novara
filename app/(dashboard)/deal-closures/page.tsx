@@ -26,7 +26,7 @@ export default async function DealClosuresPage() {
         <div>
           <h1 className="text-xl font-bold text-gray-900">Deal Closures</h1>
           <p className="text-sm text-gray-500">
-            Reconcile Won deals — confirm the actual settlement and per-agent commission.
+            Close Won deals — confirm the final settlement and agent commission payout.
           </p>
         </div>
       </div>

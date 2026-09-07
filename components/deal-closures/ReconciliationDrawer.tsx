@@ -224,7 +224,7 @@ export function ReconciliationDrawer({
     <Drawer open direction="right" onOpenChange={(o) => !o && onClose()}>
       <DrawerContent className="w-full sm:!max-w-2xl">
         <DrawerHeader className="border-b">
-          <DrawerTitle>Finalize deal closure</DrawerTitle>
+          <DrawerTitle>Close deal</DrawerTitle>
           <DrawerDescription>
             {detail?.lead
               ? `${detail.lead.full_name} · ${detail.lead.lead_number}`
@@ -242,7 +242,7 @@ export function ReconciliationDrawer({
             {isSameAdmin && (
               <div className="flex items-start gap-2 rounded-md bg-amber-50 p-3 text-xs text-amber-800">
                 <Info className="mt-0.5 h-4 w-4 shrink-0" />
-                You reconciled this deal. A different admin must review and modify it (maker-checker).
+                You closed this deal. Only a different admin can re-open and modify it.
               </div>
             )}
             {isCancelled && (
@@ -251,26 +251,26 @@ export function ReconciliationDrawer({
               </div>
             )}
 
-            {/* Planned baseline */}
+            {/* Figures captured at Deal Won — carried forward as the final values unless edited below. */}
             <div className="grid grid-cols-2 gap-3 rounded-lg border bg-gray-50/60 p-3 text-sm">
               <div>
-                <div className="text-xs text-gray-500">Planned settlement</div>
+                <div className="text-xs text-gray-500">Settlement at Deal Won</div>
                 <div className="font-medium">{fmtMoney(plannedSettlement)}</div>
               </div>
               <div>
-                <div className="text-xs text-gray-500">Planned commission ({plannedPct}%)</div>
+                <div className="text-xs text-gray-500">Expected commission ({plannedPct}%)</div>
                 <div className="font-medium">{fmtMoney(Number(detail.planned_commission_amount))}</div>
               </div>
               <div className="col-span-2 text-xs text-gray-400">
-                Estimated by {detail.planned_by?.name ?? "—"}
-                {detail.reconciled_by ? ` · Last reconciled by ${detail.reconciled_by.name}` : ""}
+                Entered by {detail.planned_by?.name ?? "—"}
+                {detail.reconciled_by ? ` · Last closed by ${detail.reconciled_by.name}` : ""}
               </div>
             </div>
 
             {/* Actual settlement (pre-filled from the estimate) + company commission */}
             <div className="space-y-1.5">
               <Label htmlFor="actual_settlement">
-                Settlement Value (₹) {!readOnly && <span className="text-destructive">*</span>}
+                Final Settlement Value (₹) {!readOnly && <span className="text-destructive">*</span>}
               </Label>
               <Input
                 id="actual_settlement"

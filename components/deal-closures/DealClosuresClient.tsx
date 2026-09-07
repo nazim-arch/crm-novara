@@ -45,6 +45,13 @@ const STATUS_BADGE: Record<Status, string> = {
   Cancelled: "bg-gray-100 text-gray-500",
 };
 
+// Display labels — the "Reconciled" DB status reads as "Closed" in the UI.
+const STATUS_LABEL: Record<Status, string> = {
+  Pending: "Pending",
+  Reconciled: "Closed",
+  Cancelled: "Cancelled",
+};
+
 export function DealClosuresClient({
   agents,
   currentUserId,
@@ -87,7 +94,7 @@ export function DealClosuresClient({
               status === s ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700",
             )}
           >
-            {s}
+            {STATUS_LABEL[s]}
           </button>
         ))}
       </div>
@@ -116,7 +123,7 @@ export function DealClosuresClient({
             {!loading && rows.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-10 text-center text-gray-400">
-                  No {status.toLowerCase()} deal closures.
+                  No {STATUS_LABEL[status].toLowerCase()} deals.
                 </td>
               </tr>
             )}
@@ -147,7 +154,7 @@ export function DealClosuresClient({
                   </td>
                   <td className="px-4 py-3 text-center">
                     <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", STATUS_BADGE[row.status])}>
-                      {row.status}
+                      {STATUS_LABEL[row.status]}
                     </span>
                   </td>
                 </tr>
