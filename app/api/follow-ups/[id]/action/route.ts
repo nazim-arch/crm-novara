@@ -12,6 +12,7 @@ import {
   setActiveFollowUp,
   isNoFollowUpStatus,
 } from "@/lib/follow-ups";
+import { createDealClosure, cancelActiveDealClosureForLead } from "@/lib/deal-closures";
 
 // Memoized per-request — avoids re-fetching admins when multiple notifications fire in one request
 const getActiveAdmins = cache(() =>
@@ -175,6 +176,8 @@ export async function POST(request: Request, { params }: { params: Params }) {
       await prisma.lead.update({ where: { id: leadId }, data: leadData });
 
       if (stageChanged) {
+        // Keep the opportunity link(s) in sync — the pipeline/leads list reads link status.
+        await prisma.leadOpportunity.updateMany({ where: { lead_id: leadId }, data: { status: data.to_stage } });
         await prisma.leadStageHistory.create({
           data: { lead_id: leadId, from_stage: fu.lead!.status, to_stage: data.to_stage!, changed_by_id: userId, notes: data.notes },
         });
@@ -399,6 +402,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
 
       await prisma.$transaction([
         prisma.lead.update({ where: { id: leadId! }, data: { status: toStage, updated_at: now } }),
+        prisma.leadOpportunity.updateMany({ where: { lead_id: leadId! }, data: { status: toStage } }),
         prisma.leadStageHistory.create({
           data: { lead_id: leadId!, from_stage: fromStage, to_stage: toStage, changed_by_id: userId, notes: data.notes },
         }),
@@ -410,6 +414,13 @@ export async function POST(request: Request, { params }: { params: Params }) {
           },
         }),
       ]);
+
+      // Reverting a Won lead voids its deal closure (retained as Cancelled).
+      if (fromStage === "Won" && toStage !== "Won") {
+        try { await cancelActiveDealClosureForLead(leadId!, userId, `Lead reverted from Won to ${toStage}`); }
+        catch (e) { console.error("[deal-closure cancel]", leadId, e); }
+      }
+
       const fuUpdate = await prisma.followUp.update({
         where: { id }, data: { outcome: `Stage: ${toStage}`, notes: data.notes },
       });
@@ -453,6 +464,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
           where: { id: leadId! },
           data: { status: "Lost", lost_reason: data.lost_reason as never, lost_notes: data.lost_notes ?? data.notes, updated_at: now, next_followup_date: null, followup_type: null },
         }),
+        prisma.leadOpportunity.updateMany({ where: { lead_id: leadId! }, data: { status: "Lost", lost_reason: data.lost_reason as never, lost_notes: data.lost_notes ?? data.notes } }),
         prisma.leadStageHistory.create({
           data: { lead_id: leadId!, from_stage: fromStage, to_stage: "Lost", changed_by_id: userId, notes: data.notes },
         }),
@@ -463,6 +475,13 @@ export async function POST(request: Request, { params }: { params: Params }) {
           },
         }),
       ]);
+
+      // Reverting a Won lead to Lost voids its deal closure.
+      if (fromStage === "Won") {
+        try { await cancelActiveDealClosureForLead(leadId!, userId, "Lead reverted from Won to Lost"); }
+        catch (e) { console.error("[deal-closure cancel]", leadId, e); }
+      }
+
       const { completed: fuUpdate } = await completeActiveFollowUp({
         follow_up_id: id, outcome: "Lost", notes: data.notes, actor_id: userId,
       });
@@ -491,6 +510,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
 
       await prisma.$transaction([
         prisma.lead.update({ where: { id: leadId! }, data: leadWonData }),
+        prisma.leadOpportunity.updateMany({ where: { lead_id: leadId! }, data: { status: "Won" } }),
         prisma.leadStageHistory.create({
           data: { lead_id: leadId!, from_stage: fromStage, to_stage: "Won", changed_by_id: userId, notes: data.notes },
         }),
@@ -501,6 +521,28 @@ export async function POST(request: Request, { params }: { params: Params }) {
           },
         }),
       ]);
+
+      // Drop the deal into the Deal Closures queue (additive, best-effort) — mirrors the
+      // Leads stage route so Focus-Queue Wons also become closures to reconcile.
+      if (data.settlement_value !== undefined && data.deal_commission_percent !== undefined) {
+        try {
+          const firstLink = await prisma.leadOpportunity.findFirst({
+            where: { lead_id: leadId! },
+            select: { opportunity_id: true },
+          });
+          await createDealClosure({
+            lead_id: leadId!,
+            opportunity_id: firstLink?.opportunity_id ?? null,
+            assigned_to_id: fu.lead.assigned_to_id,
+            planned_settlement_value: data.settlement_value,
+            planned_commission_percent: data.deal_commission_percent,
+            planned_by_id: userId,
+            won_at: now,
+          });
+        } catch (e) {
+          console.error("[deal-closure create]", leadId, e);
+        }
+      }
 
       // Notify admins
       const admins = await getActiveAdmins();
@@ -539,6 +581,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
       const fromStage = fu.lead.status;
       await prisma.$transaction([
         prisma.lead.update({ where: { id: leadId! }, data: { status: "SiteVisitCompleted", updated_at: now, last_contact_date: now } }),
+        prisma.leadOpportunity.updateMany({ where: { lead_id: leadId! }, data: { status: "SiteVisitCompleted" } }),
         prisma.leadStageHistory.create({
           data: { lead_id: leadId!, from_stage: fromStage, to_stage: "SiteVisitCompleted", changed_by_id: userId, notes: data.notes },
         }),
