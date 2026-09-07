@@ -7,7 +7,8 @@ import { notifyLeadStageChanged, notifyLeadWon, notifyLeadLost } from "@/lib/ema
 import { createLeadReviewEvent } from "@/lib/lead-review-events";
 import { sendStageEvent } from "@/lib/meta-capi";
 import { setActiveFollowUp, clearActiveFollowUp, isNoFollowUpStatus, FollowUpForbiddenError } from "@/lib/follow-ups";
-import { createDealClosure, cancelActiveDealClosureForLead } from "@/lib/deal-closures";
+import { createDealClosure, cancelActiveDealClosureForLeadOpportunity } from "@/lib/deal-closures";
+import { resolveStageTarget } from "@/lib/lead-stage";
 
 type Params = Promise<{ id: string }>;
 
@@ -66,55 +67,77 @@ export async function POST(request: Request, { params }: { params: Params }) {
       );
     }
 
-    // If targeting a specific opportunity link, update it too
-    const link = opportunity_link_id
-      ? await prisma.leadOpportunity.findUnique({ where: { id: opportunity_link_id } })
-      : null;
-
-    if (opportunity_link_id && !link) {
-      return NextResponse.json({ error: "Opportunity link not found" }, { status: 404 });
+    // Resolve which Lead+Opportunity combination this pipeline change applies to. Status is owned
+    // per link; Lead.status is a rollup maintained by a DB trigger for linked leads.
+    let targetLinkId: string | null = null;
+    let targetOppId: string | null = null;
+    let unlinked = false;
+    if (to_stage) {
+      const target = await resolveStageTarget(id, { opportunity_link_id });
+      if (target.kind === "ambiguous") {
+        return NextResponse.json(
+          {
+            error: "This lead has multiple opportunities — choose which one this applies to.",
+            code: "OPPORTUNITY_REQUIRED",
+            opportunities: target.opportunities,
+          },
+          { status: 422 },
+        );
+      }
+      if (target.kind === "link") {
+        targetLinkId = target.opportunity_link_id;
+        targetOppId = target.opportunity_id;
+      } else {
+        unlinked = true;
+      }
+    } else if (opportunity_link_id) {
+      const l = await prisma.leadOpportunity.findUnique({ where: { id: opportunity_link_id }, select: { id: true } });
+      if (!l) return NextResponse.json({ error: "Opportunity link not found" }, { status: 404 });
+      targetLinkId = opportunity_link_id;
     }
 
-    // Build lead update data — Lead.status always tracks the most recent change
-    const leadUpdateData: Record<string, unknown> = { updated_at: new Date() };
+    // Prior status of the thing being changed (link for linked leads, lead for unlinked).
+    let priorStatus = lead.status;
+    if (to_stage && targetLinkId) {
+      const cur = await prisma.leadOpportunity.findUnique({ where: { id: targetLinkId }, select: { status: true } });
+      priorStatus = cur?.status ?? lead.status;
+    }
 
+    // Lead-level fields. For LINKED leads we do NOT write Lead.status (the rollup trigger derives it
+    // from the target link we update below); for UNLINKED leads we set it directly.
+    const leadUpdateData: Record<string, unknown> = { updated_at: new Date() };
     if (to_stage) {
-      leadUpdateData.status = to_stage;
-      if (lost_reason) leadUpdateData.lost_reason = lost_reason;
-      if (lost_notes) leadUpdateData.lost_notes = lost_notes;
+      if (unlinked) {
+        leadUpdateData.status = to_stage;
+        if (lost_reason) leadUpdateData.lost_reason = lost_reason;
+        if (lost_notes) leadUpdateData.lost_notes = lost_notes;
+      }
       if (to_stage === "Won" && settlement_value !== undefined) leadUpdateData.settlement_value = settlement_value;
       if (to_stage === "Won" && deal_commission_percent !== undefined) leadUpdateData.deal_commission_percent = deal_commission_percent;
     }
-
-    if (activity_stage) {
-      leadUpdateData.activity_stage = activity_stage;
-    }
+    if (activity_stage) leadUpdateData.activity_stage = activity_stage;
 
     const activityMetadata: Record<string, unknown> = { notes: notes || null };
     if (to_stage) {
-      activityMetadata.pipeline_from = link ? link.status : lead.status;
+      activityMetadata.pipeline_from = priorStatus;
       activityMetadata.pipeline_to = to_stage;
       activityMetadata.lost_reason = lost_reason || null;
-      activityMetadata.opportunity_link_id = opportunity_link_id;
+      activityMetadata.opportunity_link_id = targetLinkId;
+      activityMetadata.opportunity_id = targetOppId;
       if (to_stage === "Won") {
         activityMetadata.settlement_value = settlement_value;
         activityMetadata.deal_commission_percent = deal_commission_percent;
       }
     }
-    if (activity_stage) {
-      activityMetadata.activity_from = link ? link.activity_stage : lead.activity_stage;
-      activityMetadata.activity_to = activity_stage;
-    }
+    if (activity_stage) activityMetadata.activity_to = activity_stage;
 
-    // Build per-opportunity link update if a link is targeted
+    // Target link update (pipeline status for linked leads; activity_stage if a link is targeted).
     const linkUpdateData: Record<string, unknown> = {};
-    if (link) {
+    if (targetLinkId) {
       if (to_stage) {
         linkUpdateData.status = to_stage;
         if (lost_reason) linkUpdateData.lost_reason = lost_reason;
         if (lost_notes) linkUpdateData.lost_notes = lost_notes;
-        // Settlement/commission are no longer mirrored onto LeadOpportunity — a Won deal's
-        // money now lives solely on the Lead (planned estimate) and its DealClosure.
       }
       if (activity_stage) linkUpdateData.activity_stage = activity_stage;
     }
@@ -135,7 +158,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
             prisma.leadStageHistory.create({
               data: {
                 lead_id: id,
-                from_stage: lead.status,
+                from_stage: priorStatus,
                 to_stage,
                 changed_by_id: session.user.id,
                 notes: notes || null,
@@ -143,30 +166,8 @@ export async function POST(request: Request, { params }: { params: Params }) {
             }),
           ]
         : []),
-      ...(link && Object.keys(linkUpdateData).length > 0
-        ? [prisma.leadOpportunity.update({ where: { id: opportunity_link_id! }, data: linkUpdateData })]
-        : []),
-      // When no specific opportunity link is targeted, sync ALL linked opportunities.
-      // Prevents lo.status drifting out of sync with lead.status (e.g. bulk updates, admin actions).
-      ...(to_stage && !opportunity_link_id
-        ? [
-            prisma.leadOpportunity.updateMany({
-              where: { lead_id: id },
-              data: {
-                status: to_stage,
-                ...(lost_reason ? { lost_reason } : {}),
-                ...(lost_notes  ? { lost_notes }  : {}),
-              },
-            }),
-          ]
-        : []),
-      ...(activity_stage && !opportunity_link_id
-        ? [
-            prisma.leadOpportunity.updateMany({
-              where: { lead_id: id },
-              data: { activity_stage },
-            }),
-          ]
+      ...(targetLinkId && Object.keys(linkUpdateData).length > 0
+        ? [prisma.leadOpportunity.update({ where: { id: targetLinkId }, data: linkUpdateData })]
         : []),
     ]);
 
@@ -230,73 +231,57 @@ export async function POST(request: Request, { params }: { params: Params }) {
       },
     });
 
-    // Won-state side effects. Opportunity.closed_revenue is NO LONGER written here — it is
-    // derived from reconciled DealClosure data (recalculateOpportunityRevenue, called from the
-    // reconcile/cancel service). A freshly-Won deal is Pending and contributes nothing until an
-    // Admin reconciles it.
-    if (to_stage === "Won" || lead.status === "Won") {
-      // Resolve the opportunity to denormalize onto the deal closure.
-      let closureOpportunityId: string | null = link?.opportunity_id ?? null;
-      if (!closureOpportunityId) {
-        const firstLink = await prisma.leadOpportunity.findFirst({
-          where: { lead_id: id },
-          select: { opportunity_id: true },
+    // Won-state side effects. Opportunity.closed_revenue is derived from reconciled DealClosure data
+    // (recalculateOpportunityRevenue in the reconcile/cancel service), not written here. A freshly-Won
+    // deal is Pending and contributes nothing until an Admin closes it.
+    if (to_stage === "Won" && settlement_value !== undefined && deal_commission_percent !== undefined) {
+      const admins = await prisma.user.findMany({
+        where: { role: "Admin", is_active: true },
+        select: { id: true },
+      });
+      if (admins.length > 0) {
+        await prisma.notification.createMany({
+          data: admins.map((admin) => ({
+            user_id: admin.id,
+            type: "StageChanged" as const,
+            message: `Deal Won: ${lead.full_name} (${lead.lead_number}) — Settlement ₹${Number(settlement_value).toLocaleString("en-IN")}`,
+            entity_type: "Lead" as const,
+            entity_id: id,
+          })),
+          skipDuplicates: true,
         });
-        closureOpportunityId = firstLink?.opportunity_id ?? null;
       }
+      notifyLeadWon({
+        assignedToId: lead.assigned_to_id,
+        leadId: id,
+        leadName: lead.full_name,
+        leadNumber: lead.lead_number,
+        settlementValue: Number(settlement_value),
+        commissionPercent: Number(deal_commission_percent),
+        closedByName: session.user.name ?? session.user.email ?? "Someone",
+      });
 
-      if (to_stage === "Won" && settlement_value !== undefined && deal_commission_percent !== undefined) {
-        const admins = await prisma.user.findMany({
-          where: { role: "Admin", is_active: true },
-          select: { id: true },
+      // Drop the (lead, opportunity) deal into the Deal Closures queue as a Pending estimate.
+      // Best-effort — a failure here must not roll back the committed stage change.
+      try {
+        await createDealClosure({
+          lead_id: id,
+          opportunity_id: targetOppId,
+          assigned_to_id: lead.assigned_to_id,
+          planned_settlement_value: Number(settlement_value),
+          planned_commission_percent: Number(deal_commission_percent),
+          planned_by_id: session.user.id,
+          won_at: new Date(),
         });
-        if (admins.length > 0) {
-          await prisma.notification.createMany({
-            data: admins.map((admin) => ({
-              user_id: admin.id,
-              type: "StageChanged" as const,
-              message: `Deal Won: ${lead.full_name} (${lead.lead_number}) — Settlement ₹${Number(settlement_value).toLocaleString("en-IN")}`,
-              entity_type: "Lead" as const,
-              entity_id: id,
-            })),
-            skipDuplicates: true,
-          });
-        }
-        notifyLeadWon({
-          assignedToId: lead.assigned_to_id,
-          leadId: id,
-          leadName: lead.full_name,
-          leadNumber: lead.lead_number,
-          settlementValue: Number(settlement_value),
-          commissionPercent: Number(deal_commission_percent),
-          closedByName: session.user.name ?? session.user.email ?? "Someone",
-        });
-
-        // Additive: drop the deal into the Deal Closures reconciliation queue.
-        // Captures the agent's estimate as a frozen "planned" baseline; the payable
-        // commission is set later by an Admin during reconciliation. Best-effort — a
-        // failure here must not roll back the (already-committed) stage change; the
-        // backfill script can recover any missing closure.
-        try {
-          await createDealClosure({
-            lead_id: id,
-            opportunity_id: closureOpportunityId,
-            assigned_to_id: lead.assigned_to_id,
-            planned_settlement_value: Number(settlement_value),
-            planned_commission_percent: Number(deal_commission_percent),
-            planned_by_id: session.user.id,
-            won_at: new Date(),
-          });
-        } catch (err) {
-          console.error("[deal-closure create]", id, err);
-        }
+      } catch (err) {
+        console.error("[deal-closure create]", id, err);
       }
     }
 
-    // Reverting a lead out of Won voids its deal closure (retained as Cancelled, never deleted).
-    if (to_stage && to_stage !== "Won" && lead.status === "Won") {
+    // Reverting THIS combination out of Won voids its deal closure (retained as Cancelled).
+    if (to_stage && to_stage !== "Won" && priorStatus === "Won") {
       try {
-        await cancelActiveDealClosureForLead(id, session.user.id, `Lead reverted from Won to ${to_stage}`);
+        await cancelActiveDealClosureForLeadOpportunity(id, targetOppId, session.user.id, `Reverted from Won to ${to_stage}`);
       } catch (err) {
         console.error("[deal-closure cancel]", id, err);
       }

@@ -210,6 +210,15 @@ export async function POST(request: Request) {
             await tx.lead.update({ where: { id: lead.id }, data: updateData });
           }
 
+          // Bulk status can't disambiguate opportunities, so it applies to ALL of the lead's links
+          // (documented exception). The rollup trigger keeps Lead.status consistent.
+          if (statusChanged) {
+            await tx.leadOpportunity.updateMany({
+              where: { lead_id: lead.id },
+              data: { status: rawStatus as Parameters<typeof tx.leadOpportunity.updateMany>[0]["data"]["status"] },
+            });
+          }
+
           // Stage history for status change
           if (statusChanged) {
             await tx.leadStageHistory.create({

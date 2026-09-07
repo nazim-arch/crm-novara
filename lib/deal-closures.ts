@@ -192,10 +192,11 @@ export interface CreateDealClosureInput {
 }
 
 export async function createDealClosure(input: CreateDealClosureInput) {
-  // Idempotent: one active (non-Cancelled) closure per lead. The partial unique index
-  // enforces this at the DB level; the guard avoids a needless insert/throw on the happy path.
+  // Idempotent: one active (non-Cancelled) closure per (lead, opportunity). The partial unique
+  // indexes enforce this at the DB level; the guard avoids a needless insert/throw on the happy path.
+  const opportunity_id = input.opportunity_id ?? null;
   const existing = await prisma.dealClosure.findFirst({
-    where: { lead_id: input.lead_id, status: { not: "Cancelled" } },
+    where: { lead_id: input.lead_id, opportunity_id, status: { not: "Cancelled" } },
     include: { agent_shares: true },
   });
   if (existing) return existing;
@@ -209,7 +210,7 @@ export async function createDealClosure(input: CreateDealClosureInput) {
     return await prisma.dealClosure.create({
       data: {
         lead_id: input.lead_id,
-        opportunity_id: input.opportunity_id ?? null,
+        opportunity_id,
         planned_settlement_value: input.planned_settlement_value,
         planned_commission_percent: input.planned_commission_percent,
         planned_commission_amount,
@@ -235,7 +236,7 @@ export async function createDealClosure(input: CreateDealClosureInput) {
     // Lost a race against the partial unique index — return the winner.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       const winner = await prisma.dealClosure.findFirst({
-        where: { lead_id: input.lead_id, status: { not: "Cancelled" } },
+        where: { lead_id: input.lead_id, opportunity_id, status: { not: "Cancelled" } },
         include: { agent_shares: true },
       });
       if (winner) return winner;
@@ -444,17 +445,35 @@ export async function cancelDealClosure(input: {
 }
 
 /** Convenience for the stage-change revert path: cancel a lead's active closure, if any. */
-export async function cancelActiveDealClosureForLead(
+/** Cancel the active closure for a specific (lead, opportunity) combination, if any. */
+export async function cancelActiveDealClosureForLeadOpportunity(
   lead_id: string,
+  opportunity_id: string | null,
   actor_id: string,
   reason?: string | null,
 ) {
   const closure = await prisma.dealClosure.findFirst({
-    where: { lead_id, status: { not: "Cancelled" } },
+    where: { lead_id, opportunity_id, status: { not: "Cancelled" } },
     select: { id: true },
   });
   if (!closure) return null;
   return cancelDealClosure({ deal_closure_id: closure.id, actor_id, reason });
+}
+
+/** Cancel ALL active closures for a lead (e.g. lead deletion / whole-lead revert). */
+export async function cancelActiveDealClosuresForLead(
+  lead_id: string,
+  actor_id: string,
+  reason?: string | null,
+) {
+  const closures = await prisma.dealClosure.findMany({
+    where: { lead_id, status: { not: "Cancelled" } },
+    select: { id: true },
+  });
+  for (const c of closures) {
+    await cancelDealClosure({ deal_closure_id: c.id, actor_id, reason });
+  }
+  return closures.length;
 }
 
 // ─── Audit snapshot ───────────────────────────────────────────────────────────

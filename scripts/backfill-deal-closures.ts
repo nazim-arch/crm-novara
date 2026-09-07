@@ -83,7 +83,15 @@ async function main() {
       assigned_to_id: true,
       settlement_value: true,
       deal_commission_percent: true,
-      opportunities: { select: { opportunity_id: true }, take: 1 },
+      // Attribute the historical closure to a Won opportunity link (falls back to any link).
+      // One closure per Won lead using the lead-level settlement — matches the pre-Fix#4 commission
+      // total exactly (creating one per Won link would double-count the shared settlement).
+      opportunities: {
+        where: { status: "Won" },
+        select: { opportunity_id: true },
+        orderBy: { tagged_at: "asc" },
+        take: 1,
+      },
       stage_history: {
         where: { to_stage: "Won" },
         orderBy: { changed_at: "desc" },
