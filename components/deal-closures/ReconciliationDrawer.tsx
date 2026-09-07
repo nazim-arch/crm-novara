@@ -59,6 +59,8 @@ function fmtMoney(n: number | null) {
   return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
 
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
 /** Client replica of lib/sales-commission.calcCommission — for the read-only slab hint only. */
 function slabCommission(basis: number, slabs: SlabRow[]): number | null {
   if (!slabs.length || basis <= 0) return null;
@@ -92,6 +94,8 @@ export function ReconciliationDrawer({
   const [shares, setShares] = useState<ShareState[]>([]);
   const [notes, setNotes] = useState("");
   const [addingAgentId, setAddingAgentId] = useState("");
+  const [primaryAgentId, setPrimaryAgentId] = useState<string | null>(null);
+  const [primaryTouched, setPrimaryTouched] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -100,8 +104,17 @@ export function ReconciliationDrawer({
       .then(({ data, agent_slabs }: { data: Detail; agent_slabs: Record<string, SlabRow[]> }) => {
         setDetail(data);
         setSlabs(agent_slabs ?? {});
-        setActualSettlement(data.actual_settlement_value ?? "");
+        // Pre-fill from the Won estimate so nothing starts blank.
+        setActualSettlement(data.actual_settlement_value ?? data.planned_settlement_value ?? "");
         setNotes(data.notes ?? "");
+        // Primary = the share carrying the planned baseline (falls back to the first share).
+        setPrimaryAgentId(
+          data.agent_shares.find((s) => s.planned_commission_amount != null)?.agent_id ??
+            data.agent_shares[0]?.agent_id ??
+            null,
+        );
+        // If already reconciled, the primary figure is a real entered value — don't auto-track it.
+        setPrimaryTouched(data.actual_settlement_value != null);
         setShares(
           data.agent_shares.map((s) => ({
             agent_id: s.agent_id,
@@ -109,7 +122,8 @@ export function ReconciliationDrawer({
             role: s.role ?? "",
             planned_commission_amount:
               s.planned_commission_amount != null ? Number(s.planned_commission_amount) : null,
-            actual_commission_amount: s.actual_commission_amount ?? "",
+            // Auto-fill commission from the estimate (actual → planned) so it's ready to finalize.
+            actual_commission_amount: s.actual_commission_amount ?? s.planned_commission_amount ?? "",
             incentive_amount: s.incentive_amount ?? "0",
           })),
         );
@@ -124,15 +138,30 @@ export function ReconciliationDrawer({
   const isSameAdmin = isReconciled && detail?.reconciled_by?.id === currentUserId;
   const readOnly = isCancelled || isSameAdmin;
 
-  const settlementVariance = useMemo(() => {
-    if (actualSettlement === "" || detail == null) return null;
-    return Number(actualSettlement) - plannedSettlement;
-  }, [actualSettlement, plannedSettlement, detail]);
+  // "Our" (company) commission — auto from actual settlement × the deal's commission %.
+  const companyCommission = useMemo(
+    () => (actualSettlement === "" ? 0 : round2((Number(actualSettlement) * plannedPct) / 100)),
+    [actualSettlement, plannedPct],
+  );
+
+  // Settlement variance — only shown once the value actually differs from the estimate.
+  const settlementChanged = actualSettlement !== "" && Number(actualSettlement) !== plannedSettlement;
+  const settlementVariance = settlementChanged ? Number(actualSettlement) - plannedSettlement : null;
 
   const totalActual = shares.reduce(
     (s, r) => s + (r.actual_commission_amount === "" ? 0 : Number(r.actual_commission_amount)) + (r.incentive_amount === "" ? 0 : Number(r.incentive_amount)),
     0,
   );
+
+  // Editing the settlement re-derives the primary agent's commission automatically, until the
+  // admin overrides it manually.
+  function onSettlementChange(v: string) {
+    setActualSettlement(v);
+    if (!primaryTouched && primaryAgentId) {
+      const cc = v === "" ? "" : String(round2((Number(v) * plannedPct) / 100));
+      setShares((prev) => prev.map((s) => (s.agent_id === primaryAgentId ? { ...s, actual_commission_amount: cc } : s)));
+    }
+  }
 
   function updateShare(agentId: string, patch: Partial<ShareState>) {
     setShares((prev) => prev.map((s) => (s.agent_id === agentId ? { ...s, ...patch } : s)));
@@ -155,16 +184,14 @@ export function ReconciliationDrawer({
     setAddingAgentId("");
   }
 
-  async function submit(markReconciled: boolean) {
+  async function finalize() {
     if (!detail) return;
-    if (markReconciled) {
-      if (actualSettlement === "") return toast.error("Enter the actual settlement value to reconcile.");
-      if (shares.length === 0) return toast.error("Add at least one agent.");
-      if (shares.some((s) => s.actual_commission_amount === ""))
-        return toast.error("Every agent needs an actual commission amount to reconcile.");
-    }
+    if (actualSettlement === "") return toast.error("Enter the settlement value.");
+    if (shares.length === 0) return toast.error("Add at least one agent.");
+    if (shares.some((s) => s.actual_commission_amount === ""))
+      return toast.error("Every agent needs a commission amount.");
     if (isReconciled && !notes.trim())
-      return toast.error("Add a note explaining the change to a reconciled closure.");
+      return toast.error("Add a note explaining the change to a finalized closure.");
 
     setSaving(true);
     const res = await fetch(`/api/sales/deal-closures/${closureId}`, {
@@ -179,13 +206,13 @@ export function ReconciliationDrawer({
           incentive_amount: s.incentive_amount === "" ? 0 : Number(s.incentive_amount),
         })),
         notes: notes.trim() || null,
-        status: markReconciled ? "Reconciled" : "Pending",
+        status: "Reconciled",
       }),
     });
     setSaving(false);
 
     if (res.ok) {
-      toast.success(markReconciled ? "Deal reconciled." : "Draft saved.");
+      toast.success("Deal finalized.");
       onSaved();
     } else {
       const body = await res.json().catch(() => ({}));
@@ -197,7 +224,7 @@ export function ReconciliationDrawer({
     <Drawer open direction="right" onOpenChange={(o) => !o && onClose()}>
       <DrawerContent className="w-full sm:!max-w-2xl">
         <DrawerHeader className="border-b">
-          <DrawerTitle>Reconcile deal closure</DrawerTitle>
+          <DrawerTitle>Finalize deal closure</DrawerTitle>
           <DrawerDescription>
             {detail?.lead
               ? `${detail.lead.full_name} · ${detail.lead.lead_number}`
@@ -240,32 +267,37 @@ export function ReconciliationDrawer({
               </div>
             </div>
 
-            {/* Actual settlement + variance */}
+            {/* Actual settlement (pre-filled from the estimate) + company commission */}
             <div className="space-y-1.5">
               <Label htmlFor="actual_settlement">
-                Actual Settlement Value (₹) {!readOnly && <span className="text-destructive">*</span>}
+                Settlement Value (₹) {!readOnly && <span className="text-destructive">*</span>}
               </Label>
               <Input
                 id="actual_settlement"
                 type="number"
                 disabled={readOnly}
-                placeholder="e.g. 7200000"
                 value={actualSettlement}
-                onChange={(e) => setActualSettlement(e.target.value)}
+                onChange={(e) => onSettlementChange(e.target.value)}
               />
-              {settlementVariance != null && (
-                <p className={cn("text-xs", settlementVariance === 0 ? "text-gray-500" : settlementVariance > 0 ? "text-emerald-600" : "text-red-600")}>
-                  Variance vs plan: {settlementVariance >= 0 ? "+" : ""}{fmtMoney(settlementVariance)}
-                  {plannedSettlement !== 0 && ` (${((settlementVariance / plannedSettlement) * 100).toFixed(1)}%)`}
-                </p>
-              )}
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-500">
+                  Our commission (auto): <strong className="text-gray-900">{fmtMoney(companyCommission)}</strong>
+                  <span className="text-gray-400"> · {plannedPct}%</span>
+                </span>
+                {settlementVariance != null && (
+                  <span className={settlementVariance > 0 ? "text-emerald-600" : "text-red-600"}>
+                    Variance: {settlementVariance >= 0 ? "+" : ""}{fmtMoney(settlementVariance)}
+                    {plannedSettlement !== 0 && ` (${((settlementVariance / plannedSettlement) * 100).toFixed(1)}%)`}
+                  </span>
+                )}
+              </div>
             </div>
 
-            {/* Per-agent commission table */}
+            {/* Per-agent commission table (pre-filled; editable) */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label>Agent commission</Label>
-                <span className="text-xs text-gray-400">Commission + incentive entered manually</span>
+                <span className="text-xs text-gray-400">Auto-filled from the estimate — edit if needed</span>
               </div>
 
               <div className="space-y-3">
@@ -307,7 +339,10 @@ export function ReconciliationDrawer({
                             type="number"
                             disabled={readOnly}
                             value={s.actual_commission_amount}
-                            onChange={(e) => updateShare(s.agent_id, { actual_commission_amount: e.target.value })}
+                            onChange={(e) => {
+                              if (s.agent_id === primaryAgentId) setPrimaryTouched(true);
+                              updateShare(s.agent_id, { actual_commission_amount: e.target.value });
+                            }}
                           />
                         </div>
                         <div>
@@ -320,23 +355,19 @@ export function ReconciliationDrawer({
                           />
                         </div>
                       </div>
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400">
-                        <span>
-                          Planned:{" "}
-                          {s.planned_commission_amount != null ? fmtMoney(s.planned_commission_amount) : "—"}
-                        </span>
-                        <span>
-                          Variance:{" "}
-                          {commissionVariance != null ? (
-                            <span className={commissionVariance >= 0 ? "text-emerald-600" : "text-red-600"}>
-                              {commissionVariance >= 0 ? "+" : ""}{fmtMoney(commissionVariance)}
+                      {(commissionVariance != null && commissionVariance !== 0) || hint != null ? (
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400">
+                          {commissionVariance != null && commissionVariance !== 0 && (
+                            <span>
+                              Variance vs estimate:{" "}
+                              <span className={commissionVariance > 0 ? "text-emerald-600" : "text-red-600"}>
+                                {commissionVariance > 0 ? "+" : ""}{fmtMoney(commissionVariance)}
+                              </span>
                             </span>
-                          ) : (
-                            "—"
                           )}
-                        </span>
-                        {hint != null && <span>Slab hint: ~{fmtMoney(hint)}</span>}
-                      </div>
+                          {hint != null && <span>Slab hint: ~{fmtMoney(hint)}</span>}
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -389,14 +420,9 @@ export function ReconciliationDrawer({
         <DrawerFooter className="flex-row justify-end gap-2 border-t">
           <Button variant="outline" onClick={onClose}>Close</Button>
           {!readOnly && detail && (
-            <>
-              <Button variant="outline" onClick={() => submit(false)} disabled={saving}>
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Draft"}
-              </Button>
-              <Button onClick={() => submit(true)} disabled={saving}>
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Reconcile"}
-              </Button>
-            </>
+            <Button onClick={finalize} disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Finalize"}
+            </Button>
           )}
         </DrawerFooter>
       </DrawerContent>
