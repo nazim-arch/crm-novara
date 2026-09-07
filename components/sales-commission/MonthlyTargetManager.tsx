@@ -40,6 +40,9 @@ export function MonthlyTargetManager({ salesUsers, existingTargets }: Props) {
   const [status, setStatus] = useState<"idle" | "saved" | "error">("idle");
   const [targets, setTargets] = useState<Target[]>(existingTargets);
 
+  const nameById = new Map(salesUsers.map(u => [u.id, u.name]));
+  const userName = (id: string) => nameById.get(id) ?? id;
+
   const existing = targets.find(
     t => t.user_id === selectedUser && t.year === year && t.month === month
   );
@@ -164,6 +167,39 @@ export function MonthlyTargetManager({ salesUsers, existingTargets }: Props) {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* All targets already set (across users) — click a row to load it into the form */}
+      {targets.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-gray-600 mb-2">Targets set ({targets.length})</p>
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs text-gray-500">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">Sales User</th>
+                  <th className="px-3 py-2 text-center font-medium">Period</th>
+                  <th className="px-3 py-2 text-right font-medium">Target</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {[...targets]
+                  .sort((a, b) => b.year - a.year || b.month - a.month || userName(a.user_id).localeCompare(userName(b.user_id)))
+                  .map(t => (
+                    <tr
+                      key={t.id}
+                      className="cursor-pointer hover:bg-gray-50"
+                      onClick={() => { setSelectedUser(t.user_id); setYear(t.year); setMonth(t.month); }}
+                    >
+                      <td className="px-3 py-2">{userName(t.user_id)}</td>
+                      <td className="px-3 py-2 text-center text-gray-500">{MONTHS[t.month - 1]} {t.year}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">₹{t.target_amount.toLocaleString("en-IN")}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

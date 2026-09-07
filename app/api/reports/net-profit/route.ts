@@ -55,6 +55,24 @@ export async function GET(request: Request) {
       expenseSums.map((e) => [e.opportunity_id, Number(e._sum.amount ?? 0)])
     );
 
+    // Actual settlement value per opportunity — summed across its reconciled deal closures.
+    // Powers the expected-vs-actual comparison (asking/anticipated vs settled/earned).
+    const oppIds = opps.map((o) => o.id);
+    const closures = oppIds.length
+      ? await prisma.dealClosure.findMany({
+          where: { status: "Reconciled", opportunity_id: { in: oppIds }, lead: { deleted_at: null } },
+          select: { opportunity_id: true, actual_settlement_value: true },
+        })
+      : [];
+    const settlementByOpp = new Map<string, number>();
+    for (const c of closures) {
+      if (!c.opportunity_id) continue;
+      settlementByOpp.set(
+        c.opportunity_id,
+        (settlementByOpp.get(c.opportunity_id) ?? 0) + Number(c.actual_settlement_value ?? 0),
+      );
+    }
+
     const rows = opps.map((opp) => {
       const totalSalesValue = Number(opp.total_sales_value ?? 0);
       const possibleRevenue = Number(opp.possible_revenue ?? 0);
@@ -62,6 +80,11 @@ export async function GET(request: Request) {
       const totalExpense = expenseMap.get(opp.id) ?? 0;
       const netProfit = closedRevenue - totalExpense;
       const achievement = possibleRevenue > 0 ? (closedRevenue / possibleRevenue) * 100 : null;
+
+      // Expected vs actual comparison
+      const actualSettlement = settlementByOpp.get(opp.id) ?? 0;
+      const settlementVariance = actualSettlement - totalSalesValue;   // settled vs could-be-sold-at
+      const commissionVariance = closedRevenue - possibleRevenue;      // earned vs anticipated
 
       return {
         opp_number: opp.opp_number,
@@ -78,6 +101,12 @@ export async function GET(request: Request) {
         achievement_pct: achievement,
         won_leads_count: opp._count.leads,
         total_leads_count: opp.leads.length,
+        // Expected-vs-actual
+        actual_settlement: actualSettlement,
+        settlement_variance: settlementVariance,
+        anticipated_commission: possibleRevenue,
+        actual_commission: closedRevenue,
+        commission_variance: commissionVariance,
       };
     });
 
