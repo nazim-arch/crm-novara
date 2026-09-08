@@ -13,6 +13,7 @@ import { NoteForm } from "@/components/leads/NoteForm";
 import { DeleteConfirmButton } from "@/components/shared/DeleteConfirmButton";
 import { ArrowLeft, Edit, Phone, Mail, MapPin, Calendar, Plus } from "lucide-react";
 import { hasPermissionAsync } from "@/lib/rbac";
+import { leadAccessFilter, canViewHidden, isLeadVisibilityEnabled, visibleLinkWhere } from "@/lib/lead-visibility";
 import { FollowUpSection } from "@/components/follow-ups/FollowUpSection";
 import { LeadContactActions } from "@/components/shared/LeadContactActions";
 
@@ -22,14 +23,22 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
   const session = await auth();
   const { id } = await params;
 
+  // E3 — this page had NO scope check; any signed-in user could read any lead by URL.
+  if (!session?.user) notFound();
+  const { role, id: userId } = session.user;
+  const access = await leadAccessFilter(role, userId);                 // ownership + visibility
+  const restrictLinks = (await isLeadVisibilityEnabled()) && !(await canViewHidden(role));
+  const oppWhere = restrictLinks ? visibleLinkWhere : { untagged_at: null };
+
   const [lead, notes, users] = await Promise.all([
-    prisma.lead.findUnique({
-      where: { id, deleted_at: null },
+    prisma.lead.findFirst({
+      where: { AND: [{ id, deleted_at: null }, ...(access ? [access] : [])] },
       include: {
         assigned_to: { select: { id: true, name: true, email: true } },
         lead_owner: { select: { id: true, name: true } },
         created_by: { select: { id: true, name: true } },
         opportunities: {
+          where: oppWhere,
           include: { opportunity: true },
           orderBy: { tagged_at: "desc" },
         },

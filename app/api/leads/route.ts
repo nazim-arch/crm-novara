@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { generateId } from "@/lib/id-generator";
 import { createLeadSchema } from "@/lib/validations/lead";
-import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
+import { leadAccessFilter, canViewHidden, isLeadVisibilityEnabled, visibleLinkWhere } from "@/lib/lead-visibility";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { setActiveFollowUp } from "@/lib/follow-ups";
 import { notifyLeadAssigned, notifyLeadCreatedAdmins } from "@/lib/email-notifications";
@@ -51,9 +52,11 @@ export async function GET(request: Request) {
       });
     }
 
-    // Role-based record scoping
-    const scope = leadScopeFilter(session.user.role, session.user.id);
-    if (scope) andConditions.push(scope);
+    // Access = ownership scope + visibility (flag-gated)
+    const access = await leadAccessFilter(session.user.role, session.user.id);
+    if (access) andConditions.push(access);
+    const restrictLinks = (await isLeadVisibilityEnabled()) && !(await canViewHidden(session.user.role));
+    const oppWhere = restrictLinks ? visibleLinkWhere : { untagged_at: null };
 
     const where: Prisma.LeadWhereInput = { AND: andConditions };
 
@@ -68,6 +71,7 @@ export async function GET(request: Request) {
           lead_owner: { select: { id: true, name: true } },
           _count: { select: { tasks: true, followups: true } },
           opportunities: {
+            where: oppWhere,
             include: {
               opportunity: {
                 select: { id: true, opp_number: true, name: true, project: true, status: true, property_type: true, location: true },

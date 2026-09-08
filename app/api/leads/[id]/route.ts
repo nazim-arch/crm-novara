@@ -2,9 +2,9 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { updateLeadSchema } from "@/lib/validations/lead";
-import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
 import { recalculateOpportunityRevenue, recomputeCommissionRecord, istYearMonth } from "@/lib/deal-closures";
-import { RETAINED_ON_CLOSE } from "@/lib/lead-visibility";
+import { RETAINED_ON_CLOSE, leadAccessFilter } from "@/lib/lead-visibility";
 import { notifyLeadReassigned } from "@/lib/email-notifications";
 import { setActiveFollowUp, clearActiveFollowUp, FollowUpForbiddenError } from "@/lib/follow-ups";
 import type { FollowUpType } from "@/lib/generated/prisma/client";
@@ -13,10 +13,10 @@ import { revalidateTag } from "next/cache";
 type Params = Promise<{ id: string }>;
 
 async function verifyLeadAccess(leadId: string, role: string, userId: string) {
-  const scope = leadScopeFilter(role, userId);
-  if (!scope) return true; // Admin/Manager — no restriction
+  const access = await leadAccessFilter(role, userId); // ownership + visibility (flag-gated)
+  if (!access) return true; // unrestricted (Admin, or nothing to constrain)
   const lead = await prisma.lead.findFirst({
-    where: { id: leadId, deleted_at: null, ...scope },
+    where: { AND: [{ id: leadId, deleted_at: null }, access] },
     select: { id: true },
   });
   return !!lead;
