@@ -104,34 +104,31 @@ export async function getMonthlyCommissionTotals(
 // ─── Opportunity revenue (net-profit report source) ──────────────────────────
 
 /**
- * Recompute Opportunity.closed_revenue as the sum of actual commission + incentive
- * across that opportunity's Reconciled closures. Preserves the historical meaning of
- * closed_revenue (brokerage commission earned) while sourcing it from reconciled data.
+ * Recompute Opportunity.closed_revenue = the brokerage's REVENUE across that opportunity's
+ * Reconciled closures: Σ(actual_settlement_value × commission %). This is our income on the deal —
+ * NOT the agent payouts (those are a cost, subtracted to reach net profit in the Net Profit report).
  */
 export async function recalculateOpportunityRevenue(
   opportunityId: string,
   client: DbClient = prisma,
 ): Promise<void> {
-  const shares = await client.dealClosureAgentShare.findMany({
+  const closures = await client.dealClosure.findMany({
     where: {
-      actual_commission_amount: { not: null },
-      deal_closure: {
-        opportunity_id: opportunityId,
-        status: "Reconciled",
-        lead: { deleted_at: null },
-      },
+      opportunity_id: opportunityId,
+      status: "Reconciled",
+      lead: { deleted_at: null },
     },
-    select: { actual_commission_amount: true, incentive_amount: true },
+    select: { actual_settlement_value: true, planned_commission_percent: true },
   });
 
-  const closed = shares.reduce(
-    (sum, s) => sum + Number(s.actual_commission_amount) + Number(s.incentive_amount),
+  const revenue = closures.reduce(
+    (sum, c) => sum + (Number(c.actual_settlement_value ?? 0) * Number(c.planned_commission_percent)) / 100,
     0,
   );
 
   await client.opportunity.update({
     where: { id: opportunityId },
-    data: { closed_revenue: round2(closed) },
+    data: { closed_revenue: round2(revenue) },
   });
 }
 

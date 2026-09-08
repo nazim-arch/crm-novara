@@ -1,8 +1,14 @@
-﻿import { auth } from "@/lib/auth";
+import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { hasPermissionAsync } from "@/lib/rbac";
 
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+// Net Profit report — per-opportunity P&L from reconciled deals:
+//   Revenue      = Σ(actual settlement × commission %)   [our brokerage income]
+//   Agent Payout = Σ(agent commission + incentive)       [what we paid agents]
+//   Expenses     = Σ OpportunityExpense                  [marketing/other costs]
+//   Net Profit   = Revenue − Agent Payout − Expenses
 export async function GET(request: Request) {
   try {
     const session = await auth();
@@ -28,19 +34,7 @@ export async function GET(request: Request) {
           property_type: true,
           location: true,
           status: true,
-          commission_percent: true,
-          total_sales_value: true,
-          possible_revenue: true,
-          closed_revenue: true,
-          _count: {
-            select: {
-              leads: { where: { lead: { deleted_at: null, status: "Won" } } },
-            },
-          },
-          leads: {
-            where: { lead: { deleted_at: null } },
-            select: { lead_id: true },
-          },
+          _count: { select: { leads: { where: { lead: { deleted_at: null, status: "Won" } } } } },
         },
         orderBy: { created_at: "desc" },
       }),
@@ -51,62 +45,59 @@ export async function GET(request: Request) {
       }),
     ]);
 
-    const expenseMap = new Map(
-      expenseSums.map((e) => [e.opportunity_id, Number(e._sum.amount ?? 0)])
-    );
+    const expenseMap = new Map(expenseSums.map((e) => [e.opportunity_id, Number(e._sum.amount ?? 0)]));
 
-    // Actual settlement value per opportunity — summed across its reconciled deal closures.
-    // Powers the expected-vs-actual comparison (asking/anticipated vs settled/earned).
+    // Revenue + agent payout per opportunity, from reconciled closures.
     const oppIds = opps.map((o) => o.id);
     const closures = oppIds.length
       ? await prisma.dealClosure.findMany({
           where: { status: "Reconciled", opportunity_id: { in: oppIds }, lead: { deleted_at: null } },
-          select: { opportunity_id: true, actual_settlement_value: true },
+          select: {
+            opportunity_id: true,
+            actual_settlement_value: true,
+            planned_commission_percent: true,
+            agent_shares: { select: { actual_commission_amount: true, incentive_amount: true } },
+          },
         })
       : [];
+
+    const revenueByOpp = new Map<string, number>();
+    const payoutByOpp = new Map<string, number>();
     const settlementByOpp = new Map<string, number>();
+    const dealsByOpp = new Map<string, number>();
     for (const c of closures) {
       if (!c.opportunity_id) continue;
-      settlementByOpp.set(
-        c.opportunity_id,
-        (settlementByOpp.get(c.opportunity_id) ?? 0) + Number(c.actual_settlement_value ?? 0),
+      const settlement = Number(c.actual_settlement_value ?? 0);
+      const revenue = (settlement * Number(c.planned_commission_percent)) / 100;
+      const payout = c.agent_shares.reduce(
+        (s, sh) => s + Number(sh.actual_commission_amount ?? 0) + Number(sh.incentive_amount ?? 0),
+        0,
       );
+      revenueByOpp.set(c.opportunity_id, (revenueByOpp.get(c.opportunity_id) ?? 0) + revenue);
+      payoutByOpp.set(c.opportunity_id, (payoutByOpp.get(c.opportunity_id) ?? 0) + payout);
+      settlementByOpp.set(c.opportunity_id, (settlementByOpp.get(c.opportunity_id) ?? 0) + settlement);
+      dealsByOpp.set(c.opportunity_id, (dealsByOpp.get(c.opportunity_id) ?? 0) + 1);
     }
 
     const rows = opps.map((opp) => {
-      const totalSalesValue = Number(opp.total_sales_value ?? 0);
-      const possibleRevenue = Number(opp.possible_revenue ?? 0);
-      const closedRevenue = Number(opp.closed_revenue ?? 0);
-      const totalExpense = expenseMap.get(opp.id) ?? 0;
-      const netProfit = closedRevenue - totalExpense;
-      const achievement = possibleRevenue > 0 ? (closedRevenue / possibleRevenue) * 100 : null;
-
-      // Expected vs actual comparison
-      const actualSettlement = settlementByOpp.get(opp.id) ?? 0;
-      const settlementVariance = actualSettlement - totalSalesValue;   // settled vs could-be-sold-at
-      const commissionVariance = closedRevenue - possibleRevenue;      // earned vs anticipated
-
+      const settlement = round2(settlementByOpp.get(opp.id) ?? 0);
+      const revenue = round2(revenueByOpp.get(opp.id) ?? 0);
+      const agent_payout = round2(payoutByOpp.get(opp.id) ?? 0);
+      const expenses = round2(expenseMap.get(opp.id) ?? 0);
+      const net_profit = round2(revenue - agent_payout - expenses);
       return {
         opp_number: opp.opp_number,
         name: opp.name,
         property_type: opp.property_type,
         location: opp.location,
         status: opp.status,
-        commission_percent: Number(opp.commission_percent),
-        total_sales_value: totalSalesValue,
-        possible_revenue: possibleRevenue,
-        closed_revenue: closedRevenue,
-        total_expense: totalExpense,
-        net_profit: netProfit,
-        achievement_pct: achievement,
+        deals: dealsByOpp.get(opp.id) ?? 0,
+        settlement,
+        revenue,
+        agent_payout,
+        expenses,
+        net_profit,
         won_leads_count: opp._count.leads,
-        total_leads_count: opp.leads.length,
-        // Expected-vs-actual
-        actual_settlement: actualSettlement,
-        settlement_variance: settlementVariance,
-        anticipated_commission: possibleRevenue,
-        actual_commission: closedRevenue,
-        commission_variance: commissionVariance,
       };
     });
 
