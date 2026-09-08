@@ -478,6 +478,10 @@ model LeadOpportunity {
   lost_reason             String?
   lost_notes              String?
 
+  // Soft-untag (Fix #5 §5) — links are never hard-deleted; untagged links are hidden, not erased.
+  untagged_at    DateTime?
+  untagged_by_id String?
+
   lead        Lead        @relation(fields: [lead_id],        references: [id], onDelete: Cascade)
   opportunity Opportunity @relation(fields: [opportunity_id], references: [id])
   tagged_by   User        @relation(fields: [tagged_by_id],   references: [id])
@@ -485,6 +489,7 @@ model LeadOpportunity {
   @@unique([lead_id, opportunity_id])
   @@index([opportunity_id])
   @@index([status])
+  @@index([untagged_at])
   @@map("lead_opportunities")
 }
 
@@ -889,7 +894,9 @@ model DealClosure {
   updated_at DateTime @updatedAt
 
   lead          Lead                     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
-  opportunity   Opportunity?             @relation(fields: [opportunity_id], references: [id])
+  // Restrict: an opportunity holding a closure cannot be deleted out from under it (Fix #5 §5.2).
+  // Explicit rather than relying on Prisma's default (SetNull), which silently nulled attribution.
+  opportunity   Opportunity?             @relation(fields: [opportunity_id], references: [id], onDelete: Restrict)
   planned_by    User                     @relation("DealClosurePlannedBy",    fields: [planned_by_id],    references: [id])
   reconciled_by User?                    @relation("DealClosureReconciledBy", fields: [reconciled_by_id], references: [id])
   agent_shares  DealClosureAgentShare[]

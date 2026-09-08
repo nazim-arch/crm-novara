@@ -4,7 +4,9 @@ export type Permission =
   | "task:create" | "task:read" | "task:update" | "task:delete" | "task:export"
   | "user:manage" | "report:view" | "financial:view"
   | "podcast_studio:manage"
-  | "commission:manage" | "commission:view" | "commission:reconcile";
+  | "commission:manage" | "commission:view" | "commission:reconcile"
+  // Guarded — switch OFF a safety rule (Fix #5). Admin-only by default.
+  | "lead:view_hidden" | "lead:release_recycled" | "lead:retag_closed" | "lead:untag_opportunity";
 
 export const ROLES = ["Admin", "Manager", "TeamLead", "Sales", "Operations", "Viewer"] as const;
 export type Role = (typeof ROLES)[number];
@@ -16,6 +18,12 @@ export const ALL_PERMISSIONS: Permission[] = [
   "user:manage", "report:view", "financial:view",
   "podcast_studio:manage",
   "commission:view", "commission:manage", "commission:reconcile",
+  "lead:view_hidden", "lead:release_recycled", "lead:retag_closed", "lead:untag_opportunity",
+];
+
+/** Permissions that switch OFF a safety rule rather than switching ON a feature (Fix #5 §6.1). */
+export const GUARDED_PERMISSIONS: Permission[] = [
+  "lead:view_hidden", "lead:release_recycled", "lead:retag_closed", "lead:untag_opportunity",
 ];
 
 export const PERMISSION_LABELS: Record<Permission, string> = {
@@ -42,9 +50,20 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "commission:view":        "View Commissions",
   "commission:manage":      "Manage Commissions",
   "commission:reconcile":   "Reconcile Deal Closures",
+  "lead:view_hidden":       "See hidden leads",
+  "lead:release_recycled":  "Release recycled leads",
+  "lead:retag_closed":      "Re-tag Booked/Won leads",
+  "lead:untag_opportunity": "Remove lead–project links",
 };
 
-export const PERMISSION_GROUPS: { label: string; perms: Permission[] }[] = [
+export const PERMISSION_DESCRIPTIONS: Partial<Record<Permission, string>> = {
+  "lead:view_hidden":       "Bypass lead visibility entirely — see leads that are Lost, Invalid, recycled, or on closed projects.",
+  "lead:release_recycled":  "Hand a recycled lead back to an agent from the release pool.",
+  "lead:retag_closed":      "Re-tag a Booked/Won lead onto another opportunity.",
+  "lead:untag_opportunity": "Remove a lead–project link, including Booked/Won/Lost links.",
+};
+
+export const PERMISSION_GROUPS: { label: string; perms: Permission[]; guarded?: boolean; blurb?: string }[] = [
   { label: "Leads",             perms: ["lead:read", "lead:create", "lead:update", "lead:delete", "lead:import", "lead:export"] },
   { label: "Opportunities",     perms: ["opportunity:read", "opportunity:create", "opportunity:update", "opportunity:delete", "opportunity:export"] },
   { label: "Tasks",             perms: ["task:read", "task:create", "task:update", "task:delete", "task:export"] },
@@ -52,6 +71,12 @@ export const PERMISSION_GROUPS: { label: string; perms: Permission[] }[] = [
   { label: "Reports & Finance", perms: ["report:view", "financial:view"] },
   { label: "Podcast Studio",    perms: ["podcast_studio:manage"] },
   { label: "Commissions",       perms: ["commission:view", "commission:manage", "commission:reconcile"] },
+  {
+    label: "Restricted Data Access",
+    guarded: true,
+    blurb: "These switches turn OFF a protection. Granting one lets a role see or move leads that are normally hidden. Admin holds them by default; grant to another role only for a specific, temporary reason.",
+    perms: GUARDED_PERMISSIONS,
+  },
 ];
 
 export const DEFAULT_PERMS: Record<string, Permission[]> = {
@@ -62,6 +87,7 @@ export const DEFAULT_PERMS: Record<string, Permission[]> = {
     "user:manage", "report:view", "financial:view",
     "podcast_studio:manage",
     "commission:manage", "commission:view", "commission:reconcile",
+    "lead:view_hidden", "lead:release_recycled", "lead:retag_closed", "lead:untag_opportunity",
   ],
   TeamLead: [
     "lead:create", "lead:read", "lead:update",
