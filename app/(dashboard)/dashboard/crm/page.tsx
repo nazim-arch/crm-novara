@@ -1,7 +1,8 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
+import { leadAccessFilter } from "@/lib/lead-visibility";
 import { startOfDay, endOfDay, differenceInCalendarDays } from "date-fns";
 import { CrmDashboardClient } from "@/components/dashboard/CrmDashboardClient";
 import { DashboardFilters } from "@/components/podcast-studio/DashboardFilters";
@@ -64,7 +65,7 @@ const getCrmDashboardData = unstable_cache(
     const todayStart = new Date(todayStartISO);
     const todayEnd = new Date(todayEndISO);
 
-    const leadScope = leadScopeFilter(role, userId);
+    const leadScope = await leadAccessFilter(role, userId);
     const leadWhere = (extra: object = {}) => ({
       deleted_at: null as null,
       ...(leadScope ?? {}),

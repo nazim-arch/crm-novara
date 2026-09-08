@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { setActiveFollowUp, FollowUpForbiddenError, NO_FOLLOWUP_STATUSES } from "@/lib/follow-ups";
+import { buildLeadVisibilityWhere, canViewHidden, isLeadVisibilityEnabled } from "@/lib/lead-visibility";
 
 const FOLLOW_UP_TYPES = ["Call", "Email", "WhatsApp", "Visit", "Meeting", "Activity", "Internal"] as const;
 
@@ -59,6 +60,12 @@ export async function GET(request: Request) {
     where.status = "Active";
     where.scheduled_at = { lt: startOfToday };
     where.NOT = { lead: { status: { in: [...NO_FOLLOWUP_STATUSES] } } };
+  }
+
+  // Hide follow-ups whose lead is not visible to a restricted role (flag-gated). Lead-less
+  // follow-ups (opportunity/task only) are unaffected.
+  if ((await isLeadVisibilityEnabled()) && !(await canViewHidden(role))) {
+    (where.AND ??= []).push({ OR: [{ lead_id: null }, { lead: buildLeadVisibilityWhere() }] });
   }
 
   const followUps = await prisma.followUp.findMany({

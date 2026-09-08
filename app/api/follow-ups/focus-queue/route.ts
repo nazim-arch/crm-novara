@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { startOfDay, endOfDay } from "date-fns";
 import { NO_FOLLOWUP_STATUSES } from "@/lib/follow-ups";
+import { buildLeadVisibilityWhere, canViewHidden, isLeadVisibilityEnabled } from "@/lib/lead-visibility";
 
 const LEAD_SELECT = {
   id: true, lead_number: true, full_name: true,
@@ -50,7 +51,10 @@ export async function GET(request: Request) {
 
     // Base filter for active follow-ups on non-deleted, actionable leads
     // Main queue filter: active, due today or overdue, NOT currently parked for a future callback
-    const leadActionable = { deleted_at: null, status: { notIn: [...NO_FOLLOWUP_STATUSES] } };
+    const restrictLinks = (await isLeadVisibilityEnabled()) && !(await canViewHidden(role));
+    const leadActionable = restrictLinks
+      ? { AND: [{ deleted_at: null, status: { notIn: [...NO_FOLLOWUP_STATUSES] } }, buildLeadVisibilityWhere()] }
+      : { deleted_at: null, status: { notIn: [...NO_FOLLOWUP_STATUSES] } };
     const queueWhere = {
       status: "Active" as const,
       lead: leadActionable,
@@ -85,7 +89,11 @@ export async function GET(request: Request) {
       }),
       // Completed today
       prisma.followUp.findMany({
-        where: { ...assignedFilter, completed_at: { gte: todayStart, lte: todayEnd } },
+        where: {
+          ...assignedFilter,
+          completed_at: { gte: todayStart, lte: todayEnd },
+          ...(restrictLinks ? { OR: [{ lead_id: null }, { lead: buildLeadVisibilityWhere() }] } : {}),
+        },
         include: FU_INCLUDE,
         orderBy: { completed_at: "desc" },
         take: 100,

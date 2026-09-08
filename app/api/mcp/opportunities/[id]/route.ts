@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { verifyMcpToken } from "@/lib/mcp-auth";
+import { canViewHidden, isLeadVisibilityEnabled, visibleLinkWhere } from "@/lib/lead-visibility";
 
 type Params = Promise<{ id: string }>;
 
@@ -8,14 +9,19 @@ export async function GET(request: Request, { params }: { params: Params }) {
   try {
     const auth = await verifyMcpToken(request);
     if (!(auth as { valid: true }).valid) return auth as NextResponse;
+    const { role } = auth as { valid: true; role: string };
 
     const { id } = await params;
+
+    const restrictLinks = (await isLeadVisibilityEnabled()) && !(await canViewHidden(role));
+    const oppLinkWhere = restrictLinks ? visibleLinkWhere : { untagged_at: null };
 
     const opportunity = await prisma.opportunity.findFirst({
       where: { deleted_at: null, OR: [{ id }, { opp_number: id }] },
       include: {
         created_by: { select: { id: true, name: true } },
         leads: {
+          where: oppLinkWhere,
           include: {
             lead: {
               select: {

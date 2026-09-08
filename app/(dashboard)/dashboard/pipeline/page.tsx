@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import { leadScopeFilter } from "@/lib/rbac";
+import { leadAccessFilter } from "@/lib/lead-visibility";
 import { startOfDay, endOfDay } from "date-fns";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { DashboardFilters } from "@/components/podcast-studio/DashboardFilters";
@@ -72,7 +72,7 @@ const getPipelineData = unstable_cache(
     const todayStart = new Date(todayStartISO);
     const todayEnd = new Date(todayEndISO);
 
-    const leadScope = leadScopeFilter(role, userId);
+    const leadScope = await leadAccessFilter(role, userId);
 
     const where: Prisma.LeadWhereInput = {
       deleted_at: null,

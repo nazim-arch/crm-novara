@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { generateId } from "@/lib/id-generator";
 import { createOpportunitySchema } from "@/lib/validations/opportunity";
-import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
+import { leadAccessFilter, canViewHidden, isLeadVisibilityEnabled, visibleLinkWhere } from "@/lib/lead-visibility";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { notifyOpportunityCreated } from "@/lib/email-notifications";
 import { revalidateTag } from "next/cache";
@@ -32,10 +33,17 @@ export async function GET(request: Request) {
       }),
     };
 
-    // Sales/TeamLead: only opportunities linked to their own (or team's) leads
-    if (session.user.role === "Sales" || session.user.role === "TeamLead") {
-      const leadScope = leadScopeFilter(session.user.role, session.user.id)!;
-      where.leads = { some: { lead: leadScope } };
+    // Access = ownership scope + visibility (flag-gated). Only opportunities that have at least one
+    // link the caller may see; the lead count reflects the same visible-link set.
+    const access = await leadAccessFilter(session.user.role, session.user.id);
+    const restrictLinks = (await isLeadVisibilityEnabled()) && !(await canViewHidden(session.user.role));
+    const linkWhere = restrictLinks ? visibleLinkWhere : { untagged_at: null };
+    const visibleLeadLink: Prisma.LeadOpportunityWhereInput = {
+      ...linkWhere,
+      lead: access ? { AND: [{ deleted_at: null }, access] } : { deleted_at: null },
+    };
+    if (access || restrictLinks) {
+      where.leads = { some: visibleLeadLink };
     }
 
     const [total, opportunities] = await Promise.all([
@@ -44,7 +52,7 @@ export async function GET(request: Request) {
         where,
         include: {
           created_by: { select: { id: true, name: true } },
-          _count: { select: { leads: { where: { lead: { deleted_at: null } } } } },
+          _count: { select: { leads: { where: visibleLeadLink } } },
           configurations: { orderBy: { created_at: "asc" } },
         },
         orderBy: { updated_at: "desc" },

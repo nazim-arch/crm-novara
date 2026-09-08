@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { verifyMcpToken } from "@/lib/mcp-auth";
+import { leadAccessFilter, canViewHidden, isLeadVisibilityEnabled, visibleLinkWhere } from "@/lib/lead-visibility";
 import { generateId } from "@/lib/id-generator";
 import type { Prisma, LeadTemperature } from "@/lib/generated/prisma/client";
 
@@ -8,6 +9,7 @@ export async function GET(request: Request) {
   try {
     const auth = await verifyMcpToken(request);
     if (!(auth as { valid: true }).valid) return auth as NextResponse;
+    const { userId, role } = auth as { valid: true; userId: string; role: string };
 
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
@@ -42,6 +44,12 @@ export async function GET(request: Request) {
       });
     }
 
+    // Scope + visibility by the token's user role (flag-gated).
+    const access = await leadAccessFilter(role, userId);
+    if (access) andConditions.push(access);
+    const restrictLinks = (await isLeadVisibilityEnabled()) && !(await canViewHidden(role));
+    const oppWhere = restrictLinks ? visibleLinkWhere : { untagged_at: null };
+
     const where: Prisma.LeadWhereInput = { AND: andConditions };
 
     const [total, leads] = await Promise.all([
@@ -69,6 +77,7 @@ export async function GET(request: Request) {
           assigned_to: { select: { id: true, name: true } },
           lead_owner: { select: { id: true, name: true } },
           opportunities: {
+            where: oppWhere,
             select: {
               id: true,
               status: true,

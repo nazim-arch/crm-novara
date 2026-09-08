@@ -2,12 +2,14 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { verifyMcpToken } from "@/lib/mcp-auth";
 import { NO_FOLLOWUP_STATUSES } from "@/lib/follow-ups";
+import { buildLeadVisibilityWhere, canViewHidden, isLeadVisibilityEnabled } from "@/lib/lead-visibility";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
 export async function GET(request: Request) {
   try {
     const auth = await verifyMcpToken(request);
     if (!(auth as { valid: true }).valid) return auth as NextResponse;
+    const { role } = auth as { valid: true; role: string };
 
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
@@ -40,6 +42,11 @@ export async function GET(request: Request) {
           ...(to ? { lte: new Date(to) } : {}),
         },
       });
+    }
+
+    // Hide follow-ups whose lead is not visible to a restricted token role (flag-gated).
+    if ((await isLeadVisibilityEnabled()) && !(await canViewHidden(role))) {
+      andConditions.push({ OR: [{ lead_id: null }, { lead: buildLeadVisibilityWhere() }] });
     }
 
     const where: Prisma.FollowUpWhereInput = andConditions.length > 0 ? { AND: andConditions } : {};

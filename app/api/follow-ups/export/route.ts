@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { hasPermissionAsync } from "@/lib/rbac";
 import { NO_FOLLOWUP_STATUSES } from "@/lib/follow-ups";
+import { buildLeadVisibilityWhere, canViewHidden, isLeadVisibilityEnabled } from "@/lib/lead-visibility";
 import ExcelJS from "exceljs";
 
 export async function GET(request: Request) {
@@ -18,9 +19,15 @@ export async function GET(request: Request) {
       ? { OR: [{ assigned_to_id: session.user.id }, { created_by_id: session.user.id }] }
       : {};
 
+    const restrictLinks = (await isLeadVisibilityEnabled()) && !(await canViewHidden(role));
+    const visibilityFilter = restrictLinks
+      ? { AND: [{ OR: [{ lead_id: null }, { lead: buildLeadVisibilityWhere() }] }] }
+      : {};
+
     const followUps = await prisma.followUp.findMany({
       where: {
         ...scopeFilter,
+        ...visibilityFilter,
         status: "Active",
         NOT: { lead: { status: { in: [...NO_FOLLOWUP_STATUSES] } } },
       },
