@@ -12,11 +12,61 @@ import {
   setActiveFollowUp,
   isNoFollowUpStatus,
 } from "@/lib/follow-ups";
+import { createDealClosure, cancelActiveDealClosureForLeadOpportunity } from "@/lib/deal-closures";
+import { resolveStageTarget, type StageTarget } from "@/lib/lead-stage";
+import type { LeadStatus } from "@/lib/generated/prisma/client";
 
 // Memoized per-request — avoids re-fetching admins when multiple notifications fire in one request
 const getActiveAdmins = cache(() =>
   prisma.user.findMany({ where: { role: "Admin", is_active: true }, select: { id: true } })
 );
+
+// 422 payload prompting the caller to pick which opportunity a stage change applies to.
+function opportunityRequired(target: Extract<StageTarget, { kind: "ambiguous" }>) {
+  return NextResponse.json(
+    {
+      error: "This lead has multiple opportunities — choose which one this applies to.",
+      code: "OPPORTUNITY_REQUIRED",
+      opportunities: target.opportunities,
+    },
+    { status: 422 },
+  );
+}
+
+// Prior pipeline status of the thing being changed (the target link, or the lead if unlinked).
+async function priorStatusOf(target: StageTarget, leadStatus: LeadStatus): Promise<LeadStatus> {
+  if (target.kind === "link") {
+    const c = await prisma.leadOpportunity.findUnique({
+      where: { id: target.opportunity_link_id },
+      select: { status: true },
+    });
+    return c?.status ?? leadStatus;
+  }
+  return leadStatus;
+}
+
+/**
+ * Prisma write ops for a pipeline status change. Status is written to the target LINK for linked
+ * leads (Lead.status is then derived by the rollup trigger) or to the LEAD for unlinked leads.
+ * `leadFields` are lead-level non-status fields to always set (e.g. clearing follow-up mirrors).
+ */
+function stageOps(
+  target: StageTarget,
+  leadId: string,
+  status: LeadStatus,
+  leadFields: Record<string, unknown>,
+  lost?: { lost_reason?: string | null; lost_notes?: string | null },
+) {
+  if (target.kind === "link") {
+    return [
+      // LeadOpportunity.lost_reason is free-text (String); Lead.lost_reason is the LostReason enum.
+      prisma.leadOpportunity.update({ where: { id: target.opportunity_link_id }, data: { status, ...(lost ?? {}) } }),
+      prisma.lead.update({ where: { id: leadId }, data: leadFields }),
+    ];
+  }
+  const leadLost = lost ? { lost_reason: lost.lost_reason as never, lost_notes: lost.lost_notes } : {};
+  return [prisma.lead.update({ where: { id: leadId }, data: { status, ...leadFields, ...leadLost } })];
+}
 
 type Params = Promise<{ id: string }>;
 
@@ -33,6 +83,7 @@ const actionSchema = z.discriminatedUnion("action", [
     notes: z.string().optional(),
     temperature: z.enum(TEMPERATURES).optional(),
     to_stage: z.enum(PIPELINE_STAGES).optional(),
+    opportunity_id: z.string().optional(),
     next_followup_date: z.string().optional(),
     next_followup_type: z.enum(FOLLOW_UP_TYPES).optional(),
   }),
@@ -66,6 +117,7 @@ const actionSchema = z.discriminatedUnion("action", [
     action: z.literal("update_stage"),
     to_stage: z.enum(PIPELINE_STAGES),
     notes: z.string().min(1),
+    opportunity_id: z.string().optional(),
     // Required when reactivating a lead out of OnHold/Recycle back into the pipeline.
     next_date: z.string().optional(),
     next_time: z.string().optional(),
@@ -77,6 +129,7 @@ const actionSchema = z.discriminatedUnion("action", [
     lost_reason: z.string().min(1),
     notes: z.string().min(1),
     lost_notes: z.string().optional(),
+    opportunity_id: z.string().optional(),
   }),
 
   z.object({
@@ -84,11 +137,13 @@ const actionSchema = z.discriminatedUnion("action", [
     notes: z.string().min(1),
     settlement_value: z.number().positive().optional(),
     deal_commission_percent: z.number().min(0).max(100).optional(),
+    opportunity_id: z.string().optional(),
   }),
 
   z.object({
     action: z.literal("site_visit_done"),
     notes: z.string().min(1),
+    opportunity_id: z.string().optional(),
     next_followup_date: z.string().optional(),
     next_followup_type: z.enum(FOLLOW_UP_TYPES).optional(),
   }),
@@ -171,13 +226,19 @@ export async function POST(request: Request, { params }: { params: Params }) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const leadData: Record<string, any> = { last_contact_date: now, updated_at: now };
       if (data.temperature) leadData.temperature = data.temperature;
-      if (stageChanged) leadData.status = data.to_stage;
-      await prisma.lead.update({ where: { id: leadId }, data: leadData });
 
       if (stageChanged) {
-        await prisma.leadStageHistory.create({
-          data: { lead_id: leadId, from_stage: fu.lead!.status, to_stage: data.to_stage!, changed_by_id: userId, notes: data.notes },
-        });
+        const target = await resolveStageTarget(leadId, { opportunity_id: data.opportunity_id ?? fu.opportunity_id });
+        if (target.kind === "ambiguous") return opportunityRequired(target);
+        const prior = await priorStatusOf(target, fu.lead!.status);
+        await prisma.$transaction([
+          ...stageOps(target, leadId, data.to_stage!, leadData),
+          prisma.leadStageHistory.create({
+            data: { lead_id: leadId, from_stage: prior, to_stage: data.to_stage!, changed_by_id: userId, notes: data.notes },
+          }),
+        ]);
+      } else {
+        await prisma.lead.update({ where: { id: leadId }, data: leadData });
       }
       await prisma.activity.create({
         data: {
@@ -384,8 +445,11 @@ export async function POST(request: Request, { params }: { params: Params }) {
     // ── update_stage ──────────────────────────────────────────────────────────
     if (data.action === "update_stage") {
       if (!fu.lead) return NextResponse.json({ error: "No linked lead" }, { status: 400 });
-      const fromStage = fu.lead.status;
       const toStage = data.to_stage;
+      const target = await resolveStageTarget(leadId!, { opportunity_id: data.opportunity_id ?? fu.opportunity_id });
+      if (target.kind === "ambiguous") return opportunityRequired(target);
+      const targetOppId = target.kind === "link" ? target.opportunity_id : null;
+      const fromStage = await priorStatusOf(target, fu.lead.status);
       const enteringNoFollowup = isNoFollowUpStatus(toStage);
       const reactivating = (fromStage === "OnHold" || fromStage === "Recycle") && !enteringNoFollowup;
 
@@ -398,7 +462,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
       }
 
       await prisma.$transaction([
-        prisma.lead.update({ where: { id: leadId! }, data: { status: toStage, updated_at: now } }),
+        ...stageOps(target, leadId!, toStage, { updated_at: now }),
         prisma.leadStageHistory.create({
           data: { lead_id: leadId!, from_stage: fromStage, to_stage: toStage, changed_by_id: userId, notes: data.notes },
         }),
@@ -406,10 +470,17 @@ export async function POST(request: Request, { params }: { params: Params }) {
           data: {
             entity_type: "Lead", entity_id: leadId!,
             action: "stage_changed", actor_id: userId,
-            metadata: { pipeline_from: fromStage, pipeline_to: toStage, notes: data.notes },
+            metadata: { pipeline_from: fromStage, pipeline_to: toStage, opportunity_id: targetOppId, notes: data.notes },
           },
         }),
       ]);
+
+      // Reverting THIS combination out of Won voids its deal closure (retained as Cancelled).
+      if (fromStage === "Won" && toStage !== "Won") {
+        try { await cancelActiveDealClosureForLeadOpportunity(leadId!, targetOppId, userId, `Reverted from Won to ${toStage}`); }
+        catch (e) { console.error("[deal-closure cancel]", leadId, e); }
+      }
+
       const fuUpdate = await prisma.followUp.update({
         where: { id }, data: { outcome: `Stage: ${toStage}`, notes: data.notes },
       });
@@ -447,22 +518,35 @@ export async function POST(request: Request, { params }: { params: Params }) {
     // ── mark_lost ─────────────────────────────────────────────────────────────
     if (data.action === "mark_lost") {
       if (!fu.lead) return NextResponse.json({ error: "No linked lead" }, { status: 400 });
-      const fromStage = fu.lead.status;
+      const target = await resolveStageTarget(leadId!, { opportunity_id: data.opportunity_id ?? fu.opportunity_id });
+      if (target.kind === "ambiguous") return opportunityRequired(target);
+      const targetOppId = target.kind === "link" ? target.opportunity_id : null;
+      const fromStage = await priorStatusOf(target, fu.lead.status);
       await prisma.$transaction([
-        prisma.lead.update({
-          where: { id: leadId! },
-          data: { status: "Lost", lost_reason: data.lost_reason as never, lost_notes: data.lost_notes ?? data.notes, updated_at: now, next_followup_date: null, followup_type: null },
-        }),
+        ...stageOps(
+          target,
+          leadId!,
+          "Lost",
+          { updated_at: now, next_followup_date: null, followup_type: null },
+          { lost_reason: data.lost_reason, lost_notes: data.lost_notes ?? data.notes },
+        ),
         prisma.leadStageHistory.create({
           data: { lead_id: leadId!, from_stage: fromStage, to_stage: "Lost", changed_by_id: userId, notes: data.notes },
         }),
         prisma.activity.create({
           data: {
             entity_type: "Lead", entity_id: leadId!, action: "stage_changed", actor_id: userId,
-            metadata: { pipeline_from: fromStage, pipeline_to: "Lost", lost_reason: data.lost_reason, notes: data.notes },
+            metadata: { pipeline_from: fromStage, pipeline_to: "Lost", opportunity_id: targetOppId, lost_reason: data.lost_reason, notes: data.notes },
           },
         }),
       ]);
+
+      // Reverting THIS combination from Won to Lost voids its deal closure.
+      if (fromStage === "Won") {
+        try { await cancelActiveDealClosureForLeadOpportunity(leadId!, targetOppId, userId, "Reverted from Won to Lost"); }
+        catch (e) { console.error("[deal-closure cancel]", leadId, e); }
+      }
+
       const { completed: fuUpdate } = await completeActiveFollowUp({
         follow_up_id: id, outcome: "Lost", notes: data.notes, actor_id: userId,
       });
@@ -483,24 +567,45 @@ export async function POST(request: Request, { params }: { params: Params }) {
     // ── mark_won ──────────────────────────────────────────────────────────────
     if (data.action === "mark_won") {
       if (!fu.lead) return NextResponse.json({ error: "No linked lead" }, { status: 400 });
-      const fromStage = fu.lead.status;
+      const target = await resolveStageTarget(leadId!, { opportunity_id: data.opportunity_id ?? fu.opportunity_id });
+      if (target.kind === "ambiguous") return opportunityRequired(target);
+      const targetOppId = target.kind === "link" ? target.opportunity_id : null;
+      const fromStage = await priorStatusOf(target, fu.lead.status);
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const leadWonData: Record<string, any> = { status: "Won", updated_at: now, next_followup_date: null, followup_type: null };
-      if (data.settlement_value !== undefined) leadWonData.settlement_value = data.settlement_value;
-      if (data.deal_commission_percent !== undefined) leadWonData.deal_commission_percent = data.deal_commission_percent;
+      const wonLeadFields: Record<string, any> = { updated_at: now, next_followup_date: null, followup_type: null };
+      if (data.settlement_value !== undefined) wonLeadFields.settlement_value = data.settlement_value;
+      if (data.deal_commission_percent !== undefined) wonLeadFields.deal_commission_percent = data.deal_commission_percent;
 
       await prisma.$transaction([
-        prisma.lead.update({ where: { id: leadId! }, data: leadWonData }),
+        ...stageOps(target, leadId!, "Won", wonLeadFields),
         prisma.leadStageHistory.create({
           data: { lead_id: leadId!, from_stage: fromStage, to_stage: "Won", changed_by_id: userId, notes: data.notes },
         }),
         prisma.activity.create({
           data: {
             entity_type: "Lead", entity_id: leadId!, action: "stage_changed", actor_id: userId,
-            metadata: { pipeline_from: fromStage, pipeline_to: "Won", settlement_value: data.settlement_value ?? null, notes: data.notes },
+            metadata: { pipeline_from: fromStage, pipeline_to: "Won", opportunity_id: targetOppId, settlement_value: data.settlement_value ?? null, notes: data.notes },
           },
         }),
       ]);
+
+      // Drop the (lead, opportunity) deal into the Deal Closures queue (best-effort).
+      if (data.settlement_value !== undefined && data.deal_commission_percent !== undefined) {
+        try {
+          await createDealClosure({
+            lead_id: leadId!,
+            opportunity_id: targetOppId,
+            assigned_to_id: fu.lead.assigned_to_id,
+            planned_settlement_value: data.settlement_value,
+            planned_commission_percent: data.deal_commission_percent,
+            planned_by_id: userId,
+            won_at: now,
+          });
+        } catch (e) {
+          console.error("[deal-closure create]", leadId, e);
+        }
+      }
 
       // Notify admins
       const admins = await getActiveAdmins();
@@ -536,16 +641,19 @@ export async function POST(request: Request, { params }: { params: Params }) {
     // ── site_visit_done ───────────────────────────────────────────────────────
     if (data.action === "site_visit_done") {
       if (!fu.lead) return NextResponse.json({ error: "No linked lead" }, { status: 400 });
-      const fromStage = fu.lead.status;
+      const target = await resolveStageTarget(leadId!, { opportunity_id: data.opportunity_id ?? fu.opportunity_id });
+      if (target.kind === "ambiguous") return opportunityRequired(target);
+      const targetOppId = target.kind === "link" ? target.opportunity_id : null;
+      const fromStage = await priorStatusOf(target, fu.lead.status);
       await prisma.$transaction([
-        prisma.lead.update({ where: { id: leadId! }, data: { status: "SiteVisitCompleted", updated_at: now, last_contact_date: now } }),
+        ...stageOps(target, leadId!, "SiteVisitCompleted", { updated_at: now, last_contact_date: now }),
         prisma.leadStageHistory.create({
           data: { lead_id: leadId!, from_stage: fromStage, to_stage: "SiteVisitCompleted", changed_by_id: userId, notes: data.notes },
         }),
         prisma.activity.create({
           data: {
             entity_type: "Lead", entity_id: leadId!, action: "stage_changed", actor_id: userId,
-            metadata: { pipeline_from: fromStage, pipeline_to: "SiteVisitCompleted", notes: data.notes },
+            metadata: { pipeline_from: fromStage, pipeline_to: "SiteVisitCompleted", opportunity_id: targetOppId, notes: data.notes },
           },
         }),
       ]);

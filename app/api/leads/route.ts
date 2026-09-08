@@ -115,8 +115,9 @@ export async function GET(request: Request) {
         link_status: lo.status,
         link_activity_stage: lo.activity_stage,
         link_potential_value: lo.potential_lead_value,
-        link_settlement_value: lo.settlement_value,
-        link_commission_pct: lo.deal_commission_percent,
+        // Settlement/commission live on the Lead now (not per-link) — see Fix #4.
+        link_settlement_value: lead.settlement_value,
+        link_commission_pct: lead.deal_commission_percent,
         opportunity: lo.opportunity as OppRef,
         followup_count: lead._count.followups,
       }));

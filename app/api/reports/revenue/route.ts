@@ -2,6 +2,12 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+// Revenue report — one row per reconciled deal (DealClosure). Shows the company's revenue
+// (settlement × commission %) and net profit (revenue − all agent commission + incentive), with the
+// per-agent payout breakdown. Sourced entirely from reconciled closures so it agrees with the
+// commission engine. Won-but-unreconciled deals are returned separately as `pending` estimates.
 export async function GET(request: Request) {
   try {
     const session = await auth();
@@ -16,107 +22,111 @@ export async function GET(request: Request) {
 
     const wonDateFilter =
       from && to
-        ? { changed_at: { gte: new Date(from + "T00:00:00"), lte: new Date(to + "T23:59:59") } }
-        : undefined;
-
-    // Query Won links from LeadOpportunity (the authoritative source for per-deal revenue)
-    const wonLinks = await prisma.leadOpportunity.findMany({
-      where: {
-        status: "Won",
-        lead: {
-          deleted_at: null,
-          ...(userId ? { assigned_to_id: userId } : {}),
-          ...(wonDateFilter
-            ? { stage_history: { some: { to_stage: "Won", ...wonDateFilter } } }
-            : {}),
-        },
-      },
-      select: {
-        id: true,
-        settlement_value: true,
-        deal_commission_percent: true,
-        opportunity: { select: { id: true, name: true, opp_number: true } },
-        lead: {
-          select: {
-            id: true,
-            lead_number: true,
-            full_name: true,
-            assigned_to: { select: { id: true, name: true, short_name: true } },
+        ? {
             stage_history: {
-              where: { to_stage: "Won" },
-              orderBy: { changed_at: "desc" },
-              take: 1,
-              select: { changed_at: true },
+              some: {
+                to_stage: "Won" as const,
+                changed_at: { gte: new Date(from + "T00:00:00"), lte: new Date(to + "T23:59:59") },
+              },
             },
-          },
-        },
-      },
-      orderBy: { tagged_at: "desc" },
-    });
+          }
+        : {};
 
-    // Also include Won leads with no opportunity (unlinked — use Lead-level fields)
-    const unlinkedWonLeads = await prisma.lead.findMany({
+    const leadFilter = { deleted_at: null, ...(userId ? { assigned_to_id: userId } : {}), ...wonDateFilter };
+
+    const wonDateSelect = {
+      stage_history: {
+        where: { to_stage: "Won" as const },
+        orderBy: { changed_at: "desc" as const },
+        take: 1,
+        select: { changed_at: true },
+      },
+    };
+
+    const shareSelect = {
+      select: {
+        role: true,
+        actual_commission_amount: true,
+        incentive_amount: true,
+        agent: { select: { name: true } },
+      },
+    };
+
+    // Confirmed: one row per reconciled deal.
+    const closures = await prisma.dealClosure.findMany({
       where: {
-        status: "Won",
-        deleted_at: null,
-        opportunities: { none: {} },
-        ...(userId ? { assigned_to_id: userId } : {}),
-        ...(wonDateFilter
-          ? { stage_history: { some: { to_stage: "Won", ...wonDateFilter } } }
-          : {}),
+        status: "Reconciled",
+        lead: leadFilter,
+        ...(userId ? { agent_shares: { some: { agent_id: userId } } } : {}),
       },
       select: {
         id: true,
-        lead_number: true,
-        full_name: true,
-        settlement_value: true,
-        deal_commission_percent: true,
-        assigned_to: { select: { id: true, name: true, short_name: true } },
-        stage_history: {
-          where: { to_stage: "Won" },
-          orderBy: { changed_at: "desc" },
-          take: 1,
-          select: { changed_at: true },
-        },
+        actual_settlement_value: true,
+        planned_settlement_value: true,
+        planned_commission_percent: true,
+        opportunity: { select: { name: true, opp_number: true } },
+        lead: { select: { lead_number: true, full_name: true, ...wonDateSelect } },
+        agent_shares: shareSelect,
       },
+      orderBy: { won_year: "desc" },
     });
 
-    const rows = [
-      ...wonLinks.map((lo) => {
-        const settlementValue = Number(lo.settlement_value ?? 0);
-        const commissionPct = Number(lo.deal_commission_percent ?? 0);
-        return {
-          lead_number: lo.lead.lead_number,
-          full_name: lo.lead.full_name,
-          opp_names: lo.opportunity.name,
-          opp_numbers: lo.opportunity.opp_number,
-          won_date: lo.lead.stage_history[0]?.changed_at?.toISOString() ?? null,
-          settlement_value: settlementValue,
-          commission_pct: commissionPct,
-          net_commission: (settlementValue * commissionPct) / 100,
-          sales_person_id: lo.lead.assigned_to.id,
-          sales_person_name: lo.lead.assigned_to.name,
-        };
-      }),
-      ...unlinkedWonLeads.map((lead) => {
-        const settlementValue = Number(lead.settlement_value ?? 0);
-        const commissionPct = Number(lead.deal_commission_percent ?? 0);
-        return {
-          lead_number: lead.lead_number,
-          full_name: lead.full_name,
-          opp_names: "—",
-          opp_numbers: "—",
-          won_date: lead.stage_history[0]?.changed_at?.toISOString() ?? null,
-          settlement_value: settlementValue,
-          commission_pct: commissionPct,
-          net_commission: (settlementValue * commissionPct) / 100,
-          sales_person_id: lead.assigned_to.id,
-          sales_person_name: lead.assigned_to.name,
-        };
-      }),
-    ];
+    const rows = closures.map((c) => {
+      const settlement = Number(c.actual_settlement_value ?? c.planned_settlement_value ?? 0);
+      const pct = Number(c.planned_commission_percent);
+      const our_revenue = round2((settlement * pct) / 100);
+      const agent_payout = round2(
+        c.agent_shares.reduce((s, sh) => s + Number(sh.actual_commission_amount ?? 0) + Number(sh.incentive_amount ?? 0), 0),
+      );
+      return {
+        id: c.id,
+        lead_number: c.lead.lead_number,
+        full_name: c.lead.full_name,
+        opp_names: c.opportunity?.name ?? "—",
+        won_date: c.lead.stage_history[0]?.changed_at?.toISOString() ?? null,
+        settlement,
+        commission_pct: pct,
+        our_revenue,
+        agent_payout,
+        net_profit: round2(our_revenue - agent_payout),
+        agents: c.agent_shares.map((sh) => ({
+          name: sh.agent.name,
+          role: sh.role ?? "—",
+          amount: round2(Number(sh.actual_commission_amount ?? 0) + Number(sh.incentive_amount ?? 0)),
+        })),
+      };
+    });
 
-    return NextResponse.json({ data: rows });
+    // Pending (unreconciled) — estimates only.
+    const pendingClosures = await prisma.dealClosure.findMany({
+      where: {
+        status: "Pending",
+        lead: leadFilter,
+        ...(userId ? { agent_shares: { some: { agent_id: userId } } } : {}),
+      },
+      select: {
+        id: true,
+        planned_settlement_value: true,
+        planned_commission_amount: true,
+        opportunity: { select: { name: true } },
+        planned_by: { select: { name: true } },
+        lead: { select: { lead_number: true, full_name: true, ...wonDateSelect } },
+      },
+      orderBy: [{ won_year: "desc" }, { won_month: "desc" }],
+    });
+
+    const pending = pendingClosures.map((c) => ({
+      id: c.id,
+      lead_number: c.lead.lead_number,
+      full_name: c.lead.full_name,
+      opp_names: c.opportunity?.name ?? "—",
+      won_date: c.lead.stage_history[0]?.changed_at?.toISOString() ?? null,
+      planned_settlement: Number(c.planned_settlement_value),
+      planned_revenue: Number(c.planned_commission_amount), // settlement × % estimated at Won
+      agent_name: c.planned_by?.name ?? "—",
+    }));
+
+    return NextResponse.json({ data: rows, pending });
   } catch (error) {
     console.error("GET /api/reports/revenue:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

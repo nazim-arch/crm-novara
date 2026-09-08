@@ -359,29 +359,8 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
                       </div>
                     )}
 
-                    {/* Won details for this opportunity link */}
-                    {lo.status === "Won" && lo.settlement_value && (
-                      <div className="bg-green-50 dark:bg-green-950/20 rounded-md p-2 text-xs space-y-1">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Settlement</span>
-                          <span className="font-medium">{formatCurrency(Number(lo.settlement_value))}</span>
-                        </div>
-                        {lo.deal_commission_percent && (
-                          <>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Commission %</span>
-                              <span className="font-medium">{Number(lo.deal_commission_percent)}%</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Earned</span>
-                              <span className="font-semibold text-green-700 dark:text-green-400">
-                                {formatCurrency((Number(lo.settlement_value) * Number(lo.deal_commission_percent)) / 100)}
-                              </span>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    )}
+                    {/* Won/settlement figures now live on the lead (planned estimate) and its
+                        DealClosure (reconciled). Shown once at the lead level above. */}
 
                     {/* Lost details for this opportunity link */}
                     {lo.status === "Lost" && lo.lost_reason && (

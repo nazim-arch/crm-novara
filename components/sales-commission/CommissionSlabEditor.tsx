@@ -29,11 +29,15 @@ interface Props {
   userId: string;
   existingBatches: SlabBatch[];
   onSaved?: () => void;
+  /** When provided, shows a selector so slabs for any of these users can be viewed/edited. */
+  users?: { id: string; name: string }[];
 }
 
 const emptyRow = (): SlabRow => ({ from_amount: "", to_amount: "", commission_pct: "" });
 
-export function CommissionSlabEditor({ userId, existingBatches, onSaved }: Props) {
+export function CommissionSlabEditor({ userId, existingBatches, onSaved, users }: Props) {
+  const [selectedUserId, setSelectedUserId] = useState(userId);
+  const [loadingBatches, setLoadingBatches] = useState(false);
   const [effectiveFrom, setEffectiveFrom] = useState(
     new Date().toISOString().split("T")[0]
   );
@@ -43,6 +47,24 @@ export function CommissionSlabEditor({ userId, existingBatches, onSaved }: Props
   const [errorMsg, setErrorMsg] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [batches, setBatches] = useState<SlabBatch[]>(existingBatches);
+
+  async function loadBatches(uid: string) {
+    setLoadingBatches(true);
+    try {
+      const res = await fetch(`/api/sales/commission/slabs?user_id=${uid}`);
+      if (res.ok) setBatches((await res.json()).data ?? []);
+      else setBatches([]);
+    } finally {
+      setLoadingBatches(false);
+    }
+  }
+
+  function onSelectUser(uid: string) {
+    setSelectedUserId(uid);
+    setRows([emptyRow()]);
+    setStatus("idle");
+    void loadBatches(uid);
+  }
 
   function addRow() {
     const last = rows[rows.length - 1];
@@ -72,18 +94,14 @@ export function CommissionSlabEditor({ userId, existingBatches, onSaved }: Props
     const res = await fetch("/api/sales/commission/slabs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user_id: userId, effective_from: effectiveFrom, slabs }),
+      body: JSON.stringify({ user_id: selectedUserId, effective_from: effectiveFrom, slabs }),
     });
 
     setSaving(false);
     if (res.ok) {
       setStatus("saved");
       setRows([emptyRow()]);
-      const refreshed = await fetch(`/api/sales/commission/slabs?user_id=${userId}`);
-      if (refreshed.ok) {
-        const { data } = await refreshed.json();
-        setBatches(data);
-      }
+      await loadBatches(selectedUserId);
       onSaved?.();
     } else {
       const err = await res.json();
@@ -101,7 +119,30 @@ export function CommissionSlabEditor({ userId, existingBatches, onSaved }: Props
 
   return (
     <div className="space-y-6">
+      {/* User selector (shown when a user list is provided) */}
+      {users && users.length > 0 && (
+        <div>
+          <Label className="text-xs">Sales User</Label>
+          <select
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            value={selectedUserId}
+            onChange={(e) => onSelectUser(e.target.value)}
+          >
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>{u.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {loadingBatches && (
+        <p className="text-xs text-gray-400 flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Loading slabs…</p>
+      )}
+
       {/* Existing batches */}
+      {!loadingBatches && batches.length === 0 && (
+        <p className="text-xs text-gray-400">No slab structure set for this user yet.</p>
+      )}
       {batches.length > 0 && (
         <div className="space-y-3">
           <p className="text-sm font-medium text-gray-700">Existing slab structures</p>

@@ -5,8 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Download, Loader2, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Download, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface NetProfitRow {
@@ -15,15 +14,13 @@ interface NetProfitRow {
   property_type: string;
   location: string;
   status: string;
-  commission_percent: number;
-  total_sales_value: number;
-  possible_revenue: number;
-  closed_revenue: number;
-  total_expense: number;
-  net_profit: number;
-  achievement_pct: number | null;
+  deals: number;
+  settlement: number;
+  revenue: number;       // Σ settlement × commission %
+  agent_payout: number;  // Σ agent commission + incentive
+  expenses: number;      // Σ OpportunityExpense
+  net_profit: number;    // revenue − agent_payout − expenses
   won_leads_count: number;
-  total_leads_count: number;
 }
 
 function fmt(n: number) {
@@ -34,10 +31,8 @@ function fmt(n: number) {
 
 function exportCSV(rows: NetProfitRow[]) {
   const headers = [
-    "Opp No", "Opportunity", "Property Type", "Location", "Status",
-    "Commission %", "Total Sales Value (₹)", "Possible Revenue (₹)",
-    "Closed Revenue (₹)", "Total Expense (₹)", "Net Profit (₹)",
-    "Achievement %", "Won Leads", "Total Leads",
+    "Opp No", "Opportunity", "Property Type", "Location", "Status", "Deals",
+    "Settlement (₹)", "Revenue (₹)", "Agent Payout (₹)", "Expenses (₹)", "Net Profit (₹)",
   ];
   const lines = rows.map((r) => [
     r.opp_number,
@@ -45,15 +40,12 @@ function exportCSV(rows: NetProfitRow[]) {
     r.property_type,
     `"${r.location}"`,
     r.status,
-    r.commission_percent,
-    r.total_sales_value.toFixed(2),
-    r.possible_revenue.toFixed(2),
-    r.closed_revenue.toFixed(2),
-    r.total_expense.toFixed(2),
+    r.deals,
+    r.settlement.toFixed(2),
+    r.revenue.toFixed(2),
+    r.agent_payout.toFixed(2),
+    r.expenses.toFixed(2),
     r.net_profit.toFixed(2),
-    r.achievement_pct != null ? r.achievement_pct.toFixed(1) + "%" : "—",
-    r.won_leads_count,
-    r.total_leads_count,
   ].join(","));
 
   const csv = [headers.join(","), ...lines].join("\n");
@@ -98,15 +90,16 @@ export function NetProfitReport() {
 
   const totals = rows.reduce(
     (acc, r) => ({
-      totalSalesValue: acc.totalSalesValue + r.total_sales_value,
-      possibleRevenue: acc.possibleRevenue + r.possible_revenue,
-      closedRevenue: acc.closedRevenue + r.closed_revenue,
-      totalExpense: acc.totalExpense + r.total_expense,
+      revenue: acc.revenue + r.revenue,
+      payout: acc.payout + r.agent_payout,
+      expenses: acc.expenses + r.expenses,
       netProfit: acc.netProfit + r.net_profit,
-      wonLeads: acc.wonLeads + r.won_leads_count,
     }),
-    { totalSalesValue: 0, possibleRevenue: 0, closedRevenue: 0, totalExpense: 0, netProfit: 0, wonLeads: 0 }
+    { revenue: 0, payout: 0, expenses: 0, netProfit: 0 }
   );
+
+  // Opportunities with at least one reconciled deal are the interesting ones; keep all for context.
+  const visible = rows;
 
   return (
     <div className="space-y-4">
@@ -130,8 +123,8 @@ export function NetProfitReport() {
           {loading && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
           Apply
         </Button>
-        {rows.length > 0 && (
-          <Button size="sm" variant="outline" onClick={() => exportCSV(rows)}>
+        {visible.length > 0 && (
+          <Button size="sm" variant="outline" onClick={() => exportCSV(visible)}>
             <Download className="h-4 w-4 mr-1" /> Export CSV
           </Button>
         )}
@@ -139,18 +132,18 @@ export function NetProfitReport() {
 
       {/* Summary cards */}
       {fetched && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="border rounded-lg p-4">
-            <p className="text-xs text-muted-foreground">Possible Revenue</p>
-            <p className="text-xl font-semibold">{fmt(totals.possibleRevenue)}</p>
+            <p className="text-xs text-muted-foreground">Revenue (settlement × %)</p>
+            <p className="text-xl font-semibold">{fmt(totals.revenue)}</p>
           </div>
           <div className="border rounded-lg p-4">
-            <p className="text-xs text-muted-foreground">Closed Revenue</p>
-            <p className="text-xl font-semibold text-emerald-600">{fmt(totals.closedRevenue)}</p>
+            <p className="text-xs text-muted-foreground">Agent Payout</p>
+            <p className="text-xl font-semibold text-amber-600">{fmt(totals.payout)}</p>
           </div>
           <div className="border rounded-lg p-4">
-            <p className="text-xs text-muted-foreground">Total Expenses</p>
-            <p className="text-xl font-semibold text-red-500">{fmt(totals.totalExpense)}</p>
+            <p className="text-xs text-muted-foreground">Expenses</p>
+            <p className="text-xl font-semibold text-red-500">{fmt(totals.expenses)}</p>
           </div>
           <div className="border rounded-lg p-4">
             <p className="text-xs text-muted-foreground">Net Profit</p>
@@ -158,17 +151,13 @@ export function NetProfitReport() {
               {fmt(totals.netProfit)}
             </p>
           </div>
-          <div className="border rounded-lg p-4">
-            <p className="text-xs text-muted-foreground">Won Leads</p>
-            <p className="text-xl font-semibold">{totals.wonLeads}</p>
-          </div>
         </div>
       )}
 
       {/* Table */}
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-      ) : rows.length === 0 && fetched ? (
+      ) : visible.length === 0 && fetched ? (
         <div className="text-center py-12 text-muted-foreground text-sm">No opportunities found.</div>
       ) : (
         <div className="border rounded-lg overflow-x-auto">
@@ -178,55 +167,41 @@ export function NetProfitReport() {
                 <TableHead className="text-xs">Opp No</TableHead>
                 <TableHead className="text-xs">Opportunity</TableHead>
                 <TableHead className="text-xs">Type</TableHead>
-                <TableHead className="text-xs">Location</TableHead>
                 <TableHead className="text-xs">Status</TableHead>
-                <TableHead className="text-xs text-center">Com %</TableHead>
-                <TableHead className="text-xs text-right">Possible Rev</TableHead>
-                <TableHead className="text-xs text-right">Closed Rev</TableHead>
+                <TableHead className="text-xs text-center">Deals</TableHead>
+                <TableHead className="text-xs text-right">Settlement</TableHead>
+                <TableHead className="text-xs text-right">Revenue</TableHead>
+                <TableHead className="text-xs text-right">Agent Payout</TableHead>
                 <TableHead className="text-xs text-right">Expenses</TableHead>
                 <TableHead className="text-xs text-right">Net Profit</TableHead>
-                <TableHead className="text-xs text-center">Achievement</TableHead>
-                <TableHead className="text-xs text-center">Won / Total Leads</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((r) => (
+              {visible.map((r) => (
                 <TableRow key={r.opp_number}>
                   <TableCell className="text-xs font-mono">{r.opp_number}</TableCell>
-                  <TableCell className="text-xs font-medium max-w-[160px] truncate">{r.name}</TableCell>
+                  <TableCell className="text-xs font-medium max-w-[180px] truncate">{r.name}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{r.property_type}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-[120px] truncate">{r.location}</TableCell>
                   <TableCell><StatusBadge status={r.status} /></TableCell>
-                  <TableCell className="text-xs text-center">{r.commission_percent}%</TableCell>
-                  <TableCell className="text-xs text-right">{fmt(r.possible_revenue)}</TableCell>
-                  <TableCell className="text-xs text-right font-medium text-emerald-600">{fmt(r.closed_revenue)}</TableCell>
-                  <TableCell className="text-xs text-right text-red-500">{r.total_expense > 0 ? fmt(r.total_expense) : "—"}</TableCell>
+                  <TableCell className="text-xs text-center">{r.deals}</TableCell>
+                  <TableCell className="text-xs text-right">{r.settlement > 0 ? fmt(r.settlement) : "—"}</TableCell>
+                  <TableCell className="text-xs text-right">{fmt(r.revenue)}</TableCell>
+                  <TableCell className="text-xs text-right text-amber-600">{r.agent_payout > 0 ? fmt(r.agent_payout) : "—"}</TableCell>
+                  <TableCell className="text-xs text-right text-red-500">{r.expenses > 0 ? fmt(r.expenses) : "—"}</TableCell>
                   <TableCell className={cn("text-xs text-right font-semibold", r.net_profit >= 0 ? "text-emerald-600" : "text-red-500")}>
                     {fmt(r.net_profit)}
                   </TableCell>
-                  <TableCell className="text-xs text-center">
-                    {r.achievement_pct != null ? (
-                      <span className={cn(
-                        "font-medium",
-                        r.achievement_pct >= 100 ? "text-emerald-600" : r.achievement_pct >= 50 ? "text-amber-600" : "text-red-500"
-                      )}>
-                        {r.achievement_pct.toFixed(1)}%
-                      </span>
-                    ) : "—"}
-                  </TableCell>
-                  <TableCell className="text-xs text-center">{r.won_leads_count} / {r.total_leads_count}</TableCell>
                 </TableRow>
               ))}
-              {rows.length > 0 && (
+              {visible.length > 0 && (
                 <TableRow className="bg-muted/30 font-semibold">
-                  <TableCell colSpan={6} className="text-xs">Total ({rows.length} opportunities)</TableCell>
-                  <TableCell className="text-xs text-right">{fmt(totals.possibleRevenue)}</TableCell>
-                  <TableCell className="text-xs text-right text-emerald-600">{fmt(totals.closedRevenue)}</TableCell>
-                  <TableCell className="text-xs text-right text-red-500">{totals.totalExpense > 0 ? fmt(totals.totalExpense) : "—"}</TableCell>
+                  <TableCell colSpan={6} className="text-xs">Total ({visible.length} opportunities)</TableCell>
+                  <TableCell className="text-xs text-right">{fmt(totals.revenue)}</TableCell>
+                  <TableCell className="text-xs text-right text-amber-600">{fmt(totals.payout)}</TableCell>
+                  <TableCell className="text-xs text-right text-red-500">{fmt(totals.expenses)}</TableCell>
                   <TableCell className={cn("text-xs text-right", totals.netProfit >= 0 ? "text-emerald-600" : "text-red-500")}>
                     {fmt(totals.netProfit)}
                   </TableCell>
-                  <TableCell colSpan={2} />
                 </TableRow>
               )}
             </TableBody>

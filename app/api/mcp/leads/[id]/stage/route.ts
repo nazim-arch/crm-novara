@@ -4,6 +4,8 @@ import { verifyMcpToken } from "@/lib/mcp-auth";
 import { sendStageEvent } from "@/lib/meta-capi";
 import { createLeadReviewEvent } from "@/lib/lead-review-events";
 import { clearActiveFollowUp, isNoFollowUpStatus } from "@/lib/follow-ups";
+import { createDealClosure, cancelActiveDealClosureForLeadOpportunity } from "@/lib/deal-closures";
+import { resolveStageTarget } from "@/lib/lead-stage";
 import type { LeadStatus } from "@/lib/generated/prisma/client";
 
 type Params = Promise<{ id: string }>;
@@ -16,7 +18,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
 
     const { id } = await params;
     const body = await request.json().catch(() => ({}));
-    const { stage, notes, lost_reason, lost_notes, settlement_value, deal_commission_percent } =
+    const { stage, notes, lost_reason, lost_notes, settlement_value, deal_commission_percent, opportunity_id } =
       body as {
         stage?: string;
         notes?: string;
@@ -24,6 +26,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
         lost_notes?: string;
         settlement_value?: number;
         deal_commission_percent?: number;
+        opportunity_id?: string;
       };
 
     if (!stage) {
@@ -43,17 +46,38 @@ export async function POST(request: Request, { params }: { params: Params }) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
 
-    const updateData: Record<string, unknown> = {
-      status: stage as LeadStatus,
-      updated_at: new Date(),
-    };
-    if (lost_reason) updateData.lost_reason = lost_reason;
-    if (lost_notes) updateData.lost_notes = lost_notes;
-    if (stage === "Won" && settlement_value !== undefined) updateData.settlement_value = settlement_value;
-    if (stage === "Won" && deal_commission_percent !== undefined) updateData.deal_commission_percent = deal_commission_percent;
+    // Resolve which Lead+Opportunity combination this applies to (status is per link).
+    const target = await resolveStageTarget(lead.id, { opportunity_id });
+    if (target.kind === "ambiguous") {
+      return NextResponse.json(
+        {
+          error: "This lead has multiple opportunities — pass opportunity_id to choose one.",
+          code: "OPPORTUNITY_REQUIRED",
+          opportunities: target.opportunities,
+        },
+        { status: 422 },
+      );
+    }
+    const targetOppId = target.kind === "link" ? target.opportunity_id : null;
+    let priorStatus = lead.status;
+    if (target.kind === "link") {
+      const cur = await prisma.leadOpportunity.findUnique({ where: { id: target.opportunity_link_id }, select: { status: true } });
+      priorStatus = cur?.status ?? lead.status;
+    }
+
+    // Lead.status is set directly only for unlinked leads; for linked leads the rollup trigger
+    // derives it from the target link we update below.
+    const leadData: Record<string, unknown> = { updated_at: new Date() };
+    if (target.kind === "unlinked") {
+      leadData.status = stage as LeadStatus;
+      if (lost_reason) leadData.lost_reason = lost_reason;
+      if (lost_notes) leadData.lost_notes = lost_notes;
+    }
+    if (stage === "Won" && settlement_value !== undefined) leadData.settlement_value = settlement_value;
+    if (stage === "Won" && deal_commission_percent !== undefined) leadData.deal_commission_percent = deal_commission_percent;
 
     const [updatedLead] = await prisma.$transaction([
-      prisma.lead.update({ where: { id: lead.id }, data: updateData }),
+      prisma.lead.update({ where: { id: lead.id }, data: leadData }),
       prisma.activity.create({
         data: {
           entity_type: "Lead",
@@ -61,8 +85,9 @@ export async function POST(request: Request, { params }: { params: Params }) {
           action: "stage_changed",
           actor_id: userId,
           metadata: {
-            pipeline_from: lead.status,
+            pipeline_from: priorStatus,
             pipeline_to: stage,
+            opportunity_id: targetOppId,
             lost_reason: lost_reason ?? null,
             notes: notes ?? null,
             source: "mcp",
@@ -72,12 +97,20 @@ export async function POST(request: Request, { params }: { params: Params }) {
       prisma.leadStageHistory.create({
         data: {
           lead_id: lead.id,
-          from_stage: lead.status,
+          from_stage: priorStatus,
           to_stage: stage as LeadStatus,
           changed_by_id: userId,
           notes: notes ?? null,
         },
       }),
+      ...(target.kind === "link"
+        ? [
+            prisma.leadOpportunity.update({
+              where: { id: target.opportunity_link_id },
+              data: { status: stage as LeadStatus, ...(lost_reason ? { lost_reason } : {}), ...(lost_notes ? { lost_notes } : {}) },
+            }),
+          ]
+        : []),
     ]);
 
     // Entering a no-follow-up status cancels the active follow-up and nulls the lead mirror.
@@ -85,33 +118,27 @@ export async function POST(request: Request, { params }: { params: Params }) {
       await clearActiveFollowUp({ lead_id: lead.id, reason: `Lead moved to ${stage} (MCP)`, actor_id: userId });
     }
 
-    // Recalculate closed_revenue for all linked opportunities when Won
-    if (stage === "Won" || lead.status === "Won") {
-      const linkedOpps = await prisma.leadOpportunity.findMany({
-        where: { lead_id: lead.id },
-        select: { opportunity_id: true },
-      });
-      const oppIds = linkedOpps.map((lo) => lo.opportunity_id);
-      if (oppIds.length > 0) {
-        const wonLinks = await prisma.leadOpportunity.findMany({
-          where: { opportunity_id: { in: oppIds }, status: "Won", lead: { deleted_at: null } },
-          select: { opportunity_id: true, settlement_value: true, deal_commission_percent: true },
+    // Deal-closure lifecycle for the resolved combination (additive, best-effort).
+    if (stage === "Won" && settlement_value !== undefined && deal_commission_percent !== undefined) {
+      try {
+        await createDealClosure({
+          lead_id: lead.id,
+          opportunity_id: targetOppId,
+          assigned_to_id: lead.assigned_to_id,
+          planned_settlement_value: Number(settlement_value),
+          planned_commission_percent: Number(deal_commission_percent),
+          planned_by_id: userId,
+          won_at: new Date(),
         });
-        const revenueByOpp = new Map<string, number>(oppIds.map((oid) => [oid, 0]));
-        for (const lo of wonLinks) {
-          if (lo.settlement_value !== null && lo.deal_commission_percent !== null) {
-            revenueByOpp.set(
-              lo.opportunity_id,
-              (revenueByOpp.get(lo.opportunity_id) ?? 0) +
-                (Number(lo.settlement_value) * Number(lo.deal_commission_percent)) / 100
-            );
-          }
-        }
-        await Promise.all(
-          Array.from(revenueByOpp.entries()).map(([oid, closedRevenue]) =>
-            prisma.opportunity.update({ where: { id: oid }, data: { closed_revenue: closedRevenue } })
-          )
-        );
+      } catch (err) {
+        console.error("[mcp deal-closure create]", lead.id, err);
+      }
+    }
+    if (stage !== "Won" && priorStatus === "Won") {
+      try {
+        await cancelActiveDealClosureForLeadOpportunity(lead.id, targetOppId, userId, `Reverted from Won to ${stage} (MCP)`);
+      } catch (err) {
+        console.error("[mcp deal-closure cancel]", lead.id, err);
       }
     }
 

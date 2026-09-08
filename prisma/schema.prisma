@@ -143,6 +143,7 @@ enum EntityType {
   Opportunity
   Task
   User
+  DealClosure
 }
 
 enum NotificationType {
@@ -225,6 +226,10 @@ model User {
   commission_records       SalesCommissionRecord[] @relation("CommissionRecords")
   commission_records_final SalesCommissionRecord[] @relation("RecordsFinalized")
 
+  deal_closures_planned    DealClosure[]           @relation("DealClosurePlannedBy")
+  deal_closures_reconciled DealClosure[]           @relation("DealClosureReconciledBy")
+  deal_closure_shares      DealClosureAgentShare[]
+
   review_events_triggered  LeadReviewEvent[]  @relation("ReviewEventTriggeredBy")
   review_events_actioned   LeadReviewEvent[]  @relation("ReviewEventActionedBy")
 
@@ -301,7 +306,6 @@ model Lead {
   negotiation_status  String?
   closing_probability Int?
   deal_value          Decimal?      @db.Decimal(12, 2)
-  commission_estimate Decimal?      @db.Decimal(12, 2)
 
   // Financial
   potential_lead_value    Decimal? @db.Decimal(12, 2)
@@ -341,6 +345,7 @@ model Lead {
   followups      FollowUp[]
   review_events  LeadReviewEvent[]
   meta_leads     MetaLead[]
+  deal_closures  DealClosure[]
 
   @@index([phone])
   @@index([email])
@@ -399,6 +404,7 @@ model Opportunity {
   follow_ups     FollowUp[]
   review_events  LeadReviewEvent[]
   meta_leads     MetaLead[]
+  deal_closures  DealClosure[]
 
   @@index([status])
   @@index([property_type])
@@ -469,8 +475,6 @@ model LeadOpportunity {
   status                  LeadStatus    @default(New)
   activity_stage          ActivityStage @default(New)
   potential_lead_value    Decimal?      @db.Decimal(12, 2)
-  settlement_value        Decimal?      @db.Decimal(12, 2)
-  deal_commission_percent Decimal?      @db.Decimal(8, 4)
   lost_reason             String?
   lost_notes              String?
 
@@ -842,6 +846,84 @@ model SalesCommissionRecord {
   @@index([user_id])
   @@index([year, month])
   @@map("sales_commission_records")
+}
+
+// ─────────────────────────────────────────────
+// DEAL CLOSURES (commission reconciliation)
+// ─────────────────────────────────────────────
+
+enum DealClosureStatus {
+  Pending      // lead marked Won; sitting in the queue, no actual numbers yet
+  Reconciled   // Admin has entered final settlement + per-agent commission/incentive
+  Cancelled    // the lead was reverted out of Won; retained for history only
+}
+
+model DealClosure {
+  id             String  @id @default(cuid())
+  lead_id        String  // NOTE: no @@unique here — active-uniqueness is a partial index
+                         // (lead_id WHERE status <> 'Cancelled') added in the migration SQL,
+                         // so a Cancelled closure can coexist with a later re-Won one.
+  opportunity_id String? // denormalized for reporting; nullable since not every lead is opportunity-linked
+
+  // Planned baseline — frozen snapshot of what the agent entered in "Confirm Deal Won",
+  // captured at that moment so later edits to Lead fields can never drift the baseline.
+  planned_settlement_value   Decimal  @db.Decimal(14, 2)
+  planned_commission_percent Decimal  @db.Decimal(8, 4)
+  planned_commission_amount  Decimal  @db.Decimal(14, 2)
+  planned_by_id              String   // the agent who confirmed Won
+  planned_at                 DateTime @default(now())
+  won_year                   Int      // IST-bucketed from the Won LeadStageHistory transition
+  won_month                  Int      // — avoids re-deriving month attribution at reconciliation
+
+  // Actual — filled in by Admin during reconciliation
+  actual_settlement_value  Decimal? @db.Decimal(14, 2)
+  settlement_variance      Decimal? @db.Decimal(14, 2) // actual - planned, computed on save
+  settlement_variance_pct  Decimal? @db.Decimal(8, 4)
+
+  status           DealClosureStatus @default(Pending)
+  reconciled_by_id String?
+  reconciled_at    DateTime?
+  notes            String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  lead          Lead                     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+  opportunity   Opportunity?             @relation(fields: [opportunity_id], references: [id])
+  planned_by    User                     @relation("DealClosurePlannedBy",    fields: [planned_by_id],    references: [id])
+  reconciled_by User?                    @relation("DealClosureReconciledBy", fields: [reconciled_by_id], references: [id])
+  agent_shares  DealClosureAgentShare[]
+
+  @@index([lead_id])
+  @@index([opportunity_id])
+  @@index([status])
+  @@index([won_year, won_month])
+  @@map("deal_closures")
+}
+
+model DealClosureAgentShare {
+  id              String  @id @default(cuid())
+  deal_closure_id String
+  agent_id        String
+  role            String? // free text, e.g. "Primary", "Co-agent", "Referral" — Admin's call
+
+  // Only populated for the originally assigned agent (copied from DealClosure.planned_commission_amount
+  // at creation); co-agents added during reconciliation have no prior plan.
+  planned_commission_amount Decimal? @db.Decimal(14, 2)
+
+  // Manually entered by Admin — required before the parent closure can move to Reconciled
+  actual_commission_amount Decimal? @db.Decimal(14, 2)
+  incentive_amount         Decimal  @default(0) @db.Decimal(14, 2)
+  commission_variance      Decimal? @db.Decimal(14, 2) // actual - planned; null when no planned baseline
+
+  created_at DateTime @default(now())
+
+  deal_closure DealClosure @relation(fields: [deal_closure_id], references: [id], onDelete: Cascade)
+  agent        User        @relation(fields: [agent_id], references: [id])
+
+  @@unique([deal_closure_id, agent_id])
+  @@index([agent_id])
+  @@map("deal_closure_agent_shares")
 }
 
 // ─────────────────────────────────────────────

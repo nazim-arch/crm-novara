@@ -329,12 +329,12 @@ export function StageChanger({ leadId, currentStage, currentActivityStage = "New
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Confirm Deal Won</DialogTitle>
-            <DialogDescription>Enter the deal details to mark this lead as Won.</DialogDescription>
+            <DialogDescription>Enter your expected deal figures to mark this lead as Won.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="settlement_value">
-                Settlement Value (₹) <span className="text-destructive">*</span>
+                Expected Settlement Value (₹) <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="settlement_value"
@@ -346,7 +346,7 @@ export function StageChanger({ leadId, currentStage, currentActivityStage = "New
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="commission_pct">
-                Commission % <span className="text-destructive">*</span>
+                Expected Commission % <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="commission_pct"
@@ -358,13 +358,16 @@ export function StageChanger({ leadId, currentStage, currentActivityStage = "New
               />
               {settlementValue && dealCommissionPercent && (
                 <p className="text-xs text-muted-foreground">
-                  Commission:{" "}
+                  Estimated commission:{" "}
                   <strong>
                     ₹{((Number(settlementValue) * Number(dealCommissionPercent)) / 100).toLocaleString("en-IN")}
                   </strong>
                 </p>
               )}
             </div>
+            <p className="rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+              This is your estimate — Finance will confirm the final settlement and commission after the deal closes.
+            </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={reset}>Cancel</Button>

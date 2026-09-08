@@ -1,7 +1,10 @@
 /**
  * Backfill script: populate new per-opportunity pipeline fields on existing LeadOpportunity records.
- * Copies status, potential_lead_value, settlement_value, deal_commission_percent from the parent Lead.
- * Run once after the schema migration.
+ * Copies status, activity_stage, potential_lead_value, lost_reason/notes from the parent Lead.
+ * Run once after the schema migration. (Historical — completed.)
+ *
+ * NOTE: settlement_value / deal_commission_percent are no longer mirrored onto LeadOpportunity —
+ * a Won deal's money now lives on the Lead + its DealClosure (Fix #4). Those fields were dropped.
  *
  * Usage: node -e "require('dotenv').config({path:'.env.local'})" && npx tsx scripts/backfill-lead-opportunity-status.ts
  * Or set DATABASE_URL in your shell and run: npx tsx scripts/backfill-lead-opportunity-status.ts
@@ -27,8 +30,6 @@ async function main() {
           status: true,
           activity_stage: true,
           potential_lead_value: true,
-          settlement_value: true,
-          deal_commission_percent: true,
           lost_reason: true,
           lost_notes: true,
         },
@@ -46,8 +47,6 @@ async function main() {
         status: link.lead.status,
         activity_stage: link.lead.activity_stage,
         potential_lead_value: link.lead.potential_lead_value,
-        settlement_value: link.lead.settlement_value,
-        deal_commission_percent: link.lead.deal_commission_percent,
         lost_reason: link.lead.lost_reason ?? null,
         lost_notes: link.lead.lost_notes ?? null,
       },

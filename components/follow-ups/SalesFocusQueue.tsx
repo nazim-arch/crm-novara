@@ -704,7 +704,7 @@ function needsSchedulePrompt(type: ModalType, form: Record<string, string>): boo
 // ── Modal Form Content ────────────────────────────────────────────────────────
 
 function ModalFormContent({
-  modal, form, f, subAction, setSubAction, submitting, submitModal, onClose,
+  modal, form, f, subAction, setSubAction, submitting, submitModal, onClose, oppChoices,
 }: {
   modal: ModalState;
   form: Record<string, string>;
@@ -714,6 +714,7 @@ function ModalFormContent({
   submitting: boolean;
   submitModal: () => void;
   onClose: () => void;
+  oppChoices: { opportunity_id: string; name: string }[] | null;
 }) {
   const { type, item } = modal;
   const showsScheduler = type === "contacted" || type === "schedule_next" || type === "site_visit_done";
@@ -723,6 +724,23 @@ function ModalFormContent({
         <p className="text-sm text-muted-foreground">
           Lead: <span className="font-medium text-foreground">{item.lead.full_name} ({item.lead.lead_number})</span>
         </p>
+      )}
+
+      {/* Shown when this lead has multiple opportunities and the server needs one chosen. */}
+      {oppChoices && (
+        <div className="space-y-1.5 rounded-lg border border-amber-200 bg-amber-50 p-2.5">
+          <label className="text-xs font-medium text-amber-900">Which opportunity does this apply to? *</label>
+          <select
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
+            value={form.opportunity_id ?? ""}
+            onChange={(e) => f("opportunity_id", e.target.value)}
+          >
+            <option value="">Select opportunity…</option>
+            {oppChoices.map((o) => (
+              <option key={o.opportunity_id} value={o.opportunity_id}>{o.name}</option>
+            ))}
+          </select>
+        </div>
       )}
       {showsScheduler && item.scheduled_at && (
         <div className="rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
@@ -1008,6 +1026,8 @@ export function SalesFocusQueue({
   const [modal, setModal] = useState<ModalState | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
+  // Populated when the server needs the user to choose which opportunity a stage change applies to.
+  const [oppChoices, setOppChoices] = useState<{ opportunity_id: string; name: string }[] | null>(null);
   const [subAction, setSubAction] = useState<"callback_today" | "schedule_next" | "mark_unreachable">("callback_today");
   const [schedulePromptItem, setSchedulePromptItem] = useState<FocusItem | null>(null);
   const [slideDir, setSlideDir] = useState<"left" | "right" | null>(null);
@@ -1068,6 +1088,7 @@ export function SalesFocusQueue({
     const item = queue[cardIdx];
     if (!item) return;
     setForm({});
+    setOppChoices(null);
     setSubAction("callback_today");
     setModal({ type, item });
   }
@@ -1139,15 +1160,16 @@ export function SalesFocusQueue({
         notes: form.notes || undefined,
       };
     } else if (type === "update_stage") {
-      payload = { action: "update_stage", to_stage: form.to_stage, notes: form.notes };
+      payload = { action: "update_stage", to_stage: form.to_stage, notes: form.notes, opportunity_id: form.opportunity_id || undefined };
     } else if (type === "mark_lost") {
-      payload = { action: "mark_lost", lost_reason: form.lost_reason, notes: form.notes, lost_notes: form.notes };
+      payload = { action: "mark_lost", lost_reason: form.lost_reason, notes: form.notes, lost_notes: form.notes, opportunity_id: form.opportunity_id || undefined };
     } else if (type === "mark_won") {
       payload = {
         action: "mark_won",
         notes: form.notes,
         settlement_value: form.settlement_value ? Number(form.settlement_value) : undefined,
         deal_commission_percent: form.commission_pct ? Number(form.commission_pct) : undefined,
+        opportunity_id: form.opportunity_id || undefined,
       };
     } else if (type === "site_visit_done") {
       payload = {
@@ -1155,6 +1177,7 @@ export function SalesFocusQueue({
         notes: form.notes,
         next_followup_date: form.next_date ? form.next_date + "T09:00:00" : undefined,
         next_followup_type: form.next_type || undefined,
+        opportunity_id: form.opportunity_id || undefined,
       };
     } else if (type === "update_notes") {
       payload = { action: "update_notes", notes: form.notes };
@@ -1169,6 +1192,12 @@ export function SalesFocusQueue({
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
+        // Lead has multiple opportunities — surface a picker and let the user retry.
+        if ((err as { code?: string }).code === "OPPORTUNITY_REQUIRED") {
+          setOppChoices((err as { opportunities?: { opportunity_id: string; name: string }[] }).opportunities ?? []);
+          toast.error("Choose which opportunity this applies to, then submit again.");
+          return;
+        }
         toast.error((err as { error?: string }).error ?? "Action failed");
         return;
       }
@@ -1478,6 +1507,7 @@ export function SalesFocusQueue({
             submitting={submitting}
             submitModal={submitModal}
             onClose={() => setModal(null)}
+            oppChoices={oppChoices}
           />
         )}
       </ActionModal>

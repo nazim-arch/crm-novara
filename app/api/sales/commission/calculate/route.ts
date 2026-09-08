@@ -2,12 +2,7 @@
 import { prisma } from "@/lib/prisma";
 import { hasPermissionAsync } from "@/lib/rbac";
 import { NextResponse } from "next/server";
-import {
-  calcMonthlyRevenue,
-  getActiveSlabs,
-  calcCommission,
-  calcAchievementPct,
-} from "@/lib/sales-commission";
+import { recomputeCommissionRecord, getMonthlyCommissionTotals } from "@/lib/deal-closures";
 import { CommissionRecordStatus } from "@/lib/commission-utils";
 
 export async function GET(request: Request) {
@@ -36,58 +31,21 @@ export async function GET(request: Request) {
     if (!canManage && session.user.id !== userId)
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+    // Pending (Won-but-unreconciled) estimate for the "Pending Reconciliation" figure.
+    const totals = await getMonthlyCommissionTotals(userId, year, month);
+    const pending = { pending_estimate: totals.pending_estimate, pending_deals: totals.pending_deals };
+
     // Check if already Finalized — skip recalculation
     const existing = await prisma.salesCommissionRecord.findUnique({
       where: { user_id_year_month: { user_id: userId, year, month } },
     });
     if (existing?.rec_status === CommissionRecordStatus.FINALIZED)
-      return NextResponse.json({ data: existing });
+      return NextResponse.json({ data: existing, ...pending });
 
-    // Recalculate
-    const { closed_revenue, leads_won, leads_won_no_value } =
-      await calcMonthlyRevenue(userId, year, month);
+    // Recompute from reconciled deal-closure data (single source of truth).
+    const record = await recomputeCommissionRecord(userId, year, month);
 
-    const slabs = await getActiveSlabs(userId, year, month);
-    const { commission_amount, slab_from, slab_to, slab_pct } =
-      calcCommission(closed_revenue, slabs);
-
-    const target = await prisma.salesMonthlyTarget.findUnique({
-      where: { user_id_year_month: { user_id: userId, year, month } },
-    });
-    const target_amount = target ? Number(target.target_amount) : null;
-    const achievement_pct = calcAchievementPct(closed_revenue, target_amount);
-
-    const record = await prisma.salesCommissionRecord.upsert({
-      where: { user_id_year_month: { user_id: userId, year, month } },
-      create: {
-        user_id: userId,
-        year,
-        month,
-        closed_revenue,
-        leads_won,
-        leads_won_no_value,
-        target_amount,
-        achievement_pct,
-        slab_from,
-        slab_to,
-        slab_pct,
-        commission_amount,
-        rec_status: CommissionRecordStatus.LIVE,
-      },
-      update: {
-        closed_revenue,
-        leads_won,
-        leads_won_no_value,
-        target_amount,
-        achievement_pct,
-        slab_from,
-        slab_to,
-        slab_pct,
-        commission_amount,
-      },
-    });
-
-    return NextResponse.json({ data: record });
+    return NextResponse.json({ data: record, ...pending });
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

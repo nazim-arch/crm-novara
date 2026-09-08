@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Save } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Target {
   id: string;
@@ -12,6 +13,7 @@ interface Target {
   year: number;
   month: number;
   target_amount: number;
+  user_name?: string;
 }
 
 interface User {
@@ -39,6 +41,9 @@ export function MonthlyTargetManager({ salesUsers, existingTargets }: Props) {
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<"idle" | "saved" | "error">("idle");
   const [targets, setTargets] = useState<Target[]>(existingTargets);
+
+  const nameById = new Map(salesUsers.map(u => [u.id, u.name]));
+  const userName = (id: string) => nameById.get(id) ?? id;
 
   const existing = targets.find(
     t => t.user_id === selectedUser && t.year === year && t.month === month
@@ -144,26 +149,62 @@ export function MonthlyTargetManager({ salesUsers, existingTargets }: Props) {
         Save target
       </Button>
 
-      {/* Year summary for selected user */}
+      {/* Year summary for selected user — full amounts, roomy cells, set months highlighted */}
       {userTargets.length > 0 && (
         <div>
-          <p className="text-xs font-medium text-gray-600 mb-2">{year} targets</p>
-          <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-12">
+          <p className="text-xs font-medium text-gray-600 mb-2">{year} targets for {userName(selectedUser)}</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
             {MONTHS.map((m, i) => {
               const t = userTargets.find(x => x.month === i + 1);
               return (
                 <div
                   key={i}
-                  className="rounded border p-2 text-center cursor-pointer hover:bg-gray-50"
+                  className={cn(
+                    "rounded-md border p-2 cursor-pointer hover:bg-gray-50",
+                    t ? "border-blue-200 bg-blue-50/40" : "border-dashed",
+                  )}
                   onClick={() => setMonth(i + 1)}
                 >
-                  <div className="text-xs text-gray-500">{m}</div>
-                  <div className="text-xs font-medium mt-0.5">
-                    {t ? `₹${(t.target_amount / 100000).toFixed(1)}L` : "—"}
+                  <div className="text-xs text-gray-500">{m} {year}</div>
+                  <div className="text-sm font-semibold mt-0.5 text-gray-900">
+                    {t ? `₹${t.target_amount.toLocaleString("en-IN")}` : "—"}
                   </div>
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* All targets already set (across users) — click a row to load it into the form */}
+      {targets.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-gray-600 mb-2">Targets set ({targets.length})</p>
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs text-gray-500">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">Sales User</th>
+                  <th className="px-3 py-2 text-center font-medium">Period</th>
+                  <th className="px-3 py-2 text-right font-medium">Target</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {[...targets]
+                  .sort((a, b) => b.year - a.year || b.month - a.month || userName(a.user_id).localeCompare(userName(b.user_id)))
+                  .map(t => (
+                    <tr
+                      key={t.id}
+                      className="cursor-pointer hover:bg-gray-50"
+                      onClick={() => { setSelectedUser(t.user_id); setYear(t.year); setMonth(t.month); }}
+                    >
+                      <td className="px-3 py-2">{t.user_name ?? userName(t.user_id)}</td>
+                      <td className="px-3 py-2 text-center text-gray-500">{MONTHS[t.month - 1]} {t.year}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">₹{t.target_amount.toLocaleString("en-IN")}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

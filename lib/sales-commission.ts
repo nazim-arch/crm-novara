@@ -68,51 +68,53 @@ export interface RevenueResult {
 }
 
 /**
- * Sums closed revenue for Won leads assigned to a Sales user in the given month.
- * Uses LeadStageHistory.changed_at (IST bounds) to bucket the Win date.
- * Only counts leads that are currently Won (status = "Won").
+ * Sums a user's closed revenue for the given month from RECONCILED deal closures —
+ * Σ(actual_commission_amount + incentive_amount) across the agent's shares whose parent
+ * closure is Reconciled and bucketed (won_year/won_month) to this month.
+ *
+ * This replaces the old `Lead.settlement_value × deal_commission_percent` derivation:
+ * DealClosure is now the single source of truth. Slab/target/achievement math around this
+ * (getActiveSlabs / calcCommission / calcAchievementPct) is unchanged.
+ *
+ * NOTE: kept self-contained (queries DealClosure directly rather than importing
+ * getMonthlyCommissionTotals) to avoid an import cycle with lib/deal-closures.ts.
  */
 export async function calcMonthlyRevenue(
   userId: string,
   year: number,
   month: number
 ): Promise<RevenueResult> {
-  const { start, end } = istMonthBounds(year, month);
-
-  // Leads that moved to Won in this month window and are still Won
-  const wonLeads = await prisma.lead.findMany({
+  const shares = await prisma.dealClosureAgentShare.findMany({
     where: {
-      assigned_to_id: userId,
-      status: "Won",
-      deleted_at: null,
-      stage_history: {
-        some: {
-          to_stage: "Won",
-          changed_at: { gte: start, lt: end },
-        },
+      agent_id: userId,
+      deal_closure: {
+        won_year: year,
+        won_month: month,
+        status: "Reconciled",
+        lead: { deleted_at: null },
       },
     },
     select: {
-      settlement_value: true,
-      deal_commission_percent: true,
+      actual_commission_amount: true,
+      incentive_amount: true,
+      deal_closure_id: true,
     },
   });
 
   let closed_revenue = 0;
-  let leads_won = 0;
   let leads_won_no_value = 0;
+  const closures = new Set<string>();
 
-  for (const lead of wonLeads) {
-    leads_won++;
-    if (lead.settlement_value != null && lead.deal_commission_percent != null) {
-      const rev = lead.settlement_value.mul(lead.deal_commission_percent).div(100).toNumber();
-      closed_revenue += rev;
-    } else {
+  for (const s of shares) {
+    closures.add(s.deal_closure_id);
+    if (s.actual_commission_amount == null) {
       leads_won_no_value++;
+      continue;
     }
+    closed_revenue += Number(s.actual_commission_amount) + Number(s.incentive_amount);
   }
 
-  return { closed_revenue, leads_won, leads_won_no_value };
+  return { closed_revenue, leads_won: closures.size, leads_won_no_value };
 }
 
 // ─── Commission calculation ───────────────────────────────────────────────────

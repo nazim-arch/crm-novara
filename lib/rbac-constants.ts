@@ -4,7 +4,7 @@ export type Permission =
   | "task:create" | "task:read" | "task:update" | "task:delete" | "task:export"
   | "user:manage" | "report:view" | "financial:view"
   | "podcast_studio:manage"
-  | "commission:manage" | "commission:view";
+  | "commission:manage" | "commission:view" | "commission:reconcile";
 
 export const ROLES = ["Admin", "Manager", "TeamLead", "Sales", "Operations", "Viewer"] as const;
 export type Role = (typeof ROLES)[number];
@@ -15,7 +15,7 @@ export const ALL_PERMISSIONS: Permission[] = [
   "task:read", "task:create", "task:update", "task:delete", "task:export",
   "user:manage", "report:view", "financial:view",
   "podcast_studio:manage",
-  "commission:view", "commission:manage",
+  "commission:view", "commission:manage", "commission:reconcile",
 ];
 
 export const PERMISSION_LABELS: Record<Permission, string> = {
@@ -41,6 +41,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "podcast_studio:manage":  "Manage Podcast Studio",
   "commission:view":        "View Commissions",
   "commission:manage":      "Manage Commissions",
+  "commission:reconcile":   "Reconcile Deal Closures",
 };
 
 export const PERMISSION_GROUPS: { label: string; perms: Permission[] }[] = [
@@ -50,7 +51,7 @@ export const PERMISSION_GROUPS: { label: string; perms: Permission[] }[] = [
   { label: "Users & Settings",  perms: ["user:manage"] },
   { label: "Reports & Finance", perms: ["report:view", "financial:view"] },
   { label: "Podcast Studio",    perms: ["podcast_studio:manage"] },
-  { label: "Commissions",       perms: ["commission:view", "commission:manage"] },
+  { label: "Commissions",       perms: ["commission:view", "commission:manage", "commission:reconcile"] },
 ];
 
 export const DEFAULT_PERMS: Record<string, Permission[]> = {
@@ -60,7 +61,7 @@ export const DEFAULT_PERMS: Record<string, Permission[]> = {
     "task:create", "task:read", "task:update", "task:delete", "task:export",
     "user:manage", "report:view", "financial:view",
     "podcast_studio:manage",
-    "commission:manage", "commission:view",
+    "commission:manage", "commission:view", "commission:reconcile",
   ],
   TeamLead: [
     "lead:create", "lead:read", "lead:update",

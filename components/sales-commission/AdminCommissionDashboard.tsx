@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, RefreshCw } from "lucide-react";
+import Link from "next/link";
+import { Loader2, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommissionStatusBadge } from "./CommissionStatusBadge";
 import { commissionStatus } from "@/lib/commission-utils";
@@ -27,6 +28,22 @@ interface Props {
   initialRows: CommissionRowData[];
   rangeLabel: string;
   multiMonth: boolean;
+  pendingEstimate?: number;
+  pendingDeals?: number;
+}
+
+/** Reusable link from a commission row to that user's slab structure editor. */
+function SlabLink({ userId, name }: { userId: string; name: string }) {
+  return (
+    <Link
+      href={`/settings/users/${userId}/commission`}
+      className="inline-flex items-center gap-1 font-medium text-gray-900 hover:text-violet-600 hover:underline"
+      title="View commission slabs"
+    >
+      {name}
+      <SlidersHorizontal className="h-3 w-3 text-gray-300" />
+    </Link>
+  );
 }
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -38,7 +55,7 @@ function fmt(n: number | null) {
   return `₹${n.toLocaleString("en-IN")}`;
 }
 
-export function AdminCommissionDashboard({ salesUsers, initialRows, rangeLabel, multiMonth }: Props) {
+export function AdminCommissionDashboard({ salesUsers, initialRows, rangeLabel, multiMonth, pendingEstimate = 0, pendingDeals = 0 }: Props) {
   const [rows, setRows] = useState<CommissionRowData[]>(initialRows);
   const [refreshing, setRefreshing] = useState<string | null>(null);
   const [finalizing, setFinalizing] = useState<string | null>(null);
@@ -95,10 +112,15 @@ export function AdminCommissionDashboard({ salesUsers, initialRows, rangeLabel, 
       <div className="space-y-4">
         <div className="flex items-center justify-between text-sm text-gray-500">
           <span>{rangeLabel}</span>
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-4">
             <span>Total revenue: <strong className="text-gray-900">{fmt(totalRevenue)}</strong></span>
             <span>Total commission: <strong className="text-gray-900">{fmt(totalCommission)}</strong></span>
             <span>Total deals: <strong className="text-gray-900">{totalDeals}</strong></span>
+            {pendingDeals > 0 && (
+              <span className="text-amber-600">
+                Pending reconciliation: <strong>{fmt(pendingEstimate)}</strong> ({pendingDeals} deal{pendingDeals !== 1 ? "s" : ""})
+              </span>
+            )}
           </div>
         </div>
 
@@ -130,7 +152,7 @@ export function AdminCommissionDashboard({ salesUsers, initialRows, rangeLabel, 
                   const achPct = row.achievement_pct;
                   return (
                     <tr key={row.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium text-gray-900">{row.user.name}</td>
+                      <td className="px-4 py-3"><SlabLink userId={row.user_id} name={row.user.name} /></td>
                       <td className="px-4 py-3 text-center text-gray-500 text-xs">
                         {MONTHS[row.month - 1]} {row.year}
                       </td>
@@ -166,6 +188,11 @@ export function AdminCommissionDashboard({ salesUsers, initialRows, rangeLabel, 
         <div className="flex gap-4">
           <span>Total revenue: <strong className="text-gray-900">{fmt(totalRevenue)}</strong></span>
           <span>Total commission: <strong className="text-gray-900">{fmt(totalCommission)}</strong></span>
+          {pendingDeals > 0 && (
+            <span className="text-amber-600">
+              Pending reconciliation: <strong>{fmt(pendingEstimate)}</strong> ({pendingDeals} deal{pendingDeals !== 1 ? "s" : ""})
+            </span>
+          )}
         </div>
       </div>
 
@@ -195,7 +222,7 @@ export function AdminCommissionDashboard({ salesUsers, initialRows, rangeLabel, 
               const achPct = row.achievement_pct;
               return (
                 <tr key={row.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">{row.user.name}</td>
+                  <td className="px-4 py-3"><SlabLink userId={row.user_id} name={row.user.name} /></td>
                   <td className="px-4 py-3 text-right tabular-nums">{fmt(row.closed_revenue)}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{fmt(row.target_amount)}</td>
                   <td className="px-4 py-3 text-right tabular-nums">
