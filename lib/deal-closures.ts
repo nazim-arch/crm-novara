@@ -458,7 +458,6 @@ export async function cancelDealClosure(input: {
   return result.updated;
 }
 
-/** Convenience for the stage-change revert path: cancel a lead's active closure, if any. */
 /** Cancel the active closure for a specific (lead, opportunity) combination, if any. */
 export async function cancelActiveDealClosureForLeadOpportunity(
   lead_id: string,
