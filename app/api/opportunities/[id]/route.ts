@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { updateOpportunitySchema } from "@/lib/validations/opportunity";
 import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
+import { RETAINED_ON_CLOSE } from "@/lib/lead-visibility";
 import { z } from "zod";
 import { notifyLeadTaggedToOpportunity } from "@/lib/email-notifications";
 import { revalidateTag } from "next/cache";
@@ -12,7 +13,7 @@ type Params = Promise<{ id: string }>;
 async function verifySalesOppAccess(oppId: string, userId: string): Promise<boolean> {
   const leadScope = leadScopeFilter("Sales", userId)!;
   const link = await prisma.leadOpportunity.findFirst({
-    where: { opportunity_id: oppId, lead: { ...leadScope, deleted_at: null } },
+    where: { opportunity_id: oppId, untagged_at: null, lead: { ...leadScope, deleted_at: null } },
     select: { id: true },
   });
   return !!link;
@@ -30,7 +31,7 @@ export async function GET(_request: Request, { params }: { params: Params }) {
     if (session.user.role === "Sales" || session.user.role === "TeamLead") {
       const leadScope = leadScopeFilter(session.user.role, session.user.id)!;
       const link = await prisma.leadOpportunity.findFirst({
-        where: { opportunity_id: id, lead: { ...leadScope, deleted_at: null } },
+        where: { opportunity_id: id, untagged_at: null, lead: { ...leadScope, deleted_at: null } },
         select: { id: true },
       });
       if (!link) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -172,6 +173,24 @@ export async function DELETE(_request: Request, { params }: { params: Params }) 
     if (!(await hasPermissionAsync(session.user.role, "opportunity:delete"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await params;
+
+    // D5 (§5.2) — an opportunity holding any Booked/Won link cannot be deleted (soft or hard) by
+    // anyone, incl. Admin. Those links anchor DealClosure/commission. Retire via Sold/Inactive.
+    const earned = await prisma.leadOpportunity.findMany({
+      where: { opportunity_id: id, untagged_at: null, status: { in: [...RETAINED_ON_CLOSE] } },
+      select: { lead: { select: { lead_number: true } } },
+    });
+    if (earned.length > 0) {
+      return NextResponse.json(
+        {
+          error: `This project has ${earned.length} booked or won deal(s) and cannot be deleted. Set it to Sold or Inactive instead.`,
+          code: "OPPORTUNITY_HAS_EARNED_LINKS",
+          count: earned.length,
+          ...(session.user.role === "Admin" ? { leads: earned.map((e) => e.lead.lead_number) } : {}),
+        },
+        { status: 409 },
+      );
+    }
 
     if (session.user.role === "Admin") {
       // Hard delete: permanently remove opportunity and all related records

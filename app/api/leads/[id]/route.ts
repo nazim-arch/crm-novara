@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { updateLeadSchema } from "@/lib/validations/lead";
 import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
 import { recalculateOpportunityRevenue, recomputeCommissionRecord, istYearMonth } from "@/lib/deal-closures";
+import { RETAINED_ON_CLOSE } from "@/lib/lead-visibility";
 import { notifyLeadReassigned } from "@/lib/email-notifications";
 import { setActiveFollowUp, clearActiveFollowUp, FollowUpForbiddenError } from "@/lib/follow-ups";
 import type { FollowUpType } from "@/lib/generated/prisma/client";
@@ -170,8 +171,24 @@ export async function DELETE(_request: Request, { params }: { params: Params }) 
     });
     if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
 
+    // A lead with any Booked/Won link cannot be deleted by anyone (founder extension of D5) — it
+    // anchors the DealClosure/commission trail. Retire via status (Sold/Inactive), not deletion.
+    const earnedLinks = await prisma.leadOpportunity.count({
+      where: { lead_id: id, untagged_at: null, status: { in: [...RETAINED_ON_CLOSE] } },
+    });
+    if (earnedLinks > 0) {
+      return NextResponse.json(
+        {
+          error: `This lead has ${earnedLinks} booked or won deal(s) and cannot be deleted. Change its stage instead.`,
+          code: "LEAD_HAS_EARNED_LINKS",
+          count: earnedLinks,
+        },
+        { status: 409 },
+      );
+    }
+
     const linkedOpps = await prisma.leadOpportunity.findMany({
-      where: { lead_id: id },
+      where: { lead_id: id, untagged_at: null },
       select: { opportunity_id: true },
     });
     const oppIds = linkedOpps.map((lo) => lo.opportunity_id);

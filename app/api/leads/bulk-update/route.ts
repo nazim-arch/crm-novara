@@ -214,7 +214,7 @@ export async function POST(request: Request) {
           // (documented exception). The rollup trigger keeps Lead.status consistent.
           if (statusChanged) {
             await tx.leadOpportunity.updateMany({
-              where: { lead_id: lead.id },
+              where: { lead_id: lead.id, untagged_at: null },
               data: { status: rawStatus as Parameters<typeof tx.leadOpportunity.updateMany>[0]["data"]["status"] },
             });
           }

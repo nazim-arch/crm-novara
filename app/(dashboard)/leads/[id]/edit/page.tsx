@@ -35,7 +35,7 @@ export default async function EditLeadPage({ params }: { params: Params }) {
       orderBy: { name: "asc" },
     }),
     prisma.leadOpportunity.findMany({
-      where: { lead_id: id },
+      where: { lead_id: id, untagged_at: null },
       select: { opportunity_id: true },
       orderBy: { tagged_at: "desc" },
       take: 1,
