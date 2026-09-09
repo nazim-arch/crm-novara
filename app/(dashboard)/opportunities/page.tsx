@@ -1,8 +1,9 @@
 ﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Fragment, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { parseMulti } from "@/lib/list-params";
 import { groupRows } from "@/lib/list-grouping";
+import { CollapsibleTableGroup, CollapsibleCardGroup } from "@/components/shared/CollapsibleListGroup";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -267,13 +268,6 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
     </div>
   );
 
-  const groupHeaderRow = (label: string, count: number): ReactNode => (
-    <TableRow className="hover:bg-transparent bg-muted/40">
-      <TableCell colSpan={visibleCount} className="py-1.5 text-xs font-semibold text-muted-foreground">
-        {label} <span className="font-normal">({count})</span>
-      </TableCell>
-    </TableRow>
-  );
 
   return (
     <div className="p-3 sm:p-6 space-y-3 sm:space-y-4">
@@ -313,13 +307,9 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
           </div>
         ) : oppGroups ? (
           oppGroups.map((g) => (
-            <div key={g.key} className="space-y-2">
-              <div className="flex items-center gap-2 px-1 pt-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{g.label}</span>
-                <span className="text-[11px] text-muted-foreground">({g.count})</span>
-              </div>
+            <CollapsibleCardGroup key={g.key} label={g.label} count={g.count}>
               {g.rows.map(renderCard)}
-            </div>
+            </CollapsibleCardGroup>
           ))
         ) : (
           opportunities.map(renderCard)
@@ -351,10 +341,9 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
               </TableRow>
             ) : oppGroups ? (
               oppGroups.map((g) => (
-                <Fragment key={g.key}>
-                  {groupHeaderRow(g.label, g.count)}
+                <CollapsibleTableGroup key={g.key} label={g.label} count={g.count} colSpan={visibleCount}>
                   {g.rows.map(renderRow)}
-                </Fragment>
+                </CollapsibleTableGroup>
               ))
             ) : (
               opportunities.map(renderRow)

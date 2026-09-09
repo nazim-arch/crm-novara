@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Fragment, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { LeadStatusBadge, TemperatureBadge, ActivityStageBadge } from "@/components/shared/LeadStatusBadge";
@@ -32,6 +32,7 @@ import { leadAccessFilter, canViewHidden, isLeadVisibilityEnabled, visibleLinkWh
 import { startOfDay, endOfDay, subDays, startOfWeek, startOfMonth, startOfYear } from "date-fns";
 import { parseMulti } from "@/lib/list-params";
 import { groupRows } from "@/lib/list-grouping";
+import { CollapsibleTableGroup, CollapsibleCardGroup } from "@/components/shared/CollapsibleListGroup";
 
 const SORT_MAP: Record<string, Prisma.LeadOrderByWithRelationInput> = {
   full_name:            { full_name: "asc" },
@@ -672,14 +673,6 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     </div>
   );
 
-  const groupHeaderRow = (label: string, count: number): ReactNode => (
-    <TableRow className="hover:bg-transparent bg-muted/40">
-      <TableCell colSpan={visibleCount} className="py-1.5 text-xs font-semibold text-muted-foreground">
-        {label} <span className="font-normal">({count})</span>
-      </TableCell>
-    </TableRow>
-  );
-
   const PERIOD_LABEL: Record<string, string> = {
     today: "Today", yesterday: "Yesterday", this_week: "This Week",
     this_month: "This Month", ytd: "YTD", custom: "Custom Range",
@@ -769,13 +762,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
           </div>
         ) : leadGroups ? (
           leadGroups.map((g) => (
-            <div key={g.key} className="space-y-2">
-              <div className="flex items-center gap-2 px-1 pt-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{g.label}</span>
-                <span className="text-[11px] text-muted-foreground">({g.count})</span>
-              </div>
+            <CollapsibleCardGroup key={g.key} label={g.label} count={g.count}>
               {g.rows.map(renderCard)}
-            </div>
+            </CollapsibleCardGroup>
           ))
         ) : (
           rows.map(renderCard)
@@ -812,10 +801,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
               </TableRow>
             ) : leadGroups ? (
               leadGroups.map((g) => (
-                <Fragment key={g.key}>
-                  {groupHeaderRow(g.label, g.count)}
+                <CollapsibleTableGroup key={g.key} label={g.label} count={g.count} colSpan={visibleCount}>
                   {g.rows.map(renderRow)}
-                </Fragment>
+                </CollapsibleTableGroup>
               ))
             ) : (
               rows.map(renderRow)
