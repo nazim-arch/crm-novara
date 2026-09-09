@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { unstable_cache } from "next/cache";
 import { redirect } from "next/navigation";
-import { leadScopeFilter } from "@/lib/rbac";
+import { leadAccessFilter } from "@/lib/lead-visibility";
 import { NO_FOLLOWUP_STATUSES } from "@/lib/follow-ups";
 import { startOfDay, endOfDay, subDays, differenceInCalendarDays } from "date-fns";
 import { SalesDashboardClient } from "@/components/dashboard/SalesDashboardClient";
@@ -74,7 +74,7 @@ const getSalesDashboardData = unstable_cache(
     const todayStart = new Date(todayStartISO);
     const todayEnd = new Date(todayEndISO);
 
-    const leadScope = leadScopeFilter(role, userId);
+    const leadScope = await leadAccessFilter(role, userId);
 
     const leadWhere = (extra: object = {}): object => ({
       deleted_at: null as null,

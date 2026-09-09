@@ -2,21 +2,13 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { updateOpportunitySchema } from "@/lib/validations/opportunity";
-import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
+import { RETAINED_ON_CLOSE, leadAccessFilter, canViewHidden, isLeadVisibilityEnabled, visibleLinkWhere } from "@/lib/lead-visibility";
 import { z } from "zod";
 import { notifyLeadTaggedToOpportunity } from "@/lib/email-notifications";
 import { revalidateTag } from "next/cache";
 
 type Params = Promise<{ id: string }>;
-
-async function verifySalesOppAccess(oppId: string, userId: string): Promise<boolean> {
-  const leadScope = leadScopeFilter("Sales", userId)!;
-  const link = await prisma.leadOpportunity.findFirst({
-    where: { opportunity_id: oppId, lead: { ...leadScope, deleted_at: null } },
-    select: { id: true },
-  });
-  return !!link;
-}
 
 export async function GET(_request: Request, { params }: { params: Params }) {
   try {
@@ -26,11 +18,20 @@ export async function GET(_request: Request, { params }: { params: Params }) {
 
     const { id } = await params;
 
-    // Sales/TeamLead: verify they have a lead (or team lead's) linked to this opportunity
+    // Access = ownership scope + visibility (flag-gated). Restricted callers only reach the
+    // opportunity through a link they may see; the leads include is filtered to the same set.
+    const access = await leadAccessFilter(session.user.role, session.user.id);
+    const restrictLinks = (await isLeadVisibilityEnabled()) && !(await canViewHidden(session.user.role));
+    const oppLinkWhere = restrictLinks ? visibleLinkWhere : { untagged_at: null };
+
+    // Sales/TeamLead: verify they have a visible lead (or team lead's) linked to this opportunity
     if (session.user.role === "Sales" || session.user.role === "TeamLead") {
-      const leadScope = leadScopeFilter(session.user.role, session.user.id)!;
       const link = await prisma.leadOpportunity.findFirst({
-        where: { opportunity_id: id, lead: { ...leadScope, deleted_at: null } },
+        where: {
+          opportunity_id: id,
+          ...oppLinkWhere,
+          lead: access ? { AND: [{ deleted_at: null }, access] } : { deleted_at: null },
+        },
         select: { id: true },
       });
       if (!link) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -42,6 +43,7 @@ export async function GET(_request: Request, { params }: { params: Params }) {
         created_by: { select: { id: true, name: true } },
         configurations: { orderBy: { created_at: "asc" } },
         leads: {
+          where: oppLinkWhere,
           include: {
             lead: {
               select: {
@@ -88,6 +90,10 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
     const total_sales_value = configRows.reduce((sum, row) => sum + row.row_total, 0);
     const possible_revenue = (total_sales_value * rest.commission_percent) / 100;
 
+    // Capture the prior status so we can audit a project going Active → Sold/Inactive (§8) — that
+    // transition is what hides its non-earned leads under the visibility rule.
+    const prior = await prisma.opportunity.findUnique({ where: { id }, select: { status: true } });
+
     await prisma.opportunityConfiguration.deleteMany({ where: { opportunity_id: id } });
 
     const opp = await prisma.opportunity.update({
@@ -110,6 +116,15 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
       include: { configurations: true },
     });
 
+    if (prior && prior.status !== opp.status) {
+      await prisma.activity.create({
+        data: {
+          entity_type: "Opportunity", entity_id: id, action: "opportunity_status_changed",
+          actor_id: session.user.id, metadata: { from: prior.status, to: opp.status },
+        },
+      });
+    }
+
     revalidateTag("crm-dashboard", "max");
     return NextResponse.json({ data: opp });
   } catch (error) {
@@ -124,38 +139,78 @@ export async function POST(request: Request, { params }: { params: Params }) {
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Tagging changes a lead's pipeline — same gate as the lead-side tag route.
+    if (!(await hasPermissionAsync(session.user.role, "lead:update"))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const { id } = await params;
     const body = await request.json();
     const parsed = tagSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "lead_id required" }, { status: 400 });
+    const lead_id = parsed.data.lead_id;
 
-    const tag = await prisma.leadOpportunity.upsert({
-      where: { lead_id_opportunity_id: { lead_id: parsed.data.lead_id, opportunity_id: id } },
-      update: {},
-      create: { lead_id: parsed.data.lead_id, opportunity_id: id, tagged_by_id: session.user.id },
+    // Caller must be able to see the lead (ownership + visibility).
+    const access = await leadAccessFilter(session.user.role, session.user.id);
+    const lead = await prisma.lead.findFirst({
+      where: { AND: [{ id: lead_id, deleted_at: null }, ...(access ? [access] : [])] },
+      select: { id: true, status: true, activity_stage: true, potential_lead_value: true },
     });
+    if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+
+    const opp = await prisma.opportunity.findUnique({
+      where: { id, deleted_at: null },
+      select: { id: true, name: true, opp_number: true, status: true },
+    });
+    if (!opp) return NextResponse.json({ error: "Opportunity not found" }, { status: 404 });
+
+    // Restricted roles may only tag into a live (Active) opportunity.
+    if (!(await canViewHidden(session.user.role)) && opp.status !== "Active") {
+      return NextResponse.json(
+        { error: "You can only tag a lead to an active project.", code: "TAG_INACTIVE_OPPORTUNITY_FORBIDDEN" },
+        { status: 403 },
+      );
+    }
+
+    // Reactivate-on-retag rather than recreate (respects the (lead_id, opportunity_id) unique).
+    const existing = await prisma.leadOpportunity.findUnique({
+      where: { lead_id_opportunity_id: { lead_id, opportunity_id: id } },
+    });
+    if (existing && existing.untagged_at === null) {
+      return NextResponse.json({ error: "This opportunity is already linked to the lead" }, { status: 409 });
+    }
+
+    const tag = existing
+      ? await prisma.leadOpportunity.update({
+          where: { id: existing.id },
+          data: { untagged_at: null, untagged_by_id: null, status: lead.status, activity_stage: lead.activity_stage },
+        })
+      : await prisma.leadOpportunity.create({
+          data: {
+            lead_id,
+            opportunity_id: id,
+            tagged_by_id: session.user.id,
+            status: lead.status,
+            activity_stage: lead.activity_stage,
+            potential_lead_value: lead.potential_lead_value ?? null,
+          },
+        });
 
     await prisma.activity.create({
       data: {
-        entity_type: "Lead", entity_id: parsed.data.lead_id, action: "opportunity_tagged",
-        actor_id: session.user.id, metadata: { opportunity_id: id },
+        entity_type: "Lead", entity_id: lead_id, action: "opportunity_tagged",
+        actor_id: session.user.id,
+        metadata: { opportunity_id: id, opportunity_name: opp.name, opp_number: opp.opp_number, reactivated: !!existing },
       },
     });
 
-    const opp = await prisma.opportunity.findUnique({
-      where: { id },
-      select: { name: true, opp_number: true },
+    notifyLeadTaggedToOpportunity({
+      leadId: lead_id,
+      oppId: id,
+      oppName: opp.name,
+      oppNumber: opp.opp_number,
+      taggedByName: session.user.name ?? session.user.email ?? "Someone",
     });
-    if (opp) {
-      notifyLeadTaggedToOpportunity({
-        leadId: parsed.data.lead_id,
-        oppId: id,
-        oppName: opp.name,
-        oppNumber: opp.opp_number,
-        taggedByName: session.user.name ?? session.user.email ?? "Someone",
-      });
-    }
 
     revalidateTag("crm-dashboard", "max");
     return NextResponse.json({ data: tag }, { status: 201 });
@@ -172,6 +227,24 @@ export async function DELETE(_request: Request, { params }: { params: Params }) 
     if (!(await hasPermissionAsync(session.user.role, "opportunity:delete"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await params;
+
+    // D5 (§5.2) — an opportunity holding any Booked/Won link cannot be deleted (soft or hard) by
+    // anyone, incl. Admin. Those links anchor DealClosure/commission. Retire via Sold/Inactive.
+    const earned = await prisma.leadOpportunity.findMany({
+      where: { opportunity_id: id, untagged_at: null, status: { in: [...RETAINED_ON_CLOSE] } },
+      select: { lead: { select: { lead_number: true } } },
+    });
+    if (earned.length > 0) {
+      return NextResponse.json(
+        {
+          error: `This project has ${earned.length} booked or won deal(s) and cannot be deleted. Set it to Sold or Inactive instead.`,
+          code: "OPPORTUNITY_HAS_EARNED_LINKS",
+          count: earned.length,
+          ...(session.user.role === "Admin" ? { leads: earned.map((e) => e.lead.lead_number) } : {}),
+        },
+        { status: 409 },
+      );
+    }
 
     if (session.user.role === "Admin") {
       // Hard delete: permanently remove opportunity and all related records

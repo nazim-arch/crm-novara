@@ -1,7 +1,8 @@
 ﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
+import { leadAccessFilter } from "@/lib/lead-visibility";
 import { setActiveFollowUp, clearActiveFollowUp, isNoFollowUpStatus } from "@/lib/follow-ups";
 import { z } from "zod";
 import { revalidateTag } from "next/cache";
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
 
     const userId   = session.user.id;
     const role     = session.user.role;
-    const scope    = leadScopeFilter(role, userId);
+    const scope    = await leadAccessFilter(role, userId);
 
     // ── Batch: resolve assigned_to names → user IDs ─────────────────────
     const nameSet = new Set<string>();
@@ -214,7 +215,7 @@ export async function POST(request: Request) {
           // (documented exception). The rollup trigger keeps Lead.status consistent.
           if (statusChanged) {
             await tx.leadOpportunity.updateMany({
-              where: { lead_id: lead.id },
+              where: { lead_id: lead.id, untagged_at: null },
               data: { status: rawStatus as Parameters<typeof tx.leadOpportunity.updateMany>[0]["data"]["status"] },
             });
           }

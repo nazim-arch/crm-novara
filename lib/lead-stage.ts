@@ -20,7 +20,7 @@ export async function resolveStageTarget(
   opts: { opportunity_link_id?: string | null; opportunity_id?: string | null } = {},
 ): Promise<StageTarget> {
   const links = await prisma.leadOpportunity.findMany({
-    where: { lead_id },
+    where: { lead_id, untagged_at: null },
     select: { id: true, opportunity_id: true, opportunity: { select: { name: true } } },
     orderBy: { tagged_at: "asc" },
   });

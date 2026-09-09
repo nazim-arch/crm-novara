@@ -27,7 +27,8 @@ import { ExportButton } from "@/components/shared/ExportButton";
 import { LeadContactActions } from "@/components/shared/LeadContactActions";
 import { SortableHeader } from "@/components/shared/SortableHeader";
 import { ColumnFilterHeader } from "@/components/shared/ColumnFilterHeader";
-import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
+import { leadAccessFilter, canViewHidden, isLeadVisibilityEnabled, visibleLinkWhere } from "@/lib/lead-visibility";
 import { startOfDay, endOfDay, subDays, startOfWeek, startOfMonth, startOfYear } from "date-fns";
 
 const SORT_MAP: Record<string, Prisma.LeadOrderByWithRelationInput> = {
@@ -195,8 +196,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
   const sortCol = sp.sort ?? "updated_at";
   const sortDir = sp.dir === "asc" ? "asc" : "desc";
 
-  // Role scope — must be resolved before building where
-  const scope = leadScopeFilter(session.user.role, session.user.id);
+  // Access = ownership scope + visibility (flag-gated). Resolved before building where.
+  const access = await leadAccessFilter(session.user.role, session.user.id);
+  const restrictLinks = (await isLeadVisibilityEnabled()) && !(await canViewHidden(session.user.role));
+  const oppWhere = restrictLinks ? visibleLinkWhere : { untagged_at: null };
 
   // Use AND array so multiple OR-based filters don't overwrite each other
   const andConditions: Prisma.LeadWhereInput[] = [];
@@ -229,7 +232,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     });
   }
 
-  if (scope) andConditions.push(scope);
+  if (access) andConditions.push(access);
 
   if (sp.property_type && sp.property_type !== "all") {
     andConditions.push({ property_type: sp.property_type as PropertyType });
@@ -343,6 +346,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
         created_by: { select: { id: true, name: true } },
         _count: { select: { followups: true } },
         opportunities: {
+          where: oppWhere,
           select: {
             id: true,
             status: true,

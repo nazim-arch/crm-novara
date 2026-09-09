@@ -1,7 +1,8 @@
 ﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
+import { hasPermissionAsync } from "@/lib/rbac";
+import { leadAccessFilter } from "@/lib/lead-visibility";
 import ExcelJS from "exceljs";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
@@ -31,8 +32,8 @@ export async function GET(request: Request) {
       });
     }
 
-    const scope = leadScopeFilter(session.user.role, session.user.id);
-    if (scope) andConditions.push(scope);
+    const access = await leadAccessFilter(session.user.role, session.user.id);
+    if (access) andConditions.push(access);
 
     const EXPORT_LIMIT = 5000;
     const leads = await prisma.lead.findMany({
@@ -53,6 +54,17 @@ export async function GET(request: Request) {
       take: EXPORT_LIMIT,
     });
     const truncated = leads.length === EXPORT_LIMIT;
+
+    // Audit the export (§8) — actor, filter, row count.
+    await prisma.activity.create({
+      data: {
+        entity_type: "Lead",
+        entity_id: session.user.id,
+        action: "lead_export",
+        actor_id: session.user.id,
+        metadata: { filter: { status, temperature, assigned_to, search }, row_count: leads.length, truncated },
+      },
+    });
 
     // Batch-fetch all notes for exported leads
     const leadIds = leads.map((l) => l.id);

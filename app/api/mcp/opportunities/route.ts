@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { verifyMcpToken } from "@/lib/mcp-auth";
+import { canViewHidden, isLeadVisibilityEnabled, visibleLinkWhere } from "@/lib/lead-visibility";
 import { generateId } from "@/lib/id-generator";
 import type { Prisma, PropertyType } from "@/lib/generated/prisma/client";
 
@@ -8,6 +9,7 @@ export async function GET(request: Request) {
   try {
     const auth = await verifyMcpToken(request);
     if (!(auth as { valid: true }).valid) return auth as NextResponse;
+    const { role } = auth as { valid: true; role: string };
 
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
@@ -25,6 +27,9 @@ export async function GET(request: Request) {
         { opp_number: { contains: q, mode: "insensitive" } },
       ];
     }
+
+    const restrictLinks = (await isLeadVisibilityEnabled()) && !(await canViewHidden(role));
+    const leadCountWhere = restrictLinks ? visibleLinkWhere : { untagged_at: null };
 
     const [total, opportunities] = await Promise.all([
       prisma.opportunity.count({ where }),
@@ -45,7 +50,7 @@ export async function GET(request: Request) {
           closed_revenue: true,
           created_at: true,
           updated_at: true,
-          _count: { select: { leads: true, expenses: true } },
+          _count: { select: { leads: { where: leadCountWhere }, expenses: true } },
         },
         orderBy: { updated_at: "desc" },
         skip: (page - 1) * limit,

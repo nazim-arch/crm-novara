@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { verifyMcpToken } from "@/lib/mcp-auth";
+import { leadAccessFilter, canViewHidden, isLeadVisibilityEnabled, visibleLinkWhere } from "@/lib/lead-visibility";
+import { notifyDuplicateRestrictedAdmins } from "@/lib/email-notifications";
 import { generateId } from "@/lib/id-generator";
 import type { Prisma, LeadTemperature } from "@/lib/generated/prisma/client";
 
@@ -8,6 +10,7 @@ export async function GET(request: Request) {
   try {
     const auth = await verifyMcpToken(request);
     if (!(auth as { valid: true }).valid) return auth as NextResponse;
+    const { userId, role } = auth as { valid: true; userId: string; role: string };
 
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
@@ -42,6 +45,12 @@ export async function GET(request: Request) {
       });
     }
 
+    // Scope + visibility by the token's user role (flag-gated).
+    const access = await leadAccessFilter(role, userId);
+    if (access) andConditions.push(access);
+    const restrictLinks = (await isLeadVisibilityEnabled()) && !(await canViewHidden(role));
+    const oppWhere = restrictLinks ? visibleLinkWhere : { untagged_at: null };
+
     const where: Prisma.LeadWhereInput = { AND: andConditions };
 
     const [total, leads] = await Promise.all([
@@ -69,6 +78,7 @@ export async function GET(request: Request) {
           assigned_to: { select: { id: true, name: true } },
           lead_owner: { select: { id: true, name: true } },
           opportunities: {
+            where: oppWhere,
             select: {
               id: true,
               status: true,
@@ -96,7 +106,7 @@ export async function POST(request: Request) {
   try {
     const auth = await verifyMcpToken(request);
     if (!(auth as { valid: true }).valid) return auth as NextResponse;
-    const { userId } = auth as { valid: true; userId: string };
+    const { userId, role, name: actorName } = auth as { valid: true; userId: string; role: string; name: string };
 
     const body = await request.json().catch(() => ({}));
     const { full_name, phone, lead_source, temperature, assigned_to_id, email } = body as Record<string, string>;
@@ -108,13 +118,46 @@ export async function POST(request: Request) {
       );
     }
 
-    // Duplicate check
-    const existing = await prisma.lead.findFirst({
+    // Duplicate check — §5.3: withhold PII of a match the token role cannot see and notify Admin.
+    const matches = await prisma.lead.findMany({
       where: { deleted_at: null, phone },
       select: { id: true, lead_number: true, full_name: true },
+      take: 5,
     });
-    if (existing) {
-      return NextResponse.json({ error: "duplicate_lead", match: existing }, { status: 409 });
+    if (matches.length > 0) {
+      const access = await leadAccessFilter(role, userId);
+      let visibleMatch: (typeof matches)[number] | null = matches[0];
+      if (access) {
+        const visible = await prisma.lead.findMany({
+          where: { AND: [{ id: { in: matches.map((m) => m.id) } }, access] },
+          select: { id: true },
+        });
+        const vset = new Set(visible.map((v) => v.id));
+        visibleMatch = matches.find((m) => vset.has(m.id)) ?? null;
+      }
+      if (visibleMatch) {
+        return NextResponse.json({ error: "duplicate_lead", match: visibleMatch }, { status: 409 });
+      }
+      await prisma.activity.create({
+        data: {
+          entity_type: "Lead", entity_id: matches[0].id, action: "duplicate_restricted",
+          actor_id: userId,
+          metadata: { attempted_phone: phone, source: "mcp", matched: matches.map((m) => m.lead_number) },
+        },
+      });
+      notifyDuplicateRestrictedAdmins({
+        actorId: userId,
+        actorName: actorName ?? "An MCP user",
+        attemptedContact: phone,
+        matchedLeadNumbers: matches.map((m) => m.lead_number),
+      });
+      return NextResponse.json(
+        {
+          error: "duplicate_restricted",
+          message: "A lead with this phone already exists but is not accessible to you. Contact an administrator.",
+        },
+        { status: 409 },
+      );
     }
 
     const lead_number = await generateId("LEAD");

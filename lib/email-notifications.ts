@@ -79,6 +79,55 @@ export function notifyLeadCreatedAdmins(params: {
   })());
 }
 
+/**
+ * Fix #5 §5.3 — a restricted user hit a duplicate that resolves to a lead they cannot see. The
+ * contact details are withheld from them; Admins (who may see the lead) are told so they can decide
+ * whether to release it. Matched lead numbers are safe here because the recipients are Admins.
+ */
+export function notifyDuplicateRestrictedAdmins(params: {
+  actorId: string;
+  actorName: string;
+  attemptedContact: string;
+  matchedLeadNumbers: string[];
+}) {
+  fire((async () => {
+    const admins = (await adminEmails()).filter((a) => a.id !== params.actorId);
+    if (admins.length === 0) return;
+    const matches = params.matchedLeadNumbers.join(', ') || '(unknown)';
+    const subject = `Restricted duplicate attempt by ${params.actorName}`;
+    const html =
+      `<p><strong>${params.actorName}</strong> attempted to create a lead using ` +
+      `<strong>${params.attemptedContact}</strong>, which matches ${params.matchedLeadNumbers.length} ` +
+      `hidden lead(s): <strong>${matches}</strong>.</p>` +
+      `<p>The contact details were withheld from them. Review whether the lead should be released.</p>`;
+    await Promise.all(admins.map((a) => sendEmail({ to: a.email, subject, html })));
+  })());
+}
+
+/**
+ * Fix #5 §6.6 — a Restricted Data Access (guarded) permission was granted to a non-Admin role.
+ * Every Admin is told which protection was switched off, for which role, and by whom.
+ */
+export function notifyRbacGuardedGrant(params: {
+  actorId: string;
+  actorName: string;
+  grants: { role: string; permission: string; label: string }[];
+}) {
+  fire((async () => {
+    const admins = (await adminEmails()).filter((a) => a.id !== params.actorId);
+    if (admins.length === 0) return;
+    const rows = params.grants
+      .map((g) => `<li><strong>${g.label}</strong> → role <strong>${g.role}</strong></li>`)
+      .join('');
+    const subject = `Restricted Data Access granted by ${params.actorName}`;
+    const html =
+      `<p><strong>${params.actorName}</strong> granted the following Restricted Data Access ` +
+      `permission(s), which turn OFF a lead-visibility protection:</p><ul>${rows}</ul>` +
+      `<p>Review whether this is intended and revoke it once the reason has passed.</p>`;
+    await Promise.all(admins.map((a) => sendEmail({ to: a.email, subject, html })));
+  })());
+}
+
 export function notifyLeadReassigned(params: {
   newAssigneeId: string;
   leadId: string;
