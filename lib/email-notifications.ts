@@ -104,6 +104,30 @@ export function notifyDuplicateRestrictedAdmins(params: {
   })());
 }
 
+/**
+ * Fix #5 §6.6 — a Restricted Data Access (guarded) permission was granted to a non-Admin role.
+ * Every Admin is told which protection was switched off, for which role, and by whom.
+ */
+export function notifyRbacGuardedGrant(params: {
+  actorId: string;
+  actorName: string;
+  grants: { role: string; permission: string; label: string }[];
+}) {
+  fire((async () => {
+    const admins = (await adminEmails()).filter((a) => a.id !== params.actorId);
+    if (admins.length === 0) return;
+    const rows = params.grants
+      .map((g) => `<li><strong>${g.label}</strong> → role <strong>${g.role}</strong></li>`)
+      .join('');
+    const subject = `Restricted Data Access granted by ${params.actorName}`;
+    const html =
+      `<p><strong>${params.actorName}</strong> granted the following Restricted Data Access ` +
+      `permission(s), which turn OFF a lead-visibility protection:</p><ul>${rows}</ul>` +
+      `<p>Review whether this is intended and revoke it once the reason has passed.</p>`;
+    await Promise.all(admins.map((a) => sendEmail({ to: a.email, subject, html })));
+  })());
+}
+
 export function notifyLeadReassigned(params: {
   newAssigneeId: string;
   leadId: string;

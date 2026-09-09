@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { hasPermissionAsync } from "@/lib/rbac";
 import { DEFAULT_PERMS, type Permission } from "@/lib/rbac-constants";
+import { RECORD_SCOPE_BY_ROLE } from "@/lib/lead-visibility";
 import { RbacEditor } from "@/components/settings/RbacEditor";
 
 export default async function RolesPage() {
@@ -24,7 +25,11 @@ export default async function RolesPage() {
           Configure what each role can do across the application.
         </p>
       </div>
-      <RbacEditor initialConfig={currentConfig} defaultConfig={DEFAULT_PERMS} />
+      <RbacEditor
+        initialConfig={currentConfig}
+        defaultConfig={DEFAULT_PERMS}
+        recordScopeByRole={RECORD_SCOPE_BY_ROLE}
+      />
     </div>
   );
 }
