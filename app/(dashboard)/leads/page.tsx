@@ -749,6 +749,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
         users={users}
         leadSources={leadSourceRows.map((r) => r.lead_source)}
         opportunities={opportunityRows}
+        isAdmin={session.user.role === "Admin"}
       />
 
       {/* Mobile card view */}

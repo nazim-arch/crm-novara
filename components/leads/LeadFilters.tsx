@@ -16,6 +16,8 @@ interface LeadFiltersProps {
   users: User[];
   leadSources: string[];
   opportunities: Opp[];
+  /** Lead Source is a restricted dimension — only Admins may filter by it. */
+  isAdmin?: boolean;
 }
 
 const STATUS_OPTIONS: FilterOption[] = [
@@ -61,7 +63,7 @@ const GROUP_OPTIONS = [
   { label: "Follow-up", value: "followup" },
 ];
 
-export function LeadFilters({ users, leadSources, opportunities }: LeadFiltersProps) {
+export function LeadFilters({ users, leadSources, opportunities, isAdmin = false }: LeadFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -111,7 +113,7 @@ export function LeadFilters({ users, leadSources, opportunities }: LeadFiltersPr
         options={opportunities.map((o) => ({ label: o.name, value: o.id }))}
         className="w-full sm:w-52"
       />
-      {leadSources.length > 0 && (
+      {isAdmin && leadSources.length > 0 && (
         <MultiSelectFilter
           label="Lead Source"
           paramKey="source"
