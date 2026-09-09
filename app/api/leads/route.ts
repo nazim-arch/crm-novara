@@ -7,7 +7,7 @@ import { hasPermissionAsync } from "@/lib/rbac";
 import { leadAccessFilter, canViewHidden, isLeadVisibilityEnabled, visibleLinkWhere } from "@/lib/lead-visibility";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { setActiveFollowUp } from "@/lib/follow-ups";
-import { notifyLeadAssigned, notifyLeadCreatedAdmins } from "@/lib/email-notifications";
+import { notifyLeadAssigned, notifyLeadCreatedAdmins, notifyDuplicateRestrictedAdmins } from "@/lib/email-notifications";
 import { revalidateTag } from "next/cache";
 
 export async function GET(request: Request) {
@@ -167,12 +167,48 @@ export async function POST(request: Request) {
     if (rest.phone) dupeWhere.push({ phone: rest.phone });
     if (email) dupeWhere.push({ email });
     if (dupeWhere.length > 0) {
-      const existing = await prisma.lead.findFirst({
+      const matches = await prisma.lead.findMany({
         where: { deleted_at: null, OR: dupeWhere },
         select: { id: true, lead_number: true, full_name: true, phone: true, email: true },
+        take: 5,
       });
-      if (existing) {
-        return NextResponse.json({ error: "duplicate_lead", match: existing }, { status: 409 });
+      if (matches.length > 0) {
+        // §5.3 — if every match is hidden from the caller, withhold PII and notify Admin instead of
+        // revealing the existing lead. If any match is visible, show it as before.
+        const access = await leadAccessFilter(session.user.role, session.user.id);
+        let visibleMatch: (typeof matches)[number] | null = matches[0];
+        if (access) {
+          const visible = await prisma.lead.findMany({
+            where: { AND: [{ id: { in: matches.map((m) => m.id) } }, access] },
+            select: { id: true },
+          });
+          const vset = new Set(visible.map((v) => v.id));
+          visibleMatch = matches.find((m) => vset.has(m.id)) ?? null;
+        }
+        if (visibleMatch) {
+          return NextResponse.json({ error: "duplicate_lead", match: visibleMatch }, { status: 409 });
+        }
+        const attemptedContact = rest.phone ?? email ?? "unknown";
+        await prisma.activity.create({
+          data: {
+            entity_type: "Lead", entity_id: matches[0].id, action: "duplicate_restricted",
+            actor_id: session.user.id,
+            metadata: { attempted_phone: rest.phone ?? null, attempted_email: email ?? null, matched: matches.map((m) => m.lead_number) },
+          },
+        });
+        notifyDuplicateRestrictedAdmins({
+          actorId: session.user.id,
+          actorName: session.user.name ?? session.user.email ?? "A user",
+          attemptedContact,
+          matchedLeadNumbers: matches.map((m) => m.lead_number),
+        });
+        return NextResponse.json(
+          {
+            error: "duplicate_restricted",
+            message: "A lead with this phone or email already exists but is not accessible to you. Contact an administrator.",
+          },
+          { status: 409 },
+        );
       }
     }
 

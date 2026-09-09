@@ -90,6 +90,10 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
     const total_sales_value = configRows.reduce((sum, row) => sum + row.row_total, 0);
     const possible_revenue = (total_sales_value * rest.commission_percent) / 100;
 
+    // Capture the prior status so we can audit a project going Active → Sold/Inactive (§8) — that
+    // transition is what hides its non-earned leads under the visibility rule.
+    const prior = await prisma.opportunity.findUnique({ where: { id }, select: { status: true } });
+
     await prisma.opportunityConfiguration.deleteMany({ where: { opportunity_id: id } });
 
     const opp = await prisma.opportunity.update({
@@ -111,6 +115,15 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
       },
       include: { configurations: true },
     });
+
+    if (prior && prior.status !== opp.status) {
+      await prisma.activity.create({
+        data: {
+          entity_type: "Opportunity", entity_id: id, action: "opportunity_status_changed",
+          actor_id: session.user.id, metadata: { from: prior.status, to: opp.status },
+        },
+      });
+    }
 
     revalidateTag("crm-dashboard", "max");
     return NextResponse.json({ data: opp });

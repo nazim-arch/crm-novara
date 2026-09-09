@@ -79,6 +79,31 @@ export function notifyLeadCreatedAdmins(params: {
   })());
 }
 
+/**
+ * Fix #5 §5.3 — a restricted user hit a duplicate that resolves to a lead they cannot see. The
+ * contact details are withheld from them; Admins (who may see the lead) are told so they can decide
+ * whether to release it. Matched lead numbers are safe here because the recipients are Admins.
+ */
+export function notifyDuplicateRestrictedAdmins(params: {
+  actorId: string;
+  actorName: string;
+  attemptedContact: string;
+  matchedLeadNumbers: string[];
+}) {
+  fire((async () => {
+    const admins = (await adminEmails()).filter((a) => a.id !== params.actorId);
+    if (admins.length === 0) return;
+    const matches = params.matchedLeadNumbers.join(', ') || '(unknown)';
+    const subject = `Restricted duplicate attempt by ${params.actorName}`;
+    const html =
+      `<p><strong>${params.actorName}</strong> attempted to create a lead using ` +
+      `<strong>${params.attemptedContact}</strong>, which matches ${params.matchedLeadNumbers.length} ` +
+      `hidden lead(s): <strong>${matches}</strong>.</p>` +
+      `<p>The contact details were withheld from them. Review whether the lead should be released.</p>`;
+    await Promise.all(admins.map((a) => sendEmail({ to: a.email, subject, html })));
+  })());
+}
+
 export function notifyLeadReassigned(params: {
   newAssigneeId: string;
   leadId: string;
