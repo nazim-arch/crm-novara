@@ -1,6 +1,6 @@
 ﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,7 +12,7 @@ import { StageChanger } from "@/components/leads/StageChanger";
 import { NoteForm } from "@/components/leads/NoteForm";
 import { DeleteConfirmButton } from "@/components/shared/DeleteConfirmButton";
 import { ArrowLeft, Edit, Phone, Mail, MapPin, Calendar, Plus } from "lucide-react";
-import { hasPermissionAsync } from "@/lib/rbac";
+import { hasPermissionAsync, leadScopeFilter } from "@/lib/rbac";
 import { leadAccessFilter, canViewHidden, isLeadVisibilityEnabled, visibleLinkWhere } from "@/lib/lead-visibility";
 import { FollowUpSection } from "@/components/follow-ups/FollowUpSection";
 import { LeadContactActions } from "@/components/shared/LeadContactActions";
@@ -80,7 +80,19 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
       : Promise.resolve([]),
   ]);
 
-  if (!lead) notFound();
+  if (!lead) {
+    // The lead may exist and be in this user's ownership scope but hidden by the visibility rule
+    // (e.g. they just marked it Lost/InvalidLead/Recycle). In that case send them to the list
+    // rather than a 404. Re-check with ownership scope ONLY (no visibility) to isolate that case;
+    // a genuinely non-existent or out-of-scope id still 404s (no new existence leak).
+    const scope = leadScopeFilter(role, userId);
+    const inScope = await prisma.lead.findFirst({
+      where: { AND: [{ id, deleted_at: null }, ...(scope ? [scope] : [])] },
+      select: { id: true },
+    });
+    if (inScope) redirect("/leads");
+    notFound();
+  }
 
   const canEdit = session?.user && await hasPermissionAsync(session.user.role, "lead:update");
   const canDelete = session?.user && await hasPermissionAsync(session.user.role, "lead:delete");
