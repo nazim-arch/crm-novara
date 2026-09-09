@@ -37,7 +37,7 @@ export default async function NewLeadPage() {
         <h1 className="text-xl font-semibold">New Lead</h1>
         <p className="text-sm text-muted-foreground">Add a new lead to the CRM</p>
       </div>
-      <LeadForm users={users} opportunities={opportunities} currentUserId={session.user.id} />
+      <LeadForm users={users} opportunities={opportunities} currentUserId={session.user.id} isAdmin={session.user.role === "Admin"} />
     </div>
   );
 }

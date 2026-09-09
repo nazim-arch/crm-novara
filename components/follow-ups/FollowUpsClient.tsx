@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { ControlledMultiSelect } from "@/components/shared/ControlledMultiSelect";
 import { PriorityBadge } from "@/components/shared/LeadStatusBadge";
 import { AdminReviewQueue } from "./AdminReviewQueue";
 import { SalesFocusQueue } from "./SalesFocusQueue";
@@ -240,7 +241,9 @@ export function FollowUpsClient({
   const showFocusQueue = role === "Sales" || role === "TeamLead" || isManagerOrAdmin;
   const [followUps, setFollowUps] = useState<FollowUp[]>(initialFollowUps);
   const [search, setSearch] = useState("");
-  const [assigneeFilter, setAssigneeFilter] = useState("all");
+  const [assigneeFilter, setAssigneeFilter] = useState<string[]>([]);
+  const [typeFilter, setTypeFilter] = useState<string[]>([]);
+  const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
   const [sortCol, setSortCol] = useState("scheduled_at");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -257,8 +260,13 @@ export function FollowUpsClient({
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
+    const assigneeSet = new Set(assigneeFilter);
+    const typeSet = new Set(typeFilter);
+    const prioritySet = new Set(priorityFilter);
     const list = followUps.filter((fu) => {
-      if (assigneeFilter !== "all" && fu.assigned_to?.id !== assigneeFilter) return false;
+      if (assigneeSet.size && !(fu.assigned_to && assigneeSet.has(fu.assigned_to.id))) return false;
+      if (typeSet.size && !typeSet.has(fu.type)) return false;
+      if (prioritySet.size && !prioritySet.has(fu.priority)) return false;
       if (q) {
         const haystack = [
           fu.lead?.full_name ?? "",
@@ -287,7 +295,7 @@ export function FollowUpsClient({
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [followUps, search, assigneeFilter, sortCol, sortDir]);
+  }, [followUps, search, assigneeFilter, typeFilter, priorityFilter, sortCol, sortDir]);
 
   const buckets = useMemo(() => {
     const pending = filtered.filter((fu) => !fu.completed_at);
@@ -405,8 +413,8 @@ export function FollowUpsClient({
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-2">
-        <div className="relative flex-1">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:items-end">
+        <div className="relative flex-1 min-w-[12rem]">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
             placeholder="Search lead, opp, type, notes…"
@@ -415,21 +423,32 @@ export function FollowUpsClient({
             className="pl-8 h-9 text-sm w-full"
           />
         </div>
+        <ControlledMultiSelect
+          label="Types"
+          options={FOLLOW_UP_TYPES.map((t) => ({ label: t, value: t }))}
+          values={typeFilter}
+          onChange={setTypeFilter}
+          width="sm:w-40"
+        />
+        <ControlledMultiSelect
+          label="Priorities"
+          options={[
+            { label: "High", value: "High" },
+            { label: "Medium", value: "Medium" },
+            { label: "Low", value: "Low" },
+          ]}
+          values={priorityFilter}
+          onChange={setPriorityFilter}
+          width="sm:w-36"
+        />
         {isManagerOrAdmin && users.length > 0 && (
-          <Select value={assigneeFilter} onValueChange={(v) => v && setAssigneeFilter(v)}>
-            <SelectTrigger className="h-9 sm:w-44 text-sm">
-              <SelectValue>
-                {assigneeFilter === "all"
-                  ? "All assignees"
-                  : users.find((u) => u.id === assigneeFilter)?.name ?? "All assignees"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All assignees</SelectItem>
-              <SelectItem value={currentUserId}>Mine</SelectItem>
-              {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <ControlledMultiSelect
+            label="Assignees"
+            options={users.map((u) => ({ label: u.name, value: u.id }))}
+            values={assigneeFilter}
+            onChange={setAssigneeFilter}
+            width="sm:w-44"
+          />
         )}
       </div>
 

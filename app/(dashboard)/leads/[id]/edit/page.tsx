@@ -56,6 +56,7 @@ export default async function EditLeadPage({ params }: { params: Params }) {
         defaultTaggedOpportunityId={taggedOpps[0]?.opportunity_id}
         currentUserId={session.user.id}
         leadId={lead.id}
+        isAdmin={session.user.role === "Admin"}
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         defaultValues={{
           full_name: lead.full_name,

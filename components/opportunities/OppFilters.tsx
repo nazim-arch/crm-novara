@@ -2,71 +2,73 @@
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/input";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import { Search } from "lucide-react";
-import { useCallback } from "react";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
+import { MultiSelectFilter, type FilterOption } from "@/components/shared/MultiSelectFilter";
+import { GroupByControl } from "@/components/shared/GroupByControl";
 
-interface OppFiltersProps {
-  currentSearch?: string;
-  currentStatus?: string;
-}
+const STATUS_OPTIONS: FilterOption[] = [
+  { label: "Active", value: "Active" },
+  { label: "Inactive", value: "Inactive" },
+  { label: "Sold", value: "Sold" },
+];
 
-export function OppFilters({ currentSearch, currentStatus }: OppFiltersProps) {
+const PROPERTY_TYPE_OPTIONS: FilterOption[] = [
+  { label: "Residential", value: "Residential" },
+  { label: "Commercial", value: "Commercial" },
+  { label: "Plot", value: "Plot" },
+  { label: "Villa", value: "Villa" },
+  { label: "Apartment", value: "Apartment" },
+  { label: "Office", value: "Office" },
+  { label: "Land", value: "Land" },
+];
+
+const OPP_BY_OPTIONS: FilterOption[] = [
+  { label: "Developer", value: "Developer" },
+  { label: "Seller", value: "Seller" },
+  { label: "Buyer", value: "Buyer" },
+];
+
+const GROUP_OPTIONS = [
+  { label: "Status", value: "status" },
+  { label: "Property Type", value: "property_type" },
+  { label: "Location", value: "location" },
+  { label: "Developer", value: "developer" },
+];
+
+export function OppFilters() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const updateParam = useCallback(
-    (key: string, value: string) => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (value && value !== "all") params.set(key, value);
-      else params.delete(key);
-      params.delete("page");
-      router.push(`${pathname}?${params.toString()}`);
-    },
-    [router, pathname, searchParams]
-  );
-
   const handleSearch = useDebouncedCallback((value: string) => {
-    updateParam("search", value);
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) params.set("search", value);
+    else params.delete("search");
+    params.delete("page");
+    router.push(`${pathname}?${params.toString()}`);
   }, 300);
 
   return (
-    <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
-      <div className="flex flex-col gap-1 flex-1">
+    <div className="flex flex-wrap gap-2 items-end">
+      <div className="flex flex-col gap-1 w-full sm:w-56">
         <span className="text-[11px] font-medium text-muted-foreground">Search</span>
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
             placeholder="Search name, project, location…"
-            defaultValue={currentSearch ?? ""}
+            defaultValue={searchParams.get("search") ?? ""}
             onChange={(e) => handleSearch(e.target.value)}
             className="pl-8 h-9 text-sm"
           />
         </div>
       </div>
-      <div className="flex flex-col gap-1">
-        <span className="text-[11px] font-medium text-muted-foreground">Status</span>
-        <Select
-          value={currentStatus ?? "all"}
-          onValueChange={(v) => v && updateParam("status", v)}
-        >
-          <SelectTrigger className="h-9 sm:w-40 text-sm">
-            <SelectValue>
-              {currentStatus && currentStatus !== "all" ? currentStatus : "All statuses"}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="Active">Active</SelectItem>
-            <SelectItem value="Inactive">Inactive</SelectItem>
-            <SelectItem value="Sold">Sold</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+
+      <MultiSelectFilter label="Status" paramKey="status" options={STATUS_OPTIONS} className="w-full sm:w-40" />
+      <MultiSelectFilter label="Property Type" paramKey="property_type" options={PROPERTY_TYPE_OPTIONS} className="w-full sm:w-44" />
+      <MultiSelectFilter label="Opp By" paramKey="opportunity_by" options={OPP_BY_OPTIONS} className="w-full sm:w-40" />
+
+      <GroupByControl options={GROUP_OPTIONS} />
     </div>
   );
 }

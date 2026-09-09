@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { LeadStatusBadge, TemperatureBadge, ActivityStageBadge } from "@/components/shared/LeadStatusBadge";
@@ -30,6 +30,8 @@ import { ColumnFilterHeader } from "@/components/shared/ColumnFilterHeader";
 import { hasPermissionAsync } from "@/lib/rbac";
 import { leadAccessFilter, canViewHidden, isLeadVisibilityEnabled, visibleLinkWhere } from "@/lib/lead-visibility";
 import { startOfDay, endOfDay, subDays, startOfWeek, startOfMonth, startOfYear } from "date-fns";
+import { parseMulti } from "@/lib/list-params";
+import { groupRows } from "@/lib/list-grouping";
 
 const SORT_MAP: Record<string, Prisma.LeadOrderByWithRelationInput> = {
   full_name:            { full_name: "asc" },
@@ -153,7 +155,7 @@ const LEAD_COLUMNS: ColumnDef[] = [
   { id: "deal_value", label: "Deal Value", defaultHidden: true },
   { id: "settlement_value", label: "Settlement Value", defaultHidden: true },
   { id: "financing_required", label: "Financing Required", defaultHidden: true },
-  { id: "created_at", label: "Created Date", defaultHidden: true },
+  { id: "created_at", label: "Created Date" },
   { id: "updated_at", label: "Last Updated", defaultHidden: true },
   { id: "contact", label: "Contact" },
 ];
@@ -176,6 +178,7 @@ type SearchParams = Promise<{
   activity_stage?: string;
   property_type?: string;
   profile?: string;
+  group_by?: string;
 }>;
 
 export default async function LeadsPage({ searchParams }: { searchParams: SearchParams }) {
@@ -191,8 +194,13 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
   const staleContactCutoff = subDays(today, 7); // last-contact older than this is flagged
   const staleDays = Math.max(1, Number(sp.stale_days ?? "7"));
 
+  // When grouping is active we lift pagination and fetch up to a cap so all
+  // groups render together; otherwise the normal 20-per-page applies.
+  const groupBy = sp.group_by ?? "";
+  const grouping = !!groupBy;
+  const GROUP_CAP = 500;
   const page = Math.max(1, Number(sp.page ?? "1"));
-  const limit = 20;
+  const limit = grouping ? GROUP_CAP : 20;
   const sortCol = sp.sort ?? "updated_at";
   const sortDir = sp.dir === "asc" ? "asc" : "desc";
 
@@ -204,11 +212,13 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
   // Use AND array so multiple OR-based filters don't overwrite each other
   const andConditions: Prisma.LeadWhereInput[] = [];
 
-  if (sp.status && sp.status !== "all") {
+  const statusVals = parseMulti(sp.status).filter((v) => v !== "all");
+  if (statusVals.length) {
+    const statusIn = { in: statusVals } as Prisma.EnumLeadStatusFilter;
     andConditions.push({
       OR: [
-        { opportunities: { some: { status: sp.status as Prisma.EnumLeadStatusFilter } } },
-        { AND: [{ opportunities: { none: {} } }, { status: sp.status as Prisma.EnumLeadStatusFilter }] },
+        { opportunities: { some: { status: statusIn } } },
+        { AND: [{ opportunities: { none: {} } }, { status: statusIn }] },
       ],
     });
   }
@@ -223,19 +233,22 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     });
   }
 
-  if (sp.activity_stage && sp.activity_stage !== "all") {
+  const activityVals = parseMulti(sp.activity_stage).filter((v) => v !== "all");
+  if (activityVals.length) {
+    const activityIn = { in: activityVals } as Prisma.EnumActivityStageFilter;
     andConditions.push({
       OR: [
-        { opportunities: { some: { activity_stage: sp.activity_stage as Prisma.EnumActivityStageFilter } } },
-        { AND: [{ opportunities: { none: {} } }, { activity_stage: sp.activity_stage as Prisma.EnumActivityStageFilter }] },
+        { opportunities: { some: { activity_stage: activityIn } } },
+        { AND: [{ opportunities: { none: {} } }, { activity_stage: activityIn }] },
       ],
     });
   }
 
   if (access) andConditions.push(access);
 
-  if (sp.property_type && sp.property_type !== "all") {
-    andConditions.push({ property_type: sp.property_type as PropertyType });
+  const propertyTypeVals = parseMulti(sp.property_type).filter((v) => v !== "all");
+  if (propertyTypeVals.length) {
+    andConditions.push({ property_type: { in: propertyTypeVals as PropertyType[] } });
   }
 
   if (sp.profile === "complete") {
@@ -258,12 +271,17 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     });
   }
 
+  const temperatureVals = parseMulti(sp.temperature).filter((v) => v !== "all");
+  const assignedVals = parseMulti(sp.assigned_to).filter((v) => v !== "all");
+  const sourceVals = parseMulti(sp.source);
+  const opportunityVals = parseMulti(sp.opportunity_id);
+
   const where: Prisma.LeadWhereInput = {
     deleted_at: null,
-    ...(sp.temperature && sp.temperature !== "all" && { temperature: sp.temperature as Prisma.EnumLeadTemperatureFilter }),
-    ...(sp.assigned_to && sp.assigned_to !== "all" && { assigned_to_id: sp.assigned_to }),
-    ...(sp.source && { lead_source: sp.source }),
-    ...(sp.opportunity_id && { opportunities: { some: { opportunity_id: sp.opportunity_id } } }),
+    ...(temperatureVals.length > 0 && { temperature: { in: temperatureVals } as Prisma.EnumLeadTemperatureFilter }),
+    ...(assignedVals.length > 0 && { assigned_to_id: { in: assignedVals } }),
+    ...(sourceVals.length > 0 && { lead_source: { in: sourceVals } }),
+    ...(opportunityVals.length > 0 && { opportunities: { some: { opportunity_id: { in: opportunityVals } } } }),
     ...(andConditions.length > 0 && { AND: andConditions }),
   };
 
@@ -306,7 +324,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     Object.entries(baseOrder).map(([k]) => [k, sortDir])
   ) as Prisma.LeadOrderByWithRelationInput;
 
-  const [total, leads, users, leadSourceRows] = await Promise.all([
+  const [total, leads, users, leadSourceRows, opportunityRows] = await Promise.all([
     prisma.lead.count({ where }),
     prisma.lead.findMany({
       where,
@@ -370,6 +388,11 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
       select: { lead_source: true },
       distinct: ["lead_source"],
       orderBy: { lead_source: "asc" },
+    }),
+    prisma.opportunity.findMany({
+      where: { deleted_at: null },
+      select: { id: true, name: true, opp_number: true },
+      orderBy: { name: "asc" },
     }),
   ]);
 
@@ -538,6 +561,125 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     }
   };
 
+  // ── Grouping ────────────────────────────────────────────────────────────
+  const groupKeyFor = (row: LeadRow): string => {
+    switch (groupBy) {
+      case "status": return row.link_status;
+      case "opportunity": return row.opportunity?.name ?? "No opportunity";
+      case "temperature": return row.temperature;
+      case "assigned_to": return row.assigned_to?.name ?? "Unassigned";
+      case "followup":
+        if (!row.next_followup_date) return "No follow-up";
+        return new Date(row.next_followup_date) < todayStart ? "Overdue" : "Scheduled";
+      default: return "";
+    }
+  };
+  const leadGroups = grouping ? groupRows(rows, groupKeyFor) : null;
+
+  const renderRow = (row: LeadRow): ReactNode => (
+    <TableRow key={row.row_key} className="hover:bg-muted/30 cursor-pointer">
+      {visibleLeadCols.map((col) => (
+        <TableCell
+          key={col.id}
+          className={LEAD_HEAD_CLASS[col.id]?.includes("text-right") ? "text-right text-sm" : "text-sm"}
+        >
+          {leadCell(col.id, row)}
+        </TableCell>
+      ))}
+    </TableRow>
+  );
+
+  const renderCard = (row: LeadRow): ReactNode => (
+    <div key={row.row_key} className="rounded-xl border bg-card p-3 space-y-2.5 shadow-sm">
+      {/* Row 1: name + badges */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <Link href={`/leads/${row.id}`} className="font-semibold text-sm hover:underline leading-tight block truncate">
+            {row.full_name}
+          </Link>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className="text-[11px] text-muted-foreground font-mono">{row.lead_number}</span>
+            {row.is_complete ? (
+              <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-emerald-600">
+                <CheckCircle2 className="h-3 w-3" /> Complete
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-amber-500">
+                <AlertCircle className="h-3 w-3" /> Incomplete
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <TemperatureBadge temperature={row.temperature} />
+        </div>
+      </div>
+      {/* Row 2: status + opportunity + property */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <LeadStatusBadge status={row.link_status} />
+        {row.opportunity && (
+          <Link href={`/opportunities/${row.opportunity.id}`} className="text-[11px] text-primary bg-primary/10 px-1.5 py-0.5 rounded hover:bg-primary/20 truncate max-w-[140px]">
+            {row.opportunity.name}
+          </Link>
+        )}
+        {row.property_type && (
+          <span className="text-[11px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+            {row.property_type}
+          </span>
+        )}
+        {row.assigned_to && (
+          <span className="text-[11px] text-muted-foreground">{row.assigned_to.name}</span>
+        )}
+      </div>
+      {/* Row 3: follow-up date + count */}
+      <div className="text-xs text-muted-foreground">
+        {row.next_followup_date ? (
+          <>
+            Follow-up:{" "}
+            <span className={new Date(row.next_followup_date) < new Date() ? "text-destructive font-medium" : "font-medium"}>
+              {formatDate(row.next_followup_date)}
+            </span>
+            {row.followup_count > 0 && (
+              <span className="ml-1 text-muted-foreground">({row.followup_count} total)</span>
+            )}
+          </>
+        ) : row.followup_count > 0 ? (
+          <span>{row.followup_count} follow-up{row.followup_count !== 1 ? "s" : ""} · no next date</span>
+        ) : (
+          <span className="text-amber-500 font-medium">No follow-up</span>
+        )}
+      </div>
+      {/* Row 4: actions */}
+      <div className="flex items-center gap-2 pt-0.5">
+        <LeadContactActions
+          leadId={row.id}
+          phone={row.phone}
+          leadName={row.full_name}
+          agentName={session?.user?.name ?? "Agent"}
+          propertyType={row.property_type}
+          budgetMin={row.budget_min ? Number(row.budget_min) : null}
+          budgetMax={row.budget_max ? Number(row.budget_max) : null}
+          location={row.location_preference}
+          variant="compact"
+        />
+        <Link
+          href={`/leads/${row.id}`}
+          className="ml-auto text-xs text-primary hover:underline font-medium"
+        >
+          View →
+        </Link>
+      </div>
+    </div>
+  );
+
+  const groupHeaderRow = (label: string, count: number): ReactNode => (
+    <TableRow className="hover:bg-transparent bg-muted/40">
+      <TableCell colSpan={visibleCount} className="py-1.5 text-xs font-semibold text-muted-foreground">
+        {label} <span className="font-normal">({count})</span>
+      </TableCell>
+    </TableRow>
+  );
+
   const PERIOD_LABEL: Record<string, string> = {
     today: "Today", yesterday: "Yesterday", this_week: "This Week",
     this_month: "This Month", ytd: "YTD", custom: "Custom Range",
@@ -606,15 +748,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
       <LeadFilters
         users={users}
         leadSources={leadSourceRows.map((r) => r.lead_source)}
-        currentParams={{
-          status: sp.status,
-          temperature: sp.temperature,
-          assigned_to: sp.assigned_to,
-          search: sp.search,
-          filter: sp.filter,
-          source: sp.source,
-          activity_stage: sp.activity_stage,
-        }}
+        opportunities={opportunityRows}
       />
 
       {/* Mobile card view */}
@@ -632,89 +766,18 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
               }
             />
           </div>
-        ) : (
-          rows.map((row) => (
-            <div key={row.row_key} className="rounded-xl border bg-card p-3 space-y-2.5 shadow-sm">
-              {/* Row 1: name + badges */}
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <Link href={`/leads/${row.id}`} className="font-semibold text-sm hover:underline leading-tight block truncate">
-                    {row.full_name}
-                  </Link>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[11px] text-muted-foreground font-mono">{row.lead_number}</span>
-                    {row.is_complete ? (
-                      <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-emerald-600">
-                        <CheckCircle2 className="h-3 w-3" /> Complete
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-amber-500">
-                        <AlertCircle className="h-3 w-3" /> Incomplete
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <TemperatureBadge temperature={row.temperature} />
-                </div>
+        ) : leadGroups ? (
+          leadGroups.map((g) => (
+            <div key={g.key} className="space-y-2">
+              <div className="flex items-center gap-2 px-1 pt-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{g.label}</span>
+                <span className="text-[11px] text-muted-foreground">({g.count})</span>
               </div>
-              {/* Row 2: status + opportunity + property */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <LeadStatusBadge status={row.link_status} />
-                {row.opportunity && (
-                  <Link href={`/opportunities/${row.opportunity.id}`} className="text-[11px] text-primary bg-primary/10 px-1.5 py-0.5 rounded hover:bg-primary/20 truncate max-w-[140px]">
-                    {row.opportunity.name}
-                  </Link>
-                )}
-                {row.property_type && (
-                  <span className="text-[11px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                    {row.property_type}
-                  </span>
-                )}
-                {row.assigned_to && (
-                  <span className="text-[11px] text-muted-foreground">{row.assigned_to.name}</span>
-                )}
-              </div>
-              {/* Row 3: follow-up date + count */}
-              <div className="text-xs text-muted-foreground">
-                {row.next_followup_date ? (
-                  <>
-                    Follow-up:{" "}
-                    <span className={new Date(row.next_followup_date) < new Date() ? "text-destructive font-medium" : "font-medium"}>
-                      {formatDate(row.next_followup_date)}
-                    </span>
-                    {row.followup_count > 0 && (
-                      <span className="ml-1 text-muted-foreground">({row.followup_count} total)</span>
-                    )}
-                  </>
-                ) : row.followup_count > 0 ? (
-                  <span>{row.followup_count} follow-up{row.followup_count !== 1 ? "s" : ""} · no next date</span>
-                ) : (
-                  <span className="text-amber-500 font-medium">No follow-up</span>
-                )}
-              </div>
-              {/* Row 4: actions */}
-              <div className="flex items-center gap-2 pt-0.5">
-                <LeadContactActions
-                  leadId={row.id}
-                  phone={row.phone}
-                  leadName={row.full_name}
-                  agentName={session?.user?.name ?? "Agent"}
-                  propertyType={row.property_type}
-                  budgetMin={row.budget_min ? Number(row.budget_min) : null}
-                  budgetMax={row.budget_max ? Number(row.budget_max) : null}
-                  location={row.location_preference}
-                  variant="compact"
-                />
-                <Link
-                  href={`/leads/${row.id}`}
-                  className="ml-auto text-xs text-primary hover:underline font-medium"
-                >
-                  View →
-                </Link>
-              </div>
+              {g.rows.map(renderCard)}
             </div>
           ))
+        ) : (
+          rows.map(renderCard)
         )}
       </div>
 
@@ -746,26 +809,28 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
                   />
                 </TableCell>
               </TableRow>
-            ) : (
-              rows.map((row) => (
-                <TableRow key={row.row_key} className="hover:bg-muted/30 cursor-pointer">
-                  {visibleLeadCols.map((col) => (
-                    <TableCell
-                      key={col.id}
-                      className={LEAD_HEAD_CLASS[col.id]?.includes("text-right") ? "text-right text-sm" : "text-sm"}
-                    >
-                      {leadCell(col.id, row)}
-                    </TableCell>
-                  ))}
-                </TableRow>
+            ) : leadGroups ? (
+              leadGroups.map((g) => (
+                <Fragment key={g.key}>
+                  {groupHeaderRow(g.label, g.count)}
+                  {g.rows.map(renderRow)}
+                </Fragment>
               ))
+            ) : (
+              rows.map(renderRow)
             )}
           </TableBody>
         </Table>
       </div>
 
+      {grouping && total > GROUP_CAP && (
+        <p className="text-xs text-muted-foreground">
+          Showing the first {GROUP_CAP} of {total} leads while grouped. Narrow your filters to see the rest.
+        </p>
+      )}
+
       {/* Pagination */}
-      {totalPages > 1 && (
+      {!grouping && totalPages > 1 && (
         <div className="flex items-center justify-between text-xs sm:text-sm text-muted-foreground">
           <span>Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total} leads</span>
           <div className="flex gap-2">

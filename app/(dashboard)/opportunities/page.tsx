@@ -1,6 +1,8 @@
 ﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
+import { parseMulti } from "@/lib/list-params";
+import { groupRows } from "@/lib/list-grouping";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,7 +49,7 @@ const OPP_BY_OPTIONS = [
   { label: "Buyer", value: "Buyer" },
 ];
 
-type SearchParams = Promise<{ status?: string; search?: string; page?: string; sort?: string; dir?: string; property_type?: string; opportunity_by?: string }>;
+type SearchParams = Promise<{ status?: string; search?: string; page?: string; sort?: string; dir?: string; property_type?: string; opportunity_by?: string; group_by?: string }>;
 
 // defaultHidden columns are available in the picker but off by default.
 const OPP_COLUMNS: ColumnDef[] = [
@@ -66,7 +68,7 @@ const OPP_COLUMNS: ColumnDef[] = [
   { id: "status", label: "Status" },
   { id: "notes", label: "Notes", defaultHidden: true },
   { id: "created_by", label: "Created By", defaultHidden: true },
-  { id: "created_at", label: "Created Date", defaultHidden: true },
+  { id: "created_at", label: "Created Date" },
   { id: "updated_at", label: "Last Updated", defaultHidden: true },
 ];
 
@@ -94,16 +96,23 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
   const sp = await searchParams;
   const canExport = session?.user ? await hasPermissionAsync(session.user.role, "opportunity:export") : false;
 
+  const groupBy = sp.group_by ?? "";
+  const grouping = !!groupBy;
+  const GROUP_CAP = 500;
   const page = Math.max(1, Number(sp.page ?? "1"));
-  const limit = 20;
+  const limit = grouping ? GROUP_CAP : 20;
   const sortCol = sp.sort ?? "created_at";
   const sortDir = sp.dir === "asc" ? "asc" : "desc";
 
+  const statusVals = parseMulti(sp.status).filter((v) => v !== "all");
+  const propertyTypeVals = parseMulti(sp.property_type).filter((v) => v !== "all");
+  const oppByVals = parseMulti(sp.opportunity_by).filter((v) => v !== "all");
+
   const where = {
     deleted_at: null as null,
-    ...(sp.status && sp.status !== "all" && { status: sp.status as "Active" | "Inactive" | "Sold" }),
-    ...(sp.property_type && sp.property_type !== "all" && { property_type: sp.property_type as PropertyType }),
-    ...(sp.opportunity_by && sp.opportunity_by !== "all" && { opportunity_by: sp.opportunity_by as "Developer" | "Seller" | "Buyer" }),
+    ...(statusVals.length > 0 && { status: { in: statusVals as ("Active" | "Inactive" | "Sold")[] } }),
+    ...(propertyTypeVals.length > 0 && { property_type: { in: propertyTypeVals as PropertyType[] } }),
+    ...(oppByVals.length > 0 && { opportunity_by: { in: oppByVals as ("Developer" | "Seller" | "Buyer")[] } }),
     ...(sp.search && {
       OR: [
         { name: { contains: sp.search, mode: "insensitive" as const } },
@@ -208,6 +217,64 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
     }
   };
 
+  // ── Grouping ────────────────────────────────────────────────────────────
+  const groupKeyFor = (opp: OppRow): string => {
+    switch (groupBy) {
+      case "status": return opp.status;
+      case "property_type": return opp.property_type;
+      case "location": return opp.location || "—";
+      case "developer": return opp.developer || "—";
+      default: return "";
+    }
+  };
+  const oppGroups = grouping ? groupRows(opportunities, groupKeyFor) : null;
+
+  const renderRow = (opp: OppRow): ReactNode => (
+    <TableRow key={opp.id} className="hover:bg-muted/30">
+      {visibleOppCols.map((col) => (
+        <TableCell
+          key={col.id}
+          className={OPP_HEAD_CLASS[col.id]?.includes("text-right") ? "text-right text-sm" : "text-sm"}
+        >
+          {oppCell(col.id, opp)}
+        </TableCell>
+      ))}
+    </TableRow>
+  );
+
+  const renderCard = (opp: OppRow): ReactNode => (
+    <div key={opp.id} className="rounded-xl border bg-card p-3 space-y-2 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <Link href={`/opportunities/${opp.id}`} className="font-semibold text-sm hover:underline block truncate">
+            {opp.name}
+          </Link>
+          <p className="text-xs text-muted-foreground truncate">{opp.project}</p>
+          <span className="text-[11px] text-muted-foreground font-mono">{opp.opp_number}</span>
+        </div>
+        <span className="shrink-0">
+          <OpportunityStatusBadge status={opp.status} />
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        <span>{opp.location}</span>
+        <span>{opp.property_type}</span>
+        <span>{opp._count.leads} lead{opp._count.leads !== 1 ? "s" : ""}</span>
+        {canViewFinancials && opp.possible_revenue && (
+          <span className="font-medium text-foreground">{formatCurrency(Number(opp.possible_revenue))}</span>
+        )}
+      </div>
+    </div>
+  );
+
+  const groupHeaderRow = (label: string, count: number): ReactNode => (
+    <TableRow className="hover:bg-transparent bg-muted/40">
+      <TableCell colSpan={visibleCount} className="py-1.5 text-xs font-semibold text-muted-foreground">
+        {label} <span className="font-normal">({count})</span>
+      </TableCell>
+    </TableRow>
+  );
+
   return (
     <div className="p-3 sm:p-6 space-y-3 sm:space-y-4">
       <PageHeader
@@ -232,7 +299,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
         }
       />
 
-      <OppFilters currentSearch={sp.search} currentStatus={sp.status} />
+      <OppFilters />
 
       {/* Mobile card view */}
       <div className="md:hidden space-y-2">
@@ -244,31 +311,18 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
               description="Create your first opportunity to start tracking deals."
             />
           </div>
-        ) : (
-          opportunities.map((opp) => (
-            <div key={opp.id} className="rounded-xl border bg-card p-3 space-y-2 shadow-sm">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <Link href={`/opportunities/${opp.id}`} className="font-semibold text-sm hover:underline block truncate">
-                    {opp.name}
-                  </Link>
-                  <p className="text-xs text-muted-foreground truncate">{opp.project}</p>
-                  <span className="text-[11px] text-muted-foreground font-mono">{opp.opp_number}</span>
-                </div>
-                <span className="shrink-0">
-                  <OpportunityStatusBadge status={opp.status} />
-                </span>
+        ) : oppGroups ? (
+          oppGroups.map((g) => (
+            <div key={g.key} className="space-y-2">
+              <div className="flex items-center gap-2 px-1 pt-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{g.label}</span>
+                <span className="text-[11px] text-muted-foreground">({g.count})</span>
               </div>
-              <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                <span>{opp.location}</span>
-                <span>{opp.property_type}</span>
-                <span>{opp._count.leads} lead{opp._count.leads !== 1 ? "s" : ""}</span>
-                {canViewFinancials && opp.possible_revenue && (
-                  <span className="font-medium text-foreground">{formatCurrency(Number(opp.possible_revenue))}</span>
-                )}
-              </div>
+              {g.rows.map(renderCard)}
             </div>
           ))
+        ) : (
+          opportunities.map(renderCard)
         )}
       </div>
 
@@ -295,25 +349,27 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
                   />
                 </TableCell>
               </TableRow>
-            ) : (
-              opportunities.map((opp) => (
-                <TableRow key={opp.id} className="hover:bg-muted/30">
-                  {visibleOppCols.map((col) => (
-                    <TableCell
-                      key={col.id}
-                      className={OPP_HEAD_CLASS[col.id]?.includes("text-right") ? "text-right text-sm" : "text-sm"}
-                    >
-                      {oppCell(col.id, opp)}
-                    </TableCell>
-                  ))}
-                </TableRow>
+            ) : oppGroups ? (
+              oppGroups.map((g) => (
+                <Fragment key={g.key}>
+                  {groupHeaderRow(g.label, g.count)}
+                  {g.rows.map(renderRow)}
+                </Fragment>
               ))
+            ) : (
+              opportunities.map(renderRow)
             )}
           </TableBody>
         </Table>
       </div>
 
-      {totalPages > 1 && (
+      {grouping && total > GROUP_CAP && (
+        <p className="text-xs text-muted-foreground">
+          Showing the first {GROUP_CAP} of {total} opportunities while grouped. Narrow your filters to see the rest.
+        </p>
+      )}
+
+      {!grouping && totalPages > 1 && (
         <div className="flex items-center justify-between text-xs sm:text-sm text-muted-foreground">
           <span>Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}</span>
           <div className="flex gap-2">

@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ControlledMultiSelect } from "@/components/shared/ControlledMultiSelect";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -134,13 +135,14 @@ const PRIORITY_OPTIONS = [
   { label: "Low", value: "Low" },
 ];
 
+
 export function TaskTable({ tasks, users, clients, initialColumns, canUpdate = false, canDelete = false }: TaskTableProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [search, setSearch] = useState("");
-  const [assigneeFilter, setAssigneeFilter] = useState("all");
-  const [priorityFilter, setPriorityFilter] = useState("all");
-  const [clientFilter, setClientFilter] = useState("all");
+  const [assigneeFilter, setAssigneeFilter] = useState<string[]>([]);
+  const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
+  const [clientFilter, setClientFilter] = useState<string[]>([]);
   const [sortCol, setSortCol] = useState("due_date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [visibleCols, setVisibleCols] = useState<Set<string>>(
@@ -223,12 +225,16 @@ export function TaskTable({ tasks, users, clients, initialColumns, canUpdate = f
   }, []);
 
   const filtered = useMemo(() => {
+    const assigneeSet = new Set(assigneeFilter);
+    const prioritySet = new Set(priorityFilter);
+    const clientSet = new Set(clientFilter);
     const list = tasks.filter((t) => {
-      if (assigneeFilter !== "all" && t.assigned_to.id !== assigneeFilter) return false;
-      if (priorityFilter !== "all" && t.priority !== priorityFilter) return false;
-      if (clientFilter !== "all") {
-        if (clientFilter === "none") { if (t.client !== null) return false; }
-        else if (t.client?.id !== clientFilter) return false;
+      if (assigneeSet.size && !assigneeSet.has(t.assigned_to.id)) return false;
+      if (prioritySet.size && !prioritySet.has(t.priority)) return false;
+      if (clientSet.size) {
+        const matchesNone = clientSet.has("none") && t.client === null;
+        const matchesId = t.client ? clientSet.has(t.client.id) : false;
+        if (!matchesNone && !matchesId) return false;
       }
       if (search) {
         const q = search.toLowerCase();
@@ -283,47 +289,38 @@ export function TaskTable({ tasks, users, clients, initialColumns, canUpdate = f
             />
           </div>
         </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium text-muted-foreground">Priority</span>
+          <ControlledMultiSelect
+            label="Priorities"
+            options={PRIORITY_OPTIONS}
+            values={priorityFilter}
+            onChange={setPriorityFilter}
+            width="sm:w-40"
+          />
+        </div>
         {users.length > 0 && (
           <div className="flex flex-col gap-1">
             <span className="text-[11px] font-medium text-muted-foreground">Assigned To</span>
-            <Select value={assigneeFilter} onValueChange={(v) => v && setAssigneeFilter(v)}>
-              <SelectTrigger className="h-9 sm:w-44 text-sm">
-                <SelectValue>
-                  {assigneeFilter === "all"
-                    ? "All assignees"
-                    : users.find((u) => u.id === assigneeFilter)?.name ?? "All assignees"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All assignees</SelectItem>
-                {users.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <ControlledMultiSelect
+              label="Assignees"
+              options={users.map((u) => ({ label: u.name, value: u.id }))}
+              values={assigneeFilter}
+              onChange={setAssigneeFilter}
+              width="sm:w-44"
+            />
           </div>
         )}
         {clients.length > 0 && (
           <div className="flex flex-col gap-1">
             <span className="text-[11px] font-medium text-muted-foreground">Client</span>
-            <Select value={clientFilter} onValueChange={(v) => v && setClientFilter(v)}>
-              <SelectTrigger className="h-9 sm:w-40 text-sm">
-                <SelectValue>
-                  {clientFilter === "all"
-                    ? "All clients"
-                    : clientFilter === "none"
-                    ? "No client"
-                    : clients.find((c) => c.id === clientFilter)?.name ?? "All clients"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All clients</SelectItem>
-                <SelectItem value="none">No client</SelectItem>
-                {clients.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <ControlledMultiSelect
+              label="Clients"
+              options={[{ label: "No client", value: "none" }, ...clients.map((c) => ({ label: c.name, value: c.id }))]}
+              values={clientFilter}
+              onChange={setClientFilter}
+              width="sm:w-40"
+            />
           </div>
         )}
         <div className="hidden md:flex flex-col gap-1">
@@ -399,10 +396,10 @@ export function TaskTable({ tasks, users, clients, initialColumns, canUpdate = f
               sortCol={sortCol}
               sortDir={sortDir}
               onSort={toggleSort}
-              priorityFilter={priorityFilter}
-              onPriorityFilter={(v) => setPriorityFilter(v ?? "all")}
-              assigneeFilter={assigneeFilter}
-              onAssigneeFilter={(v) => setAssigneeFilter(v ?? "all")}
+              priorityFilter={priorityFilter[0] ?? "all"}
+              onPriorityFilter={(v) => setPriorityFilter(v && v !== "all" ? [v] : [])}
+              assigneeFilter={assigneeFilter[0] ?? "all"}
+              onAssigneeFilter={(v) => setAssigneeFilter(v && v !== "all" ? [v] : [])}
               users={users}
               visible={visibleCols}
               selectable={selectable}

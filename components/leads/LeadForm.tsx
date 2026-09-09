@@ -41,6 +41,8 @@ interface LeadFormProps {
   currentUserId: string;
   defaultValues?: Partial<CreateLeadInput>;
   leadId?: string;
+  /** Lead Source & Campaign Source are only shown to Admins. */
+  isAdmin?: boolean;
 }
 
 const LEAD_SOURCES = [
@@ -66,6 +68,7 @@ export function LeadForm({
   currentUserId,
   defaultValues,
   leadId,
+  isAdmin = false,
 }: LeadFormProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -105,6 +108,9 @@ export function LeadForm({
       assigned_to_id: currentUserId,
       temperature: "Cold",
       ...defaultValues,
+      // Lead Source is required but hidden from non-admins. Non-admins creating a
+      // lead get a sensible manual default; existing values are preserved on edit.
+      lead_source: defaultValues?.lead_source ?? (isAdmin ? undefined : "Walk-in"),
     },
   });
 
@@ -249,25 +255,6 @@ export function LeadForm({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                   <div className="space-y-1.5">
-                    <Label>Lead Source <span className="text-destructive">*</span></Label>
-                    <Select
-                      defaultValue={defaultValues?.lead_source}
-                      onValueChange={(v) => v && setValue("lead_source", v)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select source" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {LEAD_SOURCES.map((s) => (
-                          <SelectItem key={s} value={s}>{s}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {errors.lead_source && (
-                      <p className="text-xs text-destructive">{errors.lead_source.message}</p>
-                    )}
-                  </div>
-                  <div className="space-y-1.5">
                     <Label>Lead Type <span className="text-destructive">*</span></Label>
                     <Select
                       defaultValue={defaultValues?.lead_type}
@@ -347,14 +334,46 @@ export function LeadForm({
                     )}
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="campaign_source">Campaign Source</Label>
-                    <Input id="campaign_source" {...register("campaign_source")} />
-                  </div>
-                  <div className="space-y-1.5">
                     <Label htmlFor="referral_source">Referral Source</Label>
                     <Input id="referral_source" {...register("referral_source")} />
                   </div>
                 </div>
+
+                {/* Lead Source & Campaign Source — Admin-only, grouped at the bottom.
+                    For non-admins the values still round-trip via hidden inputs so
+                    integration-set sources (Meta Ads / 99acres) are preserved. */}
+                {isAdmin ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t">
+                    <div className="space-y-1.5">
+                      <Label>Lead Source <span className="text-destructive">*</span></Label>
+                      <Select
+                        defaultValue={defaultValues?.lead_source}
+                        onValueChange={(v) => v && setValue("lead_source", v)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select source" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {LEAD_SOURCES.map((s) => (
+                            <SelectItem key={s} value={s}>{s}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {errors.lead_source && (
+                        <p className="text-xs text-destructive">{errors.lead_source.message}</p>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="campaign_source">Campaign Source</Label>
+                      <Input id="campaign_source" {...register("campaign_source")} />
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <input type="hidden" {...register("lead_source")} />
+                    <input type="hidden" {...register("campaign_source")} />
+                  </>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

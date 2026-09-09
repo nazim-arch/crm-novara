@@ -20,6 +20,6 @@ export const TASK_COLUMNS: TaskColumnDef[] = [
   { id: "recurrence", label: "Recurrence", defaultHidden: true },
   { id: "revenue", label: "Revenue", defaultHidden: true },
   { id: "description", label: "Description", defaultHidden: true },
-  { id: "created_at", label: "Created Date", defaultHidden: true },
+  { id: "created_at", label: "Created Date" },
   { id: "updated_at", label: "Last Updated", defaultHidden: true },
 ];
