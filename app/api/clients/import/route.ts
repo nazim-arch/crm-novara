@@ -36,7 +36,11 @@ export async function POST(request: Request) {
 
     const userId = session.user.id;
     const result: ImportResult = { created: 0, failed: [] };
+    type Valid = { data: z.infer<typeof importRowSchema> };
+    const valid: Valid[] = [];
+    const seenNames = new Set<string>();
 
+    // ── Phase 1: validate every row (all-or-nothing) ──────────────────────────
     for (let i = 0; i < rows.length; i++) {
       const raw = rows[i];
       const rowNum = i + 2;
@@ -48,45 +52,39 @@ export async function POST(request: Request) {
         continue;
       }
       const data = parsed.data;
+      const errors: string[] = [];
 
-      try {
-        // Dedup by case-insensitive name (and contact_email when present).
-        const orClauses: { name?: { equals: string; mode: "insensitive" }; contact_email?: { equals: string; mode: "insensitive" } }[] = [
-          { name: { equals: data.name, mode: "insensitive" } },
-        ];
-        if (data.contact_email) orClauses.push({ contact_email: { equals: data.contact_email, mode: "insensitive" } });
-        const existing = await prisma.client.findFirst({ where: { OR: orClauses }, select: { id: true, name: true } });
-        if (existing) {
-          result.failed.push({ row: rowNum, name: displayName, errors: [`Client already exists: ${existing.name}`] });
-          continue;
-        }
+      if (seenNames.has(data.name.toLowerCase())) errors.push(`Duplicate client name within file: ${data.name}`);
+      const orClauses: { name?: { equals: string; mode: "insensitive" }; contact_email?: { equals: string; mode: "insensitive" } }[] = [
+        { name: { equals: data.name, mode: "insensitive" } },
+      ];
+      if (data.contact_email) orClauses.push({ contact_email: { equals: data.contact_email, mode: "insensitive" } });
+      const existing = await prisma.client.findFirst({ where: { OR: orClauses }, select: { name: true } });
+      if (existing) errors.push(`Client already exists: ${existing.name}`);
 
-        const client = await prisma.client.create({
-          data: {
-            name: data.name,
-            industry: data.industry,
-            contact_person: data.contact_person,
-            contact_email: data.contact_email,
-            contact_phone: data.contact_phone,
-            notes: data.notes,
-          },
-        });
+      if (errors.length) { result.failed.push({ row: rowNum, name: displayName, errors }); continue; }
+      seenNames.add(data.name.toLowerCase());
+      valid.push({ data });
+    }
 
-        await prisma.activity.create({
-          data: {
-            entity_type: "Client",
-            entity_id: client.id,
-            action: "client_created",
-            actor_id: userId,
-            metadata: { name: client.name, source: "excel_import" },
-          },
-        });
+    if (result.failed.length > 0) return NextResponse.json(result, { status: 200 });
 
-        result.created++;
-      } catch (err) {
-        console.error("client import row:", err);
-        result.failed.push({ row: rowNum, name: displayName, errors: ["Failed to create client"] });
-      }
+    // ── Phase 2: insert all valid rows ────────────────────────────────────────
+    for (const { data } of valid) {
+      const client = await prisma.client.create({
+        data: {
+          name: data.name,
+          industry: data.industry,
+          contact_person: data.contact_person,
+          contact_email: data.contact_email,
+          contact_phone: data.contact_phone,
+          notes: data.notes,
+        },
+      });
+      await prisma.activity.create({
+        data: { entity_type: "Client", entity_id: client.id, action: "client_created", actor_id: userId, metadata: { name: client.name, source: "excel_import" } },
+      });
+      result.created++;
     }
 
     await prisma.activity.create({

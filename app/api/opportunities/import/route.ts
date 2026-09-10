@@ -42,7 +42,11 @@ export async function POST(request: Request) {
 
     const userId = session.user.id;
     const result: ImportResult = { created: 0, failed: [] };
+    type Valid = { data: z.infer<typeof importRowSchema> };
+    const valid: Valid[] = [];
+    const seen = new Set<string>();
 
+    // ── Phase 1: validate every row (all-or-nothing) ──────────────────────────
     for (let i = 0; i < rows.length; i++) {
       const raw = rows[i];
       const rowNum = i + 2; // Excel row (1 = header)
@@ -54,62 +58,54 @@ export async function POST(request: Request) {
         continue;
       }
       const data = parsed.data;
+      const errors: string[] = [];
 
-      try {
-        // Soft dedup by name + project (no DB unique constraint exists).
-        const existing = await prisma.opportunity.findFirst({
-          where: { deleted_at: null, name: { equals: data.name, mode: "insensitive" }, project: { equals: data.project, mode: "insensitive" } },
-          select: { opp_number: true },
-        });
-        if (existing) {
-          result.failed.push({ row: rowNum, name: displayName, errors: [`Opportunity already exists: ${data.name} / ${data.project} (${existing.opp_number})`] });
-          continue;
-        }
+      const key = `${data.name.toLowerCase()}|${data.project.toLowerCase()}`;
+      if (seen.has(key)) errors.push(`Duplicate opportunity within file: ${data.name} / ${data.project}`);
+      const existing = await prisma.opportunity.findFirst({
+        where: { deleted_at: null, name: { equals: data.name, mode: "insensitive" }, project: { equals: data.project, mode: "insensitive" } },
+        select: { opp_number: true },
+      });
+      if (existing) errors.push(`Opportunity already exists: ${data.name} / ${data.project} (${existing.opp_number})`);
 
-        // Synthesize a single minimal configuration from flat units/price columns.
-        const number_of_units = data.units ?? 1;
-        const price_per_unit = data.price_per_unit ?? 0;
-        const row_total = number_of_units * price_per_unit;
-        const total_sales_value = row_total;
-        const possible_revenue = (total_sales_value * data.commission_percent) / 100;
+      if (errors.length) { result.failed.push({ row: rowNum, name: displayName, errors }); continue; }
+      seen.add(key);
+      valid.push({ data });
+    }
 
-        const opp_number = await generateId("OPP");
-        const opp = await prisma.opportunity.create({
-          data: {
-            opp_number,
-            name: data.name,
-            project: data.project,
-            property_type: data.property_type,
-            location: data.location,
-            commission_percent: data.commission_percent,
-            opportunity_by: data.opportunity_by,
-            status: data.status,
-            developer: data.developer,
-            notes: data.notes,
-            total_sales_value,
-            possible_revenue,
-            created_by_id: userId,
-            configurations: {
-              create: [{ label: "", number_of_units, price_per_unit, row_total }],
-            },
-          },
-        });
+    if (result.failed.length > 0) return NextResponse.json(result, { status: 200 });
 
-        await prisma.activity.create({
-          data: {
-            entity_type: "Opportunity",
-            entity_id: opp.id,
-            action: "opportunity_created",
-            actor_id: userId,
-            metadata: { opp_number: opp.opp_number, name: opp.name, source: "excel_import" },
-          },
-        });
+    // ── Phase 2: insert all valid rows ────────────────────────────────────────
+    for (const { data } of valid) {
+      const number_of_units = data.units ?? 1;
+      const price_per_unit = data.price_per_unit ?? 0;
+      const row_total = number_of_units * price_per_unit;
+      const total_sales_value = row_total;
+      const possible_revenue = (total_sales_value * data.commission_percent) / 100;
 
-        result.created++;
-      } catch (err) {
-        console.error("opportunity import row:", err);
-        result.failed.push({ row: rowNum, name: displayName, errors: ["Failed to create opportunity"] });
-      }
+      const opp_number = await generateId("OPP");
+      const opp = await prisma.opportunity.create({
+        data: {
+          opp_number,
+          name: data.name,
+          project: data.project,
+          property_type: data.property_type,
+          location: data.location,
+          commission_percent: data.commission_percent,
+          opportunity_by: data.opportunity_by,
+          status: data.status,
+          developer: data.developer,
+          notes: data.notes,
+          total_sales_value,
+          possible_revenue,
+          created_by_id: userId,
+          configurations: { create: [{ label: "", number_of_units, price_per_unit, row_total }] },
+        },
+      });
+      await prisma.activity.create({
+        data: { entity_type: "Opportunity", entity_id: opp.id, action: "opportunity_created", actor_id: userId, metadata: { opp_number: opp.opp_number, name: opp.name, source: "excel_import" } },
+      });
+      result.created++;
     }
 
     // Import-run summary (audit) — entity_id = importer per the export-audit convention.

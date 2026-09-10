@@ -67,116 +67,88 @@ export async function POST(request: Request) {
 
     const userId = session.user.id;
     const result: ImportResult = { created: 0, failed: [] };
+    type Valid = { rowNum: number; name: string; data: z.infer<typeof importRowSchema> };
+    const valid: Valid[] = [];
 
+    // ── Phase 1: validate EVERY row first (all-or-nothing) ────────────────────
+    const seenPhones = new Set<string>();
+    const seenEmails = new Set<string>();
     for (let i = 0; i < rows.length; i++) {
       const raw = rows[i];
-      const rowNum = i + 2; // Excel row number (1 = header, data starts at 2)
+      const rowNum = i + 2; // Excel row (1 = header)
       const displayName = String(raw.full_name ?? raw.name ?? `Row ${rowNum}`);
 
       const parsed = importRowSchema.safeParse(raw);
       if (!parsed.success) {
-        const errors = parsed.error.issues.map(e => `${e.path.join(".")}: ${e.message}`);
-        result.failed.push({ row: rowNum, name: displayName, errors });
+        result.failed.push({ row: rowNum, name: displayName, errors: parsed.error.issues.map((e) => `${e.path.join(".")}: ${e.message}`) });
         continue;
       }
-
       const data = parsed.data;
+      const errors: string[] = [];
 
-      // budget_min must be ≤ budget_max if both provided
-      if (data.budget_min && data.budget_max && data.budget_min > data.budget_max) {
-        result.failed.push({ row: rowNum, name: displayName, errors: ["budget_min must be ≤ budget_max"] });
-        continue;
-      }
+      if (data.budget_min && data.budget_max && data.budget_min > data.budget_max) errors.push("budget_min must be ≤ budget_max");
+      // Intra-file duplicates
+      if (seenPhones.has(data.phone)) errors.push(`Duplicate phone within file: ${data.phone}`);
+      if (data.email && seenEmails.has(data.email)) errors.push(`Duplicate email within file: ${data.email}`);
+      // Existing-record duplicates
+      const dupeWhere: { phone?: string; email?: string }[] = [{ phone: data.phone }];
+      if (data.email) dupeWhere.push({ email: data.email });
+      const existing = await prisma.lead.findFirst({ where: { deleted_at: null, OR: dupeWhere }, select: { lead_number: true, full_name: true } });
+      if (existing) errors.push(`Lead already exists: ${existing.full_name} (${existing.lead_number}) — same phone/email`);
 
-      try {
-        // Hard duplicate check before insert
-        const dupeWhere: { phone?: string; email?: string }[] = [];
-        if (data.phone) dupeWhere.push({ phone: data.phone });
-        if (data.email) dupeWhere.push({ email: data.email as string });
-        if (dupeWhere.length > 0) {
-          const existing = await prisma.lead.findFirst({
-            where: { deleted_at: null, OR: dupeWhere },
-            select: { lead_number: true, full_name: true },
-          });
-          if (existing) {
-            result.failed.push({
-              row: rowNum,
-              name: displayName,
-              errors: [`Lead already exists: ${existing.full_name} (${existing.lead_number}) — same phone/email`],
-            });
-            continue;
-          }
-        }
+      if (errors.length) { result.failed.push({ row: rowNum, name: displayName, errors }); continue; }
+      seenPhones.add(data.phone);
+      if (data.email) seenEmails.add(data.email);
+      valid.push({ rowNum, name: displayName, data });
+    }
 
-        const lead_number = await generateId("LEAD");
+    // Any invalid row cancels the entire import — nothing is written.
+    if (result.failed.length > 0) {
+      return NextResponse.json(result, { status: 200 });
+    }
 
-        const lead = await prisma.lead.create({
-          data: {
-            lead_number,
-            full_name: data.full_name,
-            phone: data.phone,
-            email: data.email ?? null,
-            whatsapp: data.whatsapp ?? null,
-            lead_source: data.lead_source,
-            temperature: data.temperature,
-            property_type: data.property_type,
-            purpose: data.purpose,
-            potential_lead_value: data.potential_lead_value,
-            budget_min: data.budget_min ?? null,
-            budget_max: data.budget_max ?? null,
-            unit_type: data.unit_type ?? null,
-            location_preference: data.location_preference ?? null,
-            timeline_to_buy: data.timeline_to_buy ?? null,
-            campaign_source: data.campaign_source ?? null,
-            referral_source: data.referral_source ?? null,
-            reason_for_interest: data.reason_for_interest ?? null,
-            lead_type: data.lead_type,
-            // owner, assignee, creator all default to current user for bulk import
-            lead_owner_id: userId,
-            assigned_to_id: userId,
-            created_by_id: userId,
-          },
-        });
-
-        await Promise.all([
-          prisma.activity.create({
-            data: {
-              entity_type: "Lead",
-              entity_id: lead.id,
-              action: "lead_created",
-              actor_id: userId,
-              metadata: {
-                lead_number: lead.lead_number,
-                full_name: lead.full_name,
-                source: "excel_import",
-              },
-            },
-          }),
-          prisma.leadStageHistory.create({
-            data: {
-              lead_id: lead.id,
-              to_stage: "New",
-              changed_by_id: userId,
-              notes: "Lead imported via Excel",
-            },
-          }),
-        ]);
-
-        result.created++;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Database error";
-        // Duplicate phone constraint
-        const isDupe = msg.includes("Unique constraint") || msg.includes("unique");
-        result.failed.push({
-          row: rowNum,
-          name: displayName,
-          errors: [isDupe ? `Phone number already exists: ${data.phone}` : "Failed to create lead"],
-        });
-      }
+    // ── Phase 2: all rows valid → insert them ─────────────────────────────────
+    for (const { data } of valid) {
+      const lead_number = await generateId("LEAD");
+      const lead = await prisma.lead.create({
+        data: {
+          lead_number,
+          full_name: data.full_name,
+          phone: data.phone,
+          email: data.email ?? null,
+          whatsapp: data.whatsapp ?? null,
+          lead_source: data.lead_source,
+          temperature: data.temperature,
+          property_type: data.property_type,
+          purpose: data.purpose,
+          potential_lead_value: data.potential_lead_value,
+          budget_min: data.budget_min ?? null,
+          budget_max: data.budget_max ?? null,
+          unit_type: data.unit_type ?? null,
+          location_preference: data.location_preference ?? null,
+          timeline_to_buy: data.timeline_to_buy ?? null,
+          campaign_source: data.campaign_source ?? null,
+          referral_source: data.referral_source ?? null,
+          reason_for_interest: data.reason_for_interest ?? null,
+          lead_type: data.lead_type,
+          lead_owner_id: userId,
+          assigned_to_id: userId,
+          created_by_id: userId,
+        },
+      });
+      await Promise.all([
+        prisma.activity.create({
+          data: { entity_type: "Lead", entity_id: lead.id, action: "lead_created", actor_id: userId, metadata: { lead_number: lead.lead_number, full_name: lead.full_name, source: "excel_import" } },
+        }),
+        prisma.leadStageHistory.create({
+          data: { lead_id: lead.id, to_stage: "New", changed_by_id: userId, notes: "Lead imported via Excel" },
+        }),
+      ]);
+      result.created++;
     }
 
     revalidateTag("crm-dashboard", "max");
-    revalidateTag("leads-filter-options", "max"); // imports commonly introduce new lead sources
+    revalidateTag("leads-filter-options", "max");
     return NextResponse.json(result, { status: 200 });
   } catch (error) {
     console.error("POST /api/leads/import:", error);

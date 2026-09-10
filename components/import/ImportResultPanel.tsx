@@ -19,19 +19,25 @@ export function ImportResultPanel({
 }) {
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-3 rounded-lg border p-4 bg-muted/30">
-        <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
-        <div>
+      {result.failed.length === 0 ? (
+        <div className="flex items-center gap-3 rounded-lg border p-4 bg-muted/30">
+          <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
           <p className="text-sm font-semibold">
-            {result.created} of {result.created + result.failed.length} {noun}{result.created + result.failed.length !== 1 ? "s" : ""} imported successfully
+            {result.created} {noun}{result.created !== 1 ? "s" : ""} added to DealStack
           </p>
-          {result.failed.length > 0 && (
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {result.failed.length} row{result.failed.length !== 1 ? "s" : ""} failed — see below
-            </p>
-          )}
         </div>
-      </div>
+      ) : (
+        // All-or-nothing: any invalid row cancels the whole import — nothing was added.
+        <div className="flex items-center gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4">
+          <AlertCircle className="h-5 w-5 text-destructive shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-destructive">Import cancelled — no records added</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Fix the {result.failed.length} error{result.failed.length !== 1 ? "s" : ""} below and re-import. All rows must be valid.
+            </p>
+          </div>
+        </div>
+      )}
 
       {result.failed.length > 0 && (
         <div className="rounded-lg border border-destructive/30 overflow-hidden">

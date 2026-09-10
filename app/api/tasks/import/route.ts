@@ -65,6 +65,14 @@ export async function POST(request: Request) {
     const oppByNum = new Map(opps.map((o) => [o.opp_number.toUpperCase(), o.id]));
     const clientByName = new Map(clients.map((c) => [c.name.toLowerCase(), c.id]));
 
+    type Valid = {
+      title: string; priority: "Low" | "Medium" | "High" | "Critical";
+      due: Date; start: Date | null; sector: string | null; notes: string | null;
+      revenue_amount: number | undefined; assigneeId: string; leadId: string | null; oppId: string | null; clientId: string | null;
+    };
+    const valid: Valid[] = [];
+
+    // ── Phase 1: validate + resolve every row (all-or-nothing) ────────────────
     for (let i = 0; i < rows.length; i++) {
       const raw = rows[i];
       const rowNum = i + 2;
@@ -76,83 +84,67 @@ export async function POST(request: Request) {
         continue;
       }
       const data = parsed.data;
+      const errors: string[] = [];
 
       const due = parseImportDate(data.due_date);
-      if (!due) {
-        result.failed.push({ row: rowNum, name: displayName, errors: [`Invalid due date: ${data.due_date}`] });
-        continue;
-      }
+      if (!due) errors.push(`Invalid due date: ${data.due_date}`);
       const start = data.start_date ? parseImportDate(data.start_date) : null;
-      if (data.start_date && !start) {
-        result.failed.push({ row: rowNum, name: displayName, errors: [`Invalid start date: ${data.start_date}`] });
-        continue;
-      }
-      if (start && start > due) {
-        result.failed.push({ row: rowNum, name: displayName, errors: ["Start date must be before or equal to due date"] });
-        continue;
-      }
+      if (data.start_date && !start) errors.push(`Invalid start date: ${data.start_date}`);
+      if (start && due && start > due) errors.push("Start date must be before or equal to due date");
 
-      // Resolve assignee (defaults to importer; error only if a name was given but unmatched).
       let assigneeId = userId;
       if (data.assigned_to) {
         const found = userByName.get(data.assigned_to.toLowerCase());
-        if (!found) { result.failed.push({ row: rowNum, name: displayName, errors: [`User not found: "${data.assigned_to}"`] }); continue; }
-        assigneeId = found;
+        if (!found) errors.push(`User not found: "${data.assigned_to}"`); else assigneeId = found;
       }
-      // Optional FK links — error if provided but unmatched.
       let leadId: string | null = null;
       if (data.lead_number) {
         leadId = leadByNum.get(data.lead_number.toUpperCase()) ?? null;
-        if (!leadId) { result.failed.push({ row: rowNum, name: displayName, errors: [`Lead not found: ${data.lead_number}`] }); continue; }
+        if (!leadId) errors.push(`Lead not found: ${data.lead_number}`);
       }
       let oppId: string | null = null;
       if (data.opp_number) {
         oppId = oppByNum.get(data.opp_number.toUpperCase()) ?? null;
-        if (!oppId) { result.failed.push({ row: rowNum, name: displayName, errors: [`Opportunity not found: ${data.opp_number}`] }); continue; }
+        if (!oppId) errors.push(`Opportunity not found: ${data.opp_number}`);
       }
       let clientId: string | null = null;
       if (data.client_name) {
         clientId = clientByName.get(data.client_name.toLowerCase()) ?? null;
-        if (!clientId) { result.failed.push({ row: rowNum, name: displayName, errors: [`Client not found: ${data.client_name}`] }); continue; }
+        if (!clientId) errors.push(`Client not found: ${data.client_name}`);
       }
 
-      try {
-        const task_number = await generateId("TASK");
-        const task = await prisma.task.create({
-          data: {
-            task_number,
-            title: data.title,
-            priority: data.priority,
-            status: "Todo",
-            due_date: due,
-            start_date: start,
-            sector: data.sector,
-            notes: data.notes,
-            revenue_tagged: data.revenue_amount != null,
-            revenue_amount: data.revenue_amount ?? null,
-            assigned_to_id: assigneeId,
-            created_by_id: userId,
-            lead_id: leadId,
-            opportunity_id: oppId,
-            client_id: clientId,
-          },
-        });
+      if (errors.length || !due) { result.failed.push({ row: rowNum, name: displayName, errors }); continue; }
+      valid.push({ title: data.title, priority: data.priority, due, start, sector: data.sector, notes: data.notes, revenue_amount: data.revenue_amount, assigneeId, leadId, oppId, clientId });
+    }
 
-        await prisma.activity.create({
-          data: {
-            entity_type: "Task",
-            entity_id: task.id,
-            action: "task_created",
-            actor_id: userId,
-            metadata: { task_number: task.task_number, title: task.title, source: "excel_import" },
-          },
-        });
+    if (result.failed.length > 0) return NextResponse.json(result, { status: 200 });
 
-        result.created++;
-      } catch (err) {
-        console.error("task import row:", err);
-        result.failed.push({ row: rowNum, name: displayName, errors: ["Failed to create task"] });
-      }
+    // ── Phase 2: insert all valid rows ────────────────────────────────────────
+    for (const v of valid) {
+      const task_number = await generateId("TASK");
+      const task = await prisma.task.create({
+        data: {
+          task_number,
+          title: v.title,
+          priority: v.priority,
+          status: "Todo",
+          due_date: v.due,
+          start_date: v.start,
+          sector: v.sector,
+          notes: v.notes,
+          revenue_tagged: v.revenue_amount != null,
+          revenue_amount: v.revenue_amount ?? null,
+          assigned_to_id: v.assigneeId,
+          created_by_id: userId,
+          lead_id: v.leadId,
+          opportunity_id: v.oppId,
+          client_id: v.clientId,
+        },
+      });
+      await prisma.activity.create({
+        data: { entity_type: "Task", entity_id: task.id, action: "task_created", actor_id: userId, metadata: { task_number: task.task_number, title: task.title, source: "excel_import" } },
+      });
+      result.created++;
     }
 
     await prisma.activity.create({
