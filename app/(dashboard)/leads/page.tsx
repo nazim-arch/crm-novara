@@ -33,6 +33,34 @@ import { startOfDay, endOfDay, subDays, startOfWeek, startOfMonth, startOfYear }
 import { parseMulti } from "@/lib/list-params";
 import { groupRows } from "@/lib/list-grouping";
 import { CollapsibleTableGroup, CollapsibleCardGroup } from "@/components/shared/CollapsibleListGroup";
+import { unstable_cache } from "next/cache";
+
+// Filter-dropdown option lists (distinct lead sources + all opportunities) are
+// dataset-wide scans that used to run on EVERY leads navigation. They change
+// rarely, so cache them (tag-busted on lead/opportunity create, else 10-min TTL)
+// instead of re-scanning the whole table per keystroke/filter/page.
+const getLeadSourceOptions = unstable_cache(
+  async () =>
+    prisma.lead.findMany({
+      where: { deleted_at: null, lead_source: { not: "" } },
+      select: { lead_source: true },
+      distinct: ["lead_source"],
+      orderBy: { lead_source: "asc" },
+    }),
+  ["leads-filter-sources"],
+  { tags: ["leads-filter-options"], revalidate: 600 },
+);
+
+const getOpportunityOptions = unstable_cache(
+  async () =>
+    prisma.opportunity.findMany({
+      where: { deleted_at: null },
+      select: { id: true, name: true, opp_number: true },
+      orderBy: { name: "asc" },
+    }),
+  ["leads-filter-opportunities"],
+  { tags: ["leads-filter-options"], revalidate: 600 },
+);
 
 const SORT_MAP: Record<string, Prisma.LeadOrderByWithRelationInput> = {
   full_name:            { full_name: "asc" },
@@ -325,7 +353,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     Object.entries(baseOrder).map(([k]) => [k, sortDir])
   ) as Prisma.LeadOrderByWithRelationInput;
 
-  const [total, leads, users, leadSourceRows, opportunityRows] = await Promise.all([
+  const [total, leads, users, leadSourceRows, opportunityRows, v] = await Promise.all([
     prisma.lead.count({ where }),
     prisma.lead.findMany({
       where,
@@ -384,17 +412,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
-    prisma.lead.findMany({
-      where: { deleted_at: null, lead_source: { not: "" } },
-      select: { lead_source: true },
-      distinct: ["lead_source"],
-      orderBy: { lead_source: "asc" },
-    }),
-    prisma.opportunity.findMany({
-      where: { deleted_at: null },
-      select: { id: true, name: true, opp_number: true },
-      orderBy: { name: "asc" },
-    }),
+    getLeadSourceOptions(),
+    getOpportunityOptions(),
+    getVisibleColumns(session.user.id, "leads", LEAD_COLUMNS),
   ]);
 
   // Expand into one row per opportunity link; unlinked leads produce one row using lead-level data
@@ -432,7 +452,6 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
     }));
   });
 
-  const v = await getVisibleColumns(session.user.id, "leads", LEAD_COLUMNS);
   const visibleLeadCols = LEAD_COLUMNS.filter((c) => v.has(c.id));
   const visibleCount = visibleLeadCols.length;
 

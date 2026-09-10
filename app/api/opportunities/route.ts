@@ -128,6 +128,7 @@ export async function POST(request: Request) {
     });
 
     revalidateTag("crm-dashboard", "max");
+    revalidateTag("leads-filter-options", "max"); // new opportunity → refresh the leads-page opportunity filter
     return NextResponse.json({ data: opportunity }, { status: 201 });
   } catch (error) {
     console.error("POST /api/opportunities:", error);

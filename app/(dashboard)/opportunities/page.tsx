@@ -132,7 +132,25 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
     prisma.opportunity.count({ where }),
     prisma.opportunity.findMany({
       where,
-      include: {
+      // Explicit select (not include) so we don't pull columns the table never
+      // renders (e.g. meta_form_ids[]) and stay lean as new columns are added.
+      select: {
+        id: true,
+        opp_number: true,
+        name: true,
+        project: true,
+        developer: true,
+        opportunity_by: true,
+        property_type: true,
+        location: true,
+        commission_percent: true,
+        status: true,
+        notes: true,
+        total_sales_value: true,
+        possible_revenue: true,
+        closed_revenue: true,
+        created_at: true,
+        updated_at: true,
         created_by: { select: { id: true, name: true } },
         _count: { select: { leads: true } },
       },
