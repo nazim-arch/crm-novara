@@ -23,11 +23,11 @@ export function ImportResultPanel({
         <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
         <div>
           <p className="text-sm font-semibold">
-            {result.created} {noun}{result.created !== 1 ? "s" : ""} imported successfully
+            {result.created} of {result.created + result.failed.length} {noun}{result.created + result.failed.length !== 1 ? "s" : ""} imported successfully
           </p>
           {result.failed.length > 0 && (
             <p className="text-xs text-muted-foreground mt-0.5">
-              {result.failed.length} row{result.failed.length !== 1 ? "s" : ""} failed
+              {result.failed.length} row{result.failed.length !== 1 ? "s" : ""} failed — see below
             </p>
           )}
         </div>

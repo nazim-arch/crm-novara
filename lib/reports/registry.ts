@@ -17,6 +17,9 @@ export interface FieldDef {
   filterable: boolean;
   groupable: boolean;
   aggregatable: boolean; // numeric fields that support sum/avg/min/max
+  /** Cross-entity relation filter (e.g. lead → linked opportunity). Filter-only:
+   *  cannot be a column, sort, or group-by (it targets a to-many `some` path). */
+  filterOnly?: boolean;
 }
 
 export interface EntityRegistry {
@@ -54,6 +57,11 @@ function f(
     groupable: opts.groupable ?? (type === "enum" || type === "relation" || type === "boolean" || type === "string"),
     aggregatable: type === "number",
   };
+}
+
+// Cross-entity relation FILTER field (to-many `some` path). Filter-only.
+function rel(key: string, label: string, type: FieldType, prismaPath: string, enumValues?: string[]): FieldDef {
+  return { key, label, type, prismaPath, ops: OPS[type], enumValues, filterable: true, groupable: false, aggregatable: false, filterOnly: true };
 }
 
 const LEAD_STATUS = ["New", "Contacted", "Prospect", "SiteVisitCompleted", "Negotiation", "Booked", "Won", "Lost", "InvalidLead", "OnHold", "Recycle"];
@@ -101,6 +109,12 @@ export const REGISTRY: Record<ReportEntity, EntityRegistry> = {
       f("assigned_to", "Assigned To", "relation", "assigned_to.name"),
       f("lead_owner", "Lead Owner", "relation", "lead_owner.name"),
       f("created_by", "Created By", "relation", "created_by.name"),
+      // ── Linked opportunity (cross-entity filters via LeadOpportunity) ──
+      rel("linked_opp_name", "Linked Opp — Name", "relation", "opportunities.some.opportunity.name"),
+      rel("linked_opp_number", "Linked Opp — ID", "relation", "opportunities.some.opportunity.opp_number"),
+      rel("linked_opp_project", "Linked Opp — Project", "relation", "opportunities.some.opportunity.project"),
+      rel("linked_opp_stage", "Linked Opp — Stage", "enum", "opportunities.some.status", LEAD_STATUS),
+      rel("linked_opp_status", "Linked Opp — Active/Sold", "enum", "opportunities.some.opportunity.status", OPP_STATUS),
     ]),
   },
   opportunity: {
@@ -123,6 +137,10 @@ export const REGISTRY: Record<ReportEntity, EntityRegistry> = {
       f("created_at", "Created At", "date", "created_at"),
       f("updated_at", "Updated At", "date", "updated_at"),
       f("created_by", "Created By", "relation", "created_by.name"),
+      // ── Linked leads (cross-entity filters via LeadOpportunity) ──
+      rel("linked_lead_stage", "Linked Lead — Stage", "enum", "leads.some.status", LEAD_STATUS),
+      rel("linked_lead_temperature", "Linked Lead — Temperature", "enum", "leads.some.lead.temperature", TEMPERATURE),
+      rel("linked_lead_name", "Linked Lead — Name", "relation", "leads.some.lead.full_name"),
     ]),
   },
   task: {
@@ -199,5 +217,6 @@ export function entityFieldList(entity: ReportEntity) {
   return Object.values(REGISTRY[entity].fields).map((d) => ({
     key: d.key, label: d.label, type: d.type, ops: d.ops,
     enumValues: d.enumValues, filterable: d.filterable, groupable: d.groupable, aggregatable: d.aggregatable,
+    filterOnly: d.filterOnly ?? false,
   }));
 }

@@ -28,6 +28,18 @@ export function isValidPhone(raw: string | null | undefined): boolean {
   return normalizePhone(raw) !== null;
 }
 
+/**
+ * Strict import rule: the number MUST carry the +91 country code followed by a
+ * 10-digit Indian mobile (spaces/hyphens/parens allowed). Used by the Import Hub
+ * to REJECT bare 10-digit numbers rather than silently prepending a code — this
+ * is what prevents +91-vs-bare duplicate leads.
+ */
+export function hasIndiaPlus91(raw: string | null | undefined): boolean {
+  if (!raw) return false;
+  const cleaned = String(raw).replace(/[\s\-()]/g, "");
+  return /^\+91\d{10}$/.test(cleaned);
+}
+
 /** tel: URI for click-to-call. */
 export function telUrl(phone: string | null | undefined): string | null {
   const n = normalizePhone(phone);

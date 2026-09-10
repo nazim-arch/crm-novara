@@ -34,7 +34,7 @@ export const clientImportConfig: EntityImportConfig = {
     { header: "Industry", note: "Optional", sample: "Real Estate" },
     { header: "Contact Person", note: "Optional", sample: "Priya Sharma" },
     { header: "Contact Email", note: "Optional (validated)", sample: "priya@acme.com" },
-    { header: "Contact Phone", note: "Optional", sample: "9876543210" },
+    { header: "Contact Phone", note: "Optional; if given must include +91 (e.g. +919876543210)", sample: "+919876543210" },
     { header: "Notes", note: "Optional", sample: "" },
   ],
   templateFileName: "clients_import_template.xlsx",

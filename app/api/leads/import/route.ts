@@ -4,11 +4,13 @@ import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { generateId } from "@/lib/id-generator";
 import { hasPermissionAsync } from "@/lib/rbac";
+import { hasIndiaPlus91 } from "@/lib/phone";
 import { z } from "zod";
 
 const importRowSchema = z.object({
   full_name: z.string().min(2, "Name must be at least 2 characters").max(100),
-  phone: z.string().min(7, "Enter a valid phone number").max(20),
+  phone: z.string().min(7, "Enter a valid phone number").max(20)
+    .refine(hasIndiaPlus91, "Phone must include the +91 country code (e.g. +919876543210)"),
   lead_source: z.string().min(1, "Lead source is required"),
   property_type: z.enum(
     ["Residential", "Commercial", "Plot", "Villa", "Apartment", "Office"],

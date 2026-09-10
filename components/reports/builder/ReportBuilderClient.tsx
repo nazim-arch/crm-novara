@@ -54,7 +54,8 @@ export function ReportBuilderClient() {
 
   const fields: FieldMeta[] = useMemo(() => entityFieldList(entity), [entity]);
   const fieldByKey = useMemo(() => new Map(fields.map((f) => [f.key, f])), [fields]);
-  const dateFields = fields.filter((f) => f.type === "date");
+  const selectableFields = fields.filter((f) => !f.filterOnly); // columns + sort (not cross-entity filters)
+  const dateFields = selectableFields.filter((f) => f.type === "date");
   const groupableFields = fields.filter((f) => f.groupable && !f.type.includes("relation"));
   const numericFields = fields.filter((f) => f.aggregatable);
 
@@ -235,7 +236,7 @@ export function ReportBuilderClient() {
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Columns</CardTitle></CardHeader>
             <CardContent className="flex flex-wrap gap-x-4 gap-y-1.5">
-              {fields.map((f) => (
+              {selectableFields.map((f) => (
                 <label key={f.key} className="flex items-center gap-1.5 text-sm">
                   <input type="checkbox" checked={columns.includes(f.key)}
                     onChange={(e) => setColumns(e.target.checked ? [...columns, f.key] : columns.filter((c) => c !== f.key))} />
@@ -298,7 +299,7 @@ export function ReportBuilderClient() {
                     <SelectTrigger className="w-40"><SelectValue placeholder="none" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none">None</SelectItem>
-                      {fields.map((f) => <SelectItem key={f.key} value={f.key}>{f.label}</SelectItem>)}
+                      {selectableFields.map((f) => <SelectItem key={f.key} value={f.key}>{f.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </Field>

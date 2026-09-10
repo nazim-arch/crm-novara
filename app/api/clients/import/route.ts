@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { hasPermissionAsync } from "@/lib/rbac";
+import { hasIndiaPlus91 } from "@/lib/phone";
 import { z } from "zod";
 import type { ImportResult } from "@/lib/import/types";
 
@@ -10,7 +11,9 @@ const importRowSchema = z.object({
   industry: z.string().optional().or(z.literal("")).transform((v) => v || null),
   contact_person: z.string().optional().or(z.literal("")).transform((v) => v || null),
   contact_email: z.string().email("Invalid email").optional().or(z.literal("")).transform((v) => v || null),
-  contact_phone: z.string().optional().or(z.literal("")).transform((v) => v || null),
+  contact_phone: z.string().optional().or(z.literal(""))
+    .refine((v) => !v || hasIndiaPlus91(v), "Phone must include the +91 country code (e.g. +919876543210)")
+    .transform((v) => v || null),
   notes: z.string().optional().or(z.literal("")).transform((v) => v || null),
 });
 

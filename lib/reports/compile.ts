@@ -119,6 +119,7 @@ function buildSelect(columns: string[], reg: EntityRegistry): Record<string, unk
   const select: Record<string, unknown> = { id: true };
   for (const key of columns) {
     const field = lookupField(reg, key);
+    if (field.filterOnly) throw new ReportCompileError(`Field "${field.key}" is filter-only and cannot be a column`);
     const parts = field.prismaPath.split(".");
     if (parts.length === 1) {
       select[parts[0]] = true;
@@ -135,6 +136,7 @@ function buildSelect(columns: string[], reg: EntityRegistry): Record<string, unk
 function buildOrderBy(def: ReportDefinition, reg: EntityRegistry): Record<string, unknown>[] {
   return def.sort.map((s) => {
     const field = lookupField(reg, s.field);
+    if (field.filterOnly) throw new ReportCompileError(`Field "${field.key}" is filter-only and cannot be used for sort`);
     return nestPath(field.prismaPath, s.dir);
   });
 }
