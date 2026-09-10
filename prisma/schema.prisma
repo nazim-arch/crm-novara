@@ -144,6 +144,7 @@ enum EntityType {
   Task
   User
   DealClosure
+  Client
 }
 
 enum NotificationType {
@@ -232,6 +233,8 @@ model User {
 
   review_events_triggered  LeadReviewEvent[]  @relation("ReviewEventTriggeredBy")
   review_events_actioned   LeadReviewEvent[]  @relation("ReviewEventActionedBy")
+
+  saved_reports            SavedReport[]      @relation("SavedReportOwner")
 
   manager_id   String?
   manager      User?   @relation("TeamMembers", fields: [manager_id], references: [id], onDelete: SetNull)
@@ -1259,4 +1262,22 @@ model ir_source_channel {
   updatedAt    DateTime @updatedAt
   
   @@unique([platform, channelId])
+}
+
+// ─────────────────────────────────────────────
+// SAVED REPORT (custom report builder — personal, admin-only)
+// ─────────────────────────────────────────────
+model SavedReport {
+  id         String   @id @default(cuid())
+  owner_id   String
+  name       String
+  entity     String   // ReportEntity discriminator (lead | opportunity | task | ...)
+  definition Json     // validated ReportDefinition
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  owner User @relation("SavedReportOwner", fields: [owner_id], references: [id], onDelete: Cascade)
+
+  @@index([owner_id])
+  @@map("saved_reports")
 }

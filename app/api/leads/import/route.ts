@@ -53,7 +53,8 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const rows: Record<string, unknown>[] = body.leads ?? [];
+    // Accept the generic Import Hub payload (`rows`) as well as the legacy `leads` key.
+    const rows: Record<string, unknown>[] = body.rows ?? body.leads ?? [];
 
     if (!Array.isArray(rows) || rows.length === 0) {
       return NextResponse.json({ error: "No lead rows provided" }, { status: 400 });

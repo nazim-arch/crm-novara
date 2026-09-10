@@ -10,7 +10,7 @@ import {
   BarChart3, Users, Building2, CheckSquare, CalendarClock,
   Settings, LayoutDashboard, Radar, Menu, Briefcase, Mic2, SlidersHorizontal,
   TrendingUp, FileText, ShieldCheck, Target, ClipboardCheck, CalendarDays, History, Activity, BrainCircuit, KeyRound,
-  Columns3, Sun, Receipt, Recycle,
+  Columns3, Sun, Receipt, Recycle, Upload,
 } from "lucide-react";
 
 type NavChild = { href: string; label: string; tab: string; roles: string[] };
@@ -72,6 +72,7 @@ const NAV_CONFIG: NavSection[] = [
     label: "Reports",
     items: [
       { href: "/reports", label: "Revenue & Net Profit", icon: FileText, roles: ["Admin"] },
+      { href: "/reports/builder", label: "Report Builder", icon: FileText, roles: ["Admin"] },
     ],
   },
   {
@@ -84,6 +85,7 @@ const NAV_CONFIG: NavSection[] = [
     label: "Settings",
     items: [
       { href: "/settings/users", label: "Users", icon: Settings, roles: ["Admin"] },
+      { href: "/admin/import", label: "Import Hub", icon: Upload, roles: ["Admin"] },
       { href: "/settings/clients", label: "Clients", icon: Briefcase, roles: ["Admin"] },
       { href: "/settings/roles", label: "Role Permissions", icon: ShieldCheck, roles: ["Admin"] },
       { href: "/settings/api-keys", label: "API Keys", icon: KeyRound, roles: ["Admin"] },

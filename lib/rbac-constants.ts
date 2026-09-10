@@ -1,7 +1,8 @@
 export type Permission =
   | "lead:create" | "lead:read" | "lead:update" | "lead:delete" | "lead:import" | "lead:export"
-  | "opportunity:create" | "opportunity:update" | "opportunity:read" | "opportunity:delete" | "opportunity:export"
-  | "task:create" | "task:read" | "task:update" | "task:delete" | "task:export"
+  | "opportunity:create" | "opportunity:update" | "opportunity:read" | "opportunity:delete" | "opportunity:export" | "opportunity:import"
+  | "task:create" | "task:read" | "task:update" | "task:delete" | "task:export" | "task:import"
+  | "client:import"
   | "user:manage" | "report:view" | "financial:view"
   | "podcast_studio:manage"
   | "commission:manage" | "commission:view" | "commission:reconcile"
@@ -13,8 +14,9 @@ export type Role = (typeof ROLES)[number];
 
 export const ALL_PERMISSIONS: Permission[] = [
   "lead:read", "lead:create", "lead:update", "lead:delete", "lead:import", "lead:export",
-  "opportunity:read", "opportunity:create", "opportunity:update", "opportunity:delete", "opportunity:export",
-  "task:read", "task:create", "task:update", "task:delete", "task:export",
+  "opportunity:read", "opportunity:create", "opportunity:update", "opportunity:delete", "opportunity:export", "opportunity:import",
+  "task:read", "task:create", "task:update", "task:delete", "task:export", "task:import",
+  "client:import",
   "user:manage", "report:view", "financial:view",
   "podcast_studio:manage",
   "commission:view", "commission:manage", "commission:reconcile",
@@ -38,11 +40,14 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "opportunity:update":     "Edit Opportunities",
   "opportunity:delete":     "Delete Opportunities",
   "opportunity:export":     "Export Opportunities to Excel",
+  "opportunity:import":     "Import Opportunities (bulk upload)",
   "task:read":              "View Tasks",
   "task:create":            "Create Tasks",
   "task:update":            "Edit Tasks",
   "task:delete":            "Delete Tasks",
   "task:export":            "Export Tasks to Excel",
+  "task:import":            "Import Tasks (bulk upload)",
+  "client:import":          "Import Clients (bulk upload)",
   "user:manage":            "Manage Users",
   "report:view":            "View Reports",
   "financial:view":         "View Financials",
@@ -65,9 +70,9 @@ export const PERMISSION_DESCRIPTIONS: Partial<Record<Permission, string>> = {
 
 export const PERMISSION_GROUPS: { label: string; perms: Permission[]; guarded?: boolean; blurb?: string }[] = [
   { label: "Leads",             perms: ["lead:read", "lead:create", "lead:update", "lead:delete", "lead:import", "lead:export"] },
-  { label: "Opportunities",     perms: ["opportunity:read", "opportunity:create", "opportunity:update", "opportunity:delete", "opportunity:export"] },
-  { label: "Tasks",             perms: ["task:read", "task:create", "task:update", "task:delete", "task:export"] },
-  { label: "Users & Settings",  perms: ["user:manage"] },
+  { label: "Opportunities",     perms: ["opportunity:read", "opportunity:create", "opportunity:update", "opportunity:delete", "opportunity:export", "opportunity:import"] },
+  { label: "Tasks",             perms: ["task:read", "task:create", "task:update", "task:delete", "task:export", "task:import"] },
+  { label: "Users & Settings",  perms: ["user:manage", "client:import"] },
   { label: "Reports & Finance", perms: ["report:view", "financial:view"] },
   { label: "Podcast Studio",    perms: ["podcast_studio:manage"] },
   { label: "Commissions",       perms: ["commission:view", "commission:manage", "commission:reconcile"] },
@@ -82,8 +87,9 @@ export const PERMISSION_GROUPS: { label: string; perms: Permission[]; guarded?: 
 export const DEFAULT_PERMS: Record<string, Permission[]> = {
   Admin: [
     "lead:create", "lead:read", "lead:update", "lead:delete", "lead:import", "lead:export",
-    "opportunity:create", "opportunity:update", "opportunity:read", "opportunity:delete", "opportunity:export",
-    "task:create", "task:read", "task:update", "task:delete", "task:export",
+    "opportunity:create", "opportunity:update", "opportunity:read", "opportunity:delete", "opportunity:export", "opportunity:import",
+    "task:create", "task:read", "task:update", "task:delete", "task:export", "task:import",
+    "client:import",
     "user:manage", "report:view", "financial:view",
     "podcast_studio:manage",
     "commission:manage", "commission:view", "commission:reconcile",
