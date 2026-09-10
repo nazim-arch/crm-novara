@@ -299,6 +299,7 @@ export async function POST(request: Request) {
     });
 
     revalidateTag("crm-dashboard", "max");
+    revalidateTag("leads-filter-options", "max"); // a new lead may introduce a new lead_source
     return NextResponse.json({ data: lead }, { status: 201 });
   } catch (error) {
     console.error("POST /api/leads:", error);

@@ -12,10 +12,25 @@ import {
 import { LeadContactActions } from "@/components/shared/LeadContactActions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  BarChart, Bar, PieChart, Pie, Cell, ResponsiveContainer,
-  XAxis, YAxis, Tooltip, Legend,
-} from "recharts";
+import dynamic from "next/dynamic";
+
+// recharts is heavy; load the chart chunk lazily so it stays out of the
+// Sales landing-page bundle. Skeleton heights match the charts to avoid CLS.
+const ChartSkeleton = ({ height }: { height: number }) => (
+  <div className="animate-pulse rounded-lg bg-muted" style={{ height }} />
+);
+const SalesLeadsByOpportunityChart = dynamic(
+  () => import("@/components/dashboard/SalesCharts").then((m) => m.SalesLeadsByOpportunityChart),
+  { ssr: false, loading: () => <ChartSkeleton height={220} /> }
+);
+const SalesSourceChart = dynamic(
+  () => import("@/components/dashboard/SalesCharts").then((m) => m.SalesSourceChart),
+  { ssr: false, loading: () => <ChartSkeleton height={220} /> }
+);
+const SalesTemperatureChart = dynamic(
+  () => import("@/components/dashboard/SalesCharts").then((m) => m.SalesTemperatureChart),
+  { ssr: false, loading: () => <ChartSkeleton height={200} /> }
+);
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -113,15 +128,6 @@ const STAGE_LABELS: Record<string, string> = {
   OnHold: "On Hold", Recycle: "Recycle", InvalidLead: "Invalid",
 };
 const STAGE_ORDER = ["New","Prospect","SiteVisitCompleted","Negotiation","Booked","Won","Lost","OnHold","Recycle","InvalidLead"];
-
-const tooltipStyle = {
-  fontSize: 12, borderRadius: 8,
-  border: "1px solid hsl(var(--border))",
-  background: "hsl(var(--popover))",
-  color: "hsl(var(--popover-foreground))",
-  boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-  padding: "8px 12px",
-};
 
 const PERIOD_OPTIONS = [
   { key: "today", label: "Today" },
@@ -268,7 +274,6 @@ export function SalesDashboardClient({
   insights,
 }: Props) {
   const router = useRouter();
-  const [activePieIndex, setActivePieIndex] = useState<number | undefined>(undefined);
 
   function navigatePeriod(period: string, from?: string, to?: string) {
     const params = new URLSearchParams();
@@ -667,19 +672,7 @@ export function SalesDashboardClient({
               {leadsPerOpportunity.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-4 text-center">No opportunity data</p>
               ) : (
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={leadsPerOpportunity} layout="vertical" margin={{ top: 0, right: 24, bottom: 0, left: 4 }}>
-                    <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
-                    <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={90} />
-                    <Tooltip contentStyle={tooltipStyle} formatter={(v) => [v, "Leads"]} />
-                    <Bar dataKey="count" fill="#6366f1" radius={[0, 3, 3, 0]} cursor="pointer" activeBar={{ fill: "#4f46e5" }}
-                      onClick={(data: { id?: string; name?: string }) => {
-                        const oppId = leadsPerOpportunity.find((o) => o.name === data.name)?.id;
-                        if (oppId) router.push(`/leads?opportunity_id=${oppId}`);
-                      }}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
+                <SalesLeadsByOpportunityChart data={leadsPerOpportunity} />
               )}
             </CardContent>
           </Card>
@@ -695,22 +688,7 @@ export function SalesDashboardClient({
               {sourceDistribution.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-4 text-center">No source data for period</p>
               ) : (
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart
-                    data={sourceDistribution.map((s) => ({ name: s.source ?? "Unknown", value: s.count }))}
-                    layout="vertical" margin={{ top: 0, right: 24, bottom: 0, left: 4 }}
-                  >
-                    <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
-                    <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={80} />
-                    <Tooltip contentStyle={tooltipStyle} formatter={(v) => [v, "Leads"]} />
-                    <Bar dataKey="value" fill="#8b5cf6" radius={[0, 3, 3, 0]} cursor="pointer" activeBar={{ fill: "#7c3aed" }}
-                      onClick={(data: { name?: string }) => {
-                        if (data.name && data.name !== "Unknown")
-                          router.push(`/leads?source=${encodeURIComponent(data.name)}`);
-                      }}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
+                <SalesSourceChart data={sourceDistribution} />
               )}
             </CardContent>
           </Card>
@@ -762,30 +740,7 @@ export function SalesDashboardClient({
               <CardTitle className="text-sm font-medium">Temperature Split</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie
-                    data={tempData}
-                    cx="50%" cy="50%"
-                    innerRadius={55} outerRadius={80} paddingAngle={3}
-                    dataKey="value" cursor="pointer"
-                    onMouseEnter={(_, i) => setActivePieIndex(i)}
-                    onMouseLeave={() => setActivePieIndex(undefined)}
-                    onClick={(d) => {
-                      if (d?.name && d.name !== "Unknown") router.push(`/leads?temperature=${d.name}`);
-                    }}
-                  >
-                    {tempData.map((entry, i) => (
-                      <Cell key={i} fill={entry.color}
-                        opacity={activePieIndex === undefined || activePieIndex === i ? 1 : 0.35}
-                        style={{ transition: "opacity 0.15s ease" }}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={tooltipStyle} formatter={(v) => [v, "Leads"]} />
-                  <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                </PieChart>
-              </ResponsiveContainer>
+              <SalesTemperatureChart data={tempData} />
             </CardContent>
           </Card>
         </div>

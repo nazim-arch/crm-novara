@@ -1,6 +1,7 @@
 ﻿import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { generateId } from "@/lib/id-generator";
 import { hasPermissionAsync } from "@/lib/rbac";
 import { z } from "zod";
@@ -171,6 +172,8 @@ export async function POST(request: Request) {
       }
     }
 
+    revalidateTag("crm-dashboard", "max");
+    revalidateTag("leads-filter-options", "max"); // imports commonly introduce new lead sources
     return NextResponse.json(result, { status: 200 });
   } catch (error) {
     console.error("POST /api/leads/import:", error);

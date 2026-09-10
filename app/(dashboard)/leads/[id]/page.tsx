@@ -39,7 +39,16 @@ export default async function LeadDetailPage({ params }: { params: Params }) {
         created_by: { select: { id: true, name: true } },
         opportunities: {
           where: oppWhere,
-          include: { opportunity: true },
+          // Only the fields the detail view actually renders — avoids pulling
+          // every Opportunity column (incl. large text) for each linked deal.
+          select: {
+            id: true,
+            status: true,
+            activity_stage: true,
+            lost_reason: true,
+            lost_notes: true,
+            opportunity: { select: { id: true, name: true, opp_number: true, location: true } },
+          },
           orderBy: { tagged_at: "desc" },
         },
         tasks: {
