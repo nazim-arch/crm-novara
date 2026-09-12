@@ -6,7 +6,55 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-const Select = SelectPrimitive.Root
+// Base UI renders the raw stored value inside <Select.Value> until the popup's
+// items register — and they mount lazily in a Portal (only when opened). That
+// makes a select show its underlying id / enum key / "all" on first paint
+// (e.g. an opportunity id instead of its name). Base UI's fix is the `items`
+// prop on the Root, which gives <Select.Value> a value→label map up front.
+//
+// Rather than require every call site to pass `items`, this wrapper derives it
+// automatically by walking the declared <SelectItem> children and using each
+// item's own content as its label. Call sites that pass `items` explicitly, or
+// that render their own <SelectValue> children, keep full control.
+function collectSelectItemLabels(
+  children: React.ReactNode,
+  acc: Array<{ value: string; label: React.ReactNode }>
+) {
+  React.Children.forEach(children, (child) => {
+    if (!React.isValidElement(child)) return
+    if (child.type === SelectItem) {
+      const { value, children: label } = child.props as {
+        value?: unknown
+        children?: React.ReactNode
+      }
+      // Skip empty-string values so those fall through to the placeholder.
+      if (typeof value === "string" && value !== "") {
+        acc.push({ value, label })
+      }
+      return
+    }
+    const nested = (child.props as { children?: React.ReactNode })?.children
+    if (nested) collectSelectItemLabels(nested, acc)
+  })
+}
+
+function Select<Value, Multiple extends boolean | undefined = false>({
+  items,
+  children,
+  ...props
+}: SelectPrimitive.Root.Props<Value, Multiple>) {
+  let resolvedItems = items
+  if (!resolvedItems) {
+    const collected: Array<{ value: string; label: React.ReactNode }> = []
+    collectSelectItemLabels(children, collected)
+    if (collected.length > 0) resolvedItems = collected
+  }
+  return (
+    <SelectPrimitive.Root items={resolvedItems} {...props}>
+      {children}
+    </SelectPrimitive.Root>
+  )
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (
