@@ -141,7 +141,7 @@ export async function POST(request: Request) {
     // ── Phase 2: Classify all rows (in memory, no DB) ────────────────────────
 
     type MatchedRow = { row: Record<string, string>; crmLeadId: string };
-    type NewRow     = { row: Record<string, string>; assigneeId: string };
+    type NewRow     = { row: Record<string, string>; assigneeId: string; unmapped: boolean };
 
     const stats: BackfillResult = { total: csvRows.length, matched: 0, created: 0, skipped: 0, errors: [] };
 
@@ -152,6 +152,9 @@ export async function POST(request: Request) {
     // Track phones/emails seen within this CSV to avoid intra-CSV duplicates
     const csvPhones = new Set<string>();
     const csvEmails = new Set<string>();
+    // For UNMAPPED forms we dedup on (phone|form_id) instead of phone alone, so a person's genuinely
+    // different (unmapped) form still becomes its own lead — matching the live webhook rule.
+    const csvUnmappedKeys = new Set<string>();
 
     for (const row of csvRows) {
       const leadgenId = row.leadgen_id?.trim();
@@ -163,33 +166,45 @@ export async function POST(request: Request) {
       const rawPhone  = row.phone?.trim() ?? "";
       const normPhone = normalizePhone(rawPhone);
       const email     = row.email?.trim().toLowerCase() || null;
+      const formId    = row.form_id?.trim() || "";
+      const formMapped = !!(formId && formOppMap.has(formId));
 
-      // Resolve CRM lead: phone → email → null
-      const crmLeadId =
-        (normPhone.length >= 10 ? phoneMap.get(normPhone) ?? null : null) ??
-        (email ? emailMap.get(email) ?? null : null);
-
-      if (crmLeadId) {
-        matched.push({ row, crmLeadId });
-        stats.matched++;
-        continue;
-      }
-
-      // No CRM lead — will create one
       if (!rawPhone && !email) {
         stats.errors.push({ leadgen_id: leadgenId, reason: "No phone or email — cannot create CRM lead" });
         continue;
       }
 
-      // Deduplicate within CSV: if another row already claimed this phone/email, skip
-      const phoneDupe = normPhone.length >= 10 && csvPhones.has(normPhone);
-      const emailDupe = email && csvEmails.has(email);
-      if (phoneDupe || emailDupe) { stats.skipped++; continue; }
+      // MAPPED form → one lead per person: reuse an existing lead by phone/email if present.
+      if (formMapped) {
+        const crmLeadId =
+          (normPhone.length >= 10 ? phoneMap.get(normPhone) ?? null : null) ??
+          (email ? emailMap.get(email) ?? null : null);
 
-      if (normPhone.length >= 10) csvPhones.add(normPhone);
-      if (email) csvEmails.add(email);
+        if (crmLeadId) {
+          matched.push({ row, crmLeadId });
+          stats.matched++;
+          continue;
+        }
 
-      toCreate.push({ row, assigneeId: nextAssignee() });
+        // Deduplicate within CSV: if another row already claimed this phone/email, skip
+        const phoneDupe = normPhone.length >= 10 && csvPhones.has(normPhone);
+        const emailDupe = email && csvEmails.has(email);
+        if (phoneDupe || emailDupe) { stats.skipped++; continue; }
+
+        if (normPhone.length >= 10) csvPhones.add(normPhone);
+        if (email) csvEmails.add(email);
+
+        toCreate.push({ row, assigneeId: nextAssignee(), unmapped: false });
+        continue;
+      }
+
+      // UNMAPPED form → never silently dedup onto a mapped lead. Create a new, unlinked lead flagged
+      // for an admin, deduped only within the same form (phone|form_id) to avoid resubmission spam.
+      const unmappedKey = `${normPhone.length >= 10 ? normPhone : email ?? leadgenId}|${formId || "none"}`;
+      if (csvUnmappedKeys.has(unmappedKey)) { stats.skipped++; continue; }
+      csvUnmappedKeys.add(unmappedKey);
+
+      toCreate.push({ row, assigneeId: nextAssignee(), unmapped: true });
     }
 
     // ── Phase 3: Bulk upsert MetaLeads (1 query — skips existing) ────────────
@@ -225,7 +240,7 @@ export async function POST(request: Request) {
     // ── Phase 4: Bulk create new CRM leads ───────────────────────────────────
 
     let newLeadNumbers: string[] = [];
-    let newLeadIds: Map<string, string> = new Map(); // leadgen_id → crmLeadId
+    const newLeadIds: Map<string, string> = new Map(); // leadgen_id → crmLeadId
 
     if (toCreate.length > 0) {
       // Allocate N consecutive lead numbers in a single atomic increment
@@ -246,13 +261,13 @@ export async function POST(request: Request) {
 
       // Bulk insert all new leads (1 query)
       await prisma.lead.createMany({
-        data: toCreate.map(({ row, assigneeId }, i) => ({
+        data: toCreate.map(({ row, assigneeId, unmapped }, i) => ({
           lead_number:     newLeadNumbers[i],
           full_name:       row.full_name || "Meta Lead",
           phone:           row.phone?.trim() || `meta_${row.leadgen_id.trim()}`,
           email:           row.email?.trim().toLowerCase() || null,
           city:            row.city || null,
-          lead_source:     "Meta Ads - Direct (backfill)",
+          lead_source:     unmapped ? "Meta Ads - Unmapped Form (backfill)" : "Meta Ads - Direct (backfill)",
           campaign_source: row.campaign_id || null,
           temperature:     "Cold",
           status:          "New",
@@ -299,20 +314,30 @@ export async function POST(request: Request) {
         await prisma.leadStageHistory.createMany({ data: historyRows });
       }
 
-      // Bulk create Activity logs (1 query)
-      const activityRows = toCreate
-        .map(({ row }, i) => {
-          const leadId = newLeadIds.get(row.leadgen_id.trim());
-          if (!leadId) return null;
-          return {
+      // Bulk create Activity logs (1 query). Unmapped-form leads also get a `meta_form_unmapped`
+      // flag so an admin can find them and map the form to an opportunity.
+      const activityRows = toCreate.flatMap(({ row, unmapped }, i) => {
+        const leadId = newLeadIds.get(row.leadgen_id.trim());
+        if (!leadId) return [];
+        const created = {
+          entity_type: "Lead" as const,
+          entity_id:   leadId,
+          action:      "lead_created",
+          actor_id:    adminId,
+          metadata:    { lead_number: newLeadNumbers[i], source: "meta_backfill", leadgen_id: row.leadgen_id.trim() },
+        };
+        if (!unmapped) return [created];
+        return [
+          created,
+          {
             entity_type: "Lead" as const,
             entity_id:   leadId,
-            action:      "lead_created" as const,
+            action:      "meta_form_unmapped",
             actor_id:    adminId,
-            metadata:    { lead_number: newLeadNumbers[i], source: "meta_backfill", leadgen_id: row.leadgen_id.trim() },
-          };
-        })
-        .filter((x): x is NonNullable<typeof x> => x !== null);
+            metadata:    { leadgen_id: row.leadgen_id.trim(), form_id: row.form_id?.trim() || null, campaign_id: row.campaign_id || null },
+          },
+        ];
+      });
       if (activityRows.length > 0) {
         await prisma.activity.createMany({ data: activityRows });
       }

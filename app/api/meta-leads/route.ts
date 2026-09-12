@@ -138,89 +138,62 @@ async function upsertMetaLead(data: MetaLeadData) {
   });
 }
 
-async function linkToOpportunity(data: MetaLeadData, crmLeadId: string) {
-  if (!data.form_id) return;
-
+// Resolve the CRM opportunity a Meta form maps to (null = form not mapped to any opportunity).
+async function resolveOpportunity(formId: string | null | undefined): Promise<string | null> {
+  if (!formId) return null;
   const opp = await prisma.opportunity.findFirst({
-    where: { meta_form_ids: { has: data.form_id }, deleted_at: null },
+    where: { meta_form_ids: { has: formId }, deleted_at: null },
     select: { id: true },
   });
-  if (!opp) {
-    console.warn(`[Meta webhook] No opportunity mapped for form_id=${data.form_id} — lead will have no opportunity link`);
-    return;
-  }
+  return opp?.id ?? null;
+}
 
+// Idempotently link a CRM lead to an opportunity. One person (lead) can carry multiple opportunity
+// links, each with its own pipeline stage — so a second submission for a DIFFERENT opportunity adds a
+// new link (a new row), while a repeat for the SAME opportunity is a no-op.
+async function ensureOppLink(crmLeadId: string, opportunityId: string, leadgenId: string) {
   const adminId = await getDefaultAdminId();
   if (!adminId) {
     console.warn("[Meta webhook] No active admin found — cannot create LeadOpportunity");
     return;
   }
 
-  // Explicit guard: if this lead is already linked to this opportunity, do nothing.
-  // Meta integration is a one-time action per lead+opportunity pair.
+  // Unique on (lead_id, opportunity_id): if a link already exists (even if previously untagged),
+  // treat it as linked. Meta integration is a one-time action per lead+opportunity pair.
   const alreadyLinked = await prisma.leadOpportunity.findUnique({
-    where: { lead_id_opportunity_id: { lead_id: crmLeadId, opportunity_id: opp.id } },
+    where: { lead_id_opportunity_id: { lead_id: crmLeadId, opportunity_id: opportunityId } },
     select: { id: true },
   });
   if (alreadyLinked) {
-    console.log(`[Meta webhook] Lead ${crmLeadId} already linked to opp ${opp.id} — skipping duplicate link`);
+    console.log(`[Meta webhook] Lead ${crmLeadId} already linked to opp ${opportunityId} — skipping duplicate link`);
     return;
   }
 
-  // Update MetaLead with the matched opportunity
+  // Record the matched opportunity on the MetaLead, then create the link.
+  // status and activity_stage intentionally default to "New" — new opportunity tracking starts fresh.
   await prisma.metaLead.update({
-    where: { leadgen_id: data.leadgen_id },
-    data: { opportunity_id: opp.id },
+    where: { leadgen_id: leadgenId },
+    data:  { opportunity_id: opportunityId },
   });
-
-  // Create the LeadOpportunity link.
-  // status and activity_stage intentionally default to "New" — new opportunity tracking always starts fresh.
   await prisma.leadOpportunity.create({
     data: {
       lead_id:        crmLeadId,
-      opportunity_id: opp.id,
+      opportunity_id: opportunityId,
       tagged_by_id:   adminId,
       notes:          "Auto-linked via Meta Lead Ads webhook",
     },
   });
 }
 
-async function autoImportToCRM(data: MetaLeadData): Promise<string | null> {
-  // 1. Check if already linked
-  const existing = await prisma.metaLead.findUnique({
-    where: { leadgen_id: data.leadgen_id },
-    select: { crm_lead_id: true },
-  });
-  if (existing?.crm_lead_id) return existing.crm_lead_id;
-
-  // 2. Phone is required to create a CRM lead
-  if (!data.phone) {
-    console.warn(`[Meta webhook] No phone for leadgen_id=${data.leadgen_id} — skipping CRM import`);
-    return null;
-  }
-
+// Create a brand-new CRM lead from a Meta submission. `unmapped` = the form maps to no opportunity, so
+// the lead is left unlinked and flagged with a `meta_form_unmapped` Activity for an admin to map later.
+async function createCrmLead(data: MetaLeadData, opts: { unmapped: boolean }): Promise<string | null> {
   const [adminId, assigneeId] = await Promise.all([getDefaultAdminId(), pickNextAssignee()]);
   if (!adminId) {
     console.warn("[Meta webhook] No active admin — cannot create CRM lead");
     return null;
   }
   const effectiveAssigneeId = assigneeId ?? adminId;
-
-  // 3. Phone dedup — link to existing lead instead of creating a duplicate
-  const existingLead = await prisma.lead.findFirst({
-    where: { phone: data.phone, deleted_at: null },
-    select: { id: true },
-  });
-
-  if (existingLead) {
-    await prisma.metaLead.update({
-      where: { leadgen_id: data.leadgen_id },
-      data: { crm_lead_id: existingLead.id },
-    });
-    return existingLead.id;
-  }
-
-  // 4. Create a new CRM lead
   const lead_number = await generateId("LEAD");
 
   const lead = await prisma.$transaction(async (tx) => {
@@ -231,7 +204,7 @@ async function autoImportToCRM(data: MetaLeadData): Promise<string | null> {
         phone:          data.phone!,
         email:          data.email ?? null,
         city:           data.city ?? null,
-        lead_source:    "Meta Ads - Direct",
+        lead_source:    opts.unmapped ? "Meta Ads - Unmapped Form" : "Meta Ads - Direct",
         campaign_source: data.campaign_id ?? null,
         temperature:    "Cold",
         status:         "New",
@@ -256,6 +229,19 @@ async function autoImportToCRM(data: MetaLeadData): Promise<string | null> {
       },
     });
 
+    // Flag unmapped-form leads so an admin can find them and map the form to an opportunity.
+    if (opts.unmapped) {
+      await tx.activity.create({
+        data: {
+          entity_type: "Lead",
+          entity_id:   newLead.id,
+          action:      "meta_form_unmapped",
+          actor_id:    adminId,
+          metadata:    { leadgen_id: data.leadgen_id, form_id: data.form_id ?? null, campaign_id: data.campaign_id ?? null },
+        },
+      });
+    }
+
     await tx.metaLead.update({
       where: { leadgen_id: data.leadgen_id },
       data:  { crm_lead_id: newLead.id },
@@ -265,6 +251,77 @@ async function autoImportToCRM(data: MetaLeadData): Promise<string | null> {
   });
 
   return lead.id;
+}
+
+// Orchestrates import + opportunity linkage for one Meta submission.
+// - MAPPED form: one Lead per person (phone). Reuse the existing lead if the phone is known and add an
+//   opportunity link; a link for a NEW opportunity becomes a new row, a repeat for the same opportunity
+//   is a no-op. Create the lead if the phone is new.
+// - UNMAPPED form: never silently drop. Dedup only on (phone + form_id) to avoid resubmission spam;
+//   otherwise create a NEW, UNLINKED lead flagged for an admin to map the form.
+async function importAndLink(data: MetaLeadData): Promise<void> {
+  // Phone is required to create or dedup a CRM lead.
+  if (!data.phone) {
+    console.warn(`[Meta webhook] No phone for leadgen_id=${data.leadgen_id} — skipping CRM import`);
+    return;
+  }
+
+  const existing = await prisma.metaLead.findUnique({
+    where:  { leadgen_id: data.leadgen_id },
+    select: { crm_lead_id: true },
+  });
+
+  const opportunityId = await resolveOpportunity(data.form_id);
+
+  // Redelivery of an already-imported submission: just make sure the opportunity link exists.
+  if (existing?.crm_lead_id) {
+    if (opportunityId) await ensureOppLink(existing.crm_lead_id, opportunityId, data.leadgen_id);
+    return;
+  }
+
+  if (opportunityId) {
+    // Mapped form — one Lead per phone, then ensure the opportunity link (adds a row for a new opp).
+    const existingLead = await prisma.lead.findFirst({
+      where:  { phone: data.phone, deleted_at: null },
+      select: { id: true },
+    });
+
+    let crmLeadId: string | null;
+    if (existingLead) {
+      await prisma.metaLead.update({
+        where: { leadgen_id: data.leadgen_id },
+        data:  { crm_lead_id: existingLead.id },
+      });
+      crmLeadId = existingLead.id;
+    } else {
+      crmLeadId = await createCrmLead(data, { unmapped: false });
+    }
+
+    if (crmLeadId) await ensureOppLink(crmLeadId, opportunityId, data.leadgen_id);
+    return;
+  }
+
+  // Unmapped form — dedup only within the same form to avoid duplicate leads from resubmissions.
+  const priorSameForm = await prisma.metaLead.findFirst({
+    where: {
+      phone:       data.phone,
+      form_id:     data.form_id ?? null,
+      crm_lead_id: { not: null },
+      leadgen_id:  { not: data.leadgen_id },
+    },
+    select:  { crm_lead_id: true },
+    orderBy: { received_at: "asc" },
+  });
+
+  if (priorSameForm?.crm_lead_id) {
+    await prisma.metaLead.update({
+      where: { leadgen_id: data.leadgen_id },
+      data:  { crm_lead_id: priorSameForm.crm_lead_id },
+    });
+    return;
+  }
+
+  await createCrmLead(data, { unmapped: true });
 }
 
 // ─── Route handlers ───────────────────────────────────────────────────────────
@@ -314,10 +371,9 @@ export async function POST(request: Request) {
 
       const leadgenId = change.value.leadgen_id;
       try {
-        const leadData  = await fetchLead(leadgenId);
+        const leadData = await fetchLead(leadgenId);
         await upsertMetaLead(leadData);
-        const crmLeadId = await autoImportToCRM(leadData);
-        if (crmLeadId) await linkToOpportunity(leadData, crmLeadId);
+        await importAndLink(leadData);
       } catch (err) {
         console.error(`[Meta webhook] Error processing leadgen_id=${leadgenId}:`, err);
         // Do not re-throw — always return 200 to Meta or it will retry indefinitely
